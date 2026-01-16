@@ -1,12 +1,33 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22"
 }
 
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("gradle.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.aria.ariacast"
     compileSdk = 34
+
+    signingConfigs {
+        create("release") {
+            val storeFileProp = keystoreProperties.getProperty("MYAPP_RELEASE_STORE_FILE")
+            if (storeFileProp != null) {
+                storeFile = file(storeFileProp)
+                storePassword = keystoreProperties.getProperty("MYAPP_RELEASE_STORE_PASSWORD")
+                keyAlias = keystoreProperties.getProperty("MYAPP_RELEASE_KEY_ALIAS")
+                keyPassword = keystoreProperties.getProperty("MYAPP_RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.aria.ariacast"
@@ -25,6 +46,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Only assign signingConfig if the properties were found
+            if (keystoreProperties.getProperty("MYAPP_RELEASE_STORE_FILE") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {

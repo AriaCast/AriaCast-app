@@ -217,7 +217,7 @@ class AudioCastService : Service() {
                     val handshakeFrame = try {
                         withTimeout(5000L) { incoming.receive() }
                     } catch (e: TimeoutCancellationException) {
-                        Log.e(TAG, "Handshake timeout. Server did not send READY.")
+                        Log.e(TAG, "Handshake timeout. Server did not send response.")
                         _state.value = CastState.ERROR
                         return@audioSocket
                     }
@@ -231,8 +231,9 @@ class AudioCastService : Service() {
                     val handshakeText = handshakeFrame.readText()
                     try {
                         val handshakeJson = JSONObject(handshakeText)
-                        if (handshakeJson.optString("status") != "READY") {
-                            Log.e(TAG, "Handshake failed, status was not READY: $handshakeText")
+                        val handshakeType = handshakeJson.optString("type")
+                        if (handshakeType != "handshake" && handshakeJson.optString("status") != "READY") {
+                            Log.e(TAG, "Handshake failed, invalid response: $handshakeText")
                             _state.value = CastState.ERROR
                             return@audioSocket
                         }
@@ -316,7 +317,8 @@ class AudioCastService : Service() {
                         path("metadata")
                     }
                     contentType(ContentType.Application.Json)
-                    setBody(metadata)
+                    // Server expects metadata wrapped in a "data" key
+                    setBody(mapOf("data" to metadata))
                 }
                 _metadata.value = metadata
                 Log.d(TAG, "Sent metadata update: ${metadata.title}")
