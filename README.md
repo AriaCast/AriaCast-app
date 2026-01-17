@@ -33,7 +33,7 @@ AriaCast uses a robust foreground service to manage the capture and streaming li
 ### Prerequisites
 
 *   An Android device running **Android 12 (API 31)** or higher.
-*   The companion **AriaCast Server** running on a computer on the same local network.
+*   The companion **AriaCast Server** running on a computer, or MusicAssistant with the plugin installed, on the same local network.
 
 ### Installation & Permissions
 
@@ -53,3 +53,4 @@ You can start streaming in two ways:
 This document describes the Android client. The server-side application, responsible for receiving the audio stream and metadata, acts as the "speaker" and must be running on your local network.
 
 *   **Server Repository**: [Link to AriaCast Server](https://github.com/AirPlr/Ariacast-server)
+*   **Music Assistant Plugin Repository**: [Link to Ariacast MusicAssistant Plugin](https://github.com/AirPlr/AriaCast-Receiver-MusicAssistant)
