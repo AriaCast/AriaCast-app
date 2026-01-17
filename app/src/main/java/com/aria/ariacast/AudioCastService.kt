@@ -61,6 +61,8 @@ class AudioCastService : Service() {
         private set
     var serverPort: Int = 0
         private set
+    var serverPlatform: String? = null
+        private set
 
     private val client by lazy {
         HttpClient(OkHttp) {
@@ -121,6 +123,7 @@ class AudioCastService : Service() {
                 val intentServerHost = intent.getStringExtra(EXTRA_SERVER_HOST)
                 val intentServerPort = intent.getIntExtra(EXTRA_SERVER_PORT, 0)
                 serverName = intent.getStringExtra(EXTRA_SERVER_NAME)
+                serverPlatform = intent.getStringExtra(EXTRA_SERVER_PLATFORM)
 
                 if (mediaProjectionToken != null && intentServerHost != null && intentServerPort != 0 && serverName != null) {
                     serverHost = intentServerHost
@@ -288,6 +291,10 @@ class AudioCastService : Service() {
                 Log.e(TAG, "Cannot send volume command, no active control session.")
                 return@launch
             }
+            if (serverPlatform?.contains("Music", ignoreCase = true) == true) {
+                Log.w(TAG, "Volume control disabled for Music platform.")
+                return@launch
+            }
             try {
                 val command = JSONObject().apply {
                     put("command", "volume")
@@ -407,6 +414,7 @@ class AudioCastService : Service() {
         serverHost = null
         serverPort = 0
         serverName = null
+        serverPlatform = null
 
         job.cancelChildren()
         _state.value = CastState.OFF
@@ -463,6 +471,7 @@ class AudioCastService : Service() {
         const val EXTRA_SERVER_HOST = "com.aria.ariacast.EXTRA_SERVER_HOST"
         const val EXTRA_SERVER_PORT = "com.aria.ariacast.EXTRA_SERVER_PORT"
         const val EXTRA_SERVER_NAME = "com.aria.ariacast.EXTRA_SERVER_NAME"
+        const val EXTRA_SERVER_PLATFORM = "com.aria.ariacast.EXTRA_SERVER_PLATFORM"
 
         const val PREFS_NAME = "AriaCastPrefs"
         const val KEY_LAST_SERVER_HOST = "last_server_host"

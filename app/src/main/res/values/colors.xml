@@ -1,9 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="primaryColor">#6200EE</color>
+    <color name="primaryLightColor">#9B67FF</color>
+    <color name="primaryDarkColor">#3700B3</color>
+    <color name="secondaryColor">#03DAC6</color>
+    <color name="secondaryLightColor">#66FFF9</color>
+    <color name="secondaryDarkColor">#00A896</color>
+    <color name="primaryTextColor">#000000</color>
+    <color name="secondaryTextColor">#000000</color>
+
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="background">#F5F5F5</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="error">#B00020</color>
+
     <color name="blue_200">#FF90CAF9</color>
     <color name="blue_500">#FF2196F3</color>
     <color name="blue_700">#FF1976D2</color>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
     <color name="red_500">#FF0000</color>
+    
+    <!-- Custom colors for a cool look -->
+    <color name="accent_blue">#2979FF</color>
+    <color name="dark_grey">#121212</color>
+    <color name="light_grey">#E0E0E0</color>
 </resources>

@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.content.res.ColorStateList
-import android.graphics.Color
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.os.IBinder
@@ -15,7 +14,7 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -25,7 +24,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.divider.MaterialDividerItemDecoration
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -37,13 +37,14 @@ class MainActivity : AppCompatActivity() {
     private var selectedServer: Server? = null
 
     private lateinit var stateTextView: TextView
-    private lateinit var castButton: Button
-    private lateinit var discoveryButton: Button
+    private lateinit var castButton: MaterialButton
+    private lateinit var discoveryButton: MaterialButton
     private lateinit var serverRecyclerView: RecyclerView
     private lateinit var volumeControlLayout: LinearLayout
-    private lateinit var volumeUpButton: Button
-    private lateinit var volumeDownButton: Button
-    private lateinit var permissionButton: Button
+    private lateinit var volumeUpButton: MaterialButton
+    private lateinit var volumeDownButton: MaterialButton
+    private lateinit var permissionButton: MaterialButton
+    private lateinit var statusCard: MaterialCardView
 
     private lateinit var discoveryManager: DiscoveryManager
     private lateinit var serverListAdapter: ServerAdapter
@@ -76,6 +77,7 @@ class MainActivity : AppCompatActivity() {
                     putExtra(AudioCastService.EXTRA_SERVER_HOST, server.host)
                     putExtra(AudioCastService.EXTRA_SERVER_PORT, server.port)
                     putExtra(AudioCastService.EXTRA_SERVER_NAME, server.name)
+                    putExtra(AudioCastService.EXTRA_SERVER_PLATFORM, server.platform)
                 }
                 ContextCompat.startForegroundService(this, serviceIntent)
             }
@@ -100,6 +102,7 @@ class MainActivity : AppCompatActivity() {
         volumeUpButton = findViewById(R.id.volumeUpButton)
         volumeDownButton = findViewById(R.id.volumeDownButton)
         permissionButton = findViewById(R.id.permissionButton)
+        statusCard = findViewById(R.id.statusCard)
 
         serverListAdapter = ServerAdapter { server ->
             selectedServer = server
@@ -109,7 +112,6 @@ class MainActivity : AppCompatActivity() {
         serverRecyclerView.apply {
             adapter = serverListAdapter
             layoutManager = LinearLayoutManager(this@MainActivity)
-            addItemDecoration(MaterialDividerItemDecoration(this@MainActivity, LinearLayoutManager.VERTICAL))
         }
 
         castButton.setOnClickListener {
@@ -165,7 +167,7 @@ class MainActivity : AppCompatActivity() {
             discoveryManager.state.collectLatest {
                 discoveryButton.text = when (it) {
                     DiscoveryState.SCANNING -> "Scanning..."
-                    else -> "Discover Servers"
+                    else -> "Refresh"
                 }
             }
         }
@@ -204,15 +206,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUi(state: CastState) {
-        stateTextView.text = "State: $state"
+        stateTextView.text = state.name
         castButton.isEnabled = state == CastState.OFF && selectedServer != null || state == CastState.CASTING
+        
         if (state == CastState.CASTING) {
-            castButton.text = "Stop Casting"
-            castButton.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.red_500))
-            volumeControlLayout.visibility = View.VISIBLE
+            castButton.text = "Stop"
+            castButton.setIconResource(android.R.drawable.ic_media_pause)
+            statusCard.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.accent_blue)))
+            statusCard.setCardBackgroundColor(ContextCompat.getColor(this, R.color.blue_200))
+            
+            // Hide volume controls if the platform contains "Music"
+            val platform = audioCastService?.serverPlatform ?: selectedServer?.platform
+            if (platform?.contains("Music", ignoreCase = true) == true) {
+                volumeControlLayout.visibility = View.GONE
+            } else {
+                volumeControlLayout.visibility = View.VISIBLE
+            }
         } else {
-            castButton.text = "Start Casting"
-            castButton.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+            castButton.text = "Start"
+            castButton.setIconResource(android.R.drawable.ic_media_play)
+            statusCard.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.light_grey)))
+            statusCard.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface))
             volumeControlLayout.visibility = View.GONE
         }
     }
@@ -232,7 +246,19 @@ class ServerAdapter(private val onServerClick: (Server) -> Unit) : RecyclerView.
         val server = servers[position]
         holder.serverName.text = server.name
         holder.serverHost.text = server.host
-        holder.itemView.isSelected = selectedItem == position
+        
+        val context = holder.itemView.context
+        if (selectedItem == position) {
+            holder.cardView.setStrokeWidth(4)
+            holder.cardView.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(context, R.color.accent_blue)))
+            holder.icon.setImageResource(android.R.drawable.ic_menu_slideshow)
+            holder.icon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.accent_blue))
+        } else {
+            holder.cardView.setStrokeWidth(0)
+            holder.icon.setImageResource(android.R.drawable.ic_menu_slideshow)
+            holder.icon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.light_grey))
+        }
+
         holder.itemView.setOnClickListener { 
             onServerClick(server)
             setSelectedItem(position)
@@ -256,7 +282,9 @@ class ServerAdapter(private val onServerClick: (Server) -> Unit) : RecyclerView.
     }
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val cardView: MaterialCardView = view as MaterialCardView
         val serverName: TextView = view.findViewById(R.id.serverName)
         val serverHost: TextView = view.findViewById(R.id.serverHost)
+        val icon: ImageView = view.findViewById(R.id.serverIcon)
     }
 }
