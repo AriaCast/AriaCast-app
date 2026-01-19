@@ -305,7 +305,9 @@ class AudioCastService : Service() {
 
     fun sendVolumeCommand(direction: String) {
         scope.launch {
-            if (controlSocketSession == null) {
+            val host = serverHost
+            val port = serverPort
+            if (controlSocketSession == null || host == null) {
                 Log.e(TAG, "Cannot send volume command, no active control session.")
                 return@launch
             }
@@ -330,27 +332,39 @@ class AudioCastService : Service() {
 
     fun sendMetadata(metadata: TrackMetadata) {
         scope.launch {
-            if (serverHost == null) {
-                Log.e(TAG, "Cannot send metadata, server details not found.")
+            val host = serverHost
+            val port = serverPort
+            
+            if (host == null) {
+                Log.e(TAG, "Cannot send metadata, server details not found. Title: ${metadata.title}")
                 return@launch
             }
+            
             try {
-                client.post {
+                Log.d(TAG, "Attempting to send metadata to http://$host:$port/metadata")
+                val response = client.post {
                     url {
                         protocol = URLProtocol.HTTP
-                        host = serverHost!!
-                        port = serverPort
+                        this.host = host
+                        this.port = port
                         path("metadata")
                     }
                     contentType(ContentType.Application.Json)
                     setBody(mapOf("data" to metadata))
                 }
-                _metadata.value = metadata
-                PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata: ${metadata.title} - ${metadata.isPlaying}")
-                Log.d(TAG, "Sent metadata update: ${metadata.title}")
+                
+                if (response.status.isSuccess()) {
+                    _metadata.value = metadata
+                    PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Sent: ${metadata.title}")
+                    Log.d(TAG, "Successfully sent metadata update: ${metadata.title}")
+                } else {
+                    Log.e(TAG, "Server rejected metadata update. Status: ${response.status}")
+                    PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Failed: ${response.status}")
+                }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                Log.e(TAG, "Failed to send metadata update", e)
+                Log.e(TAG, "HTTP Exception sending metadata update: ${e.localizedMessage}")
+                PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Error: ${e.localizedMessage}")
             }
         }
     }

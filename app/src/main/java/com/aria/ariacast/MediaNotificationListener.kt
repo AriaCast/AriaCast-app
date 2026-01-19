@@ -27,6 +27,7 @@ class MediaNotificationListener : NotificationListenerService() {
     private var activeMediaController: MediaController? = null
     private var positionUpdateJob: Job? = null
     private var commandCollectionJob: Job? = null
+    private var stateObservationJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private lateinit var mediaSessionManager: MediaSessionManager
 
@@ -38,14 +39,21 @@ class MediaNotificationListener : NotificationListenerService() {
             isBound = true
             Log.d(TAG, "Bound to AudioCastService")
             
+            // Sync current state immediately upon binding
+            handleMediaSessionsChanged()
+            
             // Start collecting commands once service is bound
             startCommandCollection(boundService)
+            
+            // Observe service state to push metadata as soon as connection is ready
+            startStateObservation(boundService)
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
             audioCastService = null
             isBound = false
             commandCollectionJob?.cancel()
+            stateObservationJob?.cancel()
             Log.d(TAG, "Unbound from AudioCastService")
         }
     }
@@ -55,6 +63,21 @@ class MediaNotificationListener : NotificationListenerService() {
         mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         Intent(this, AudioCastService::class.java).also { intent ->
             bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        }
+    }
+
+    private fun startStateObservation(service: AudioCastService) {
+        stateObservationJob?.cancel()
+        stateObservationJob = scope.launch {
+            service.state.collectLatest { state ->
+                if (state == CastState.CASTING || state == CastState.CONNECTING) {
+                    Log.d(TAG, "Service state changed to $state, forcing metadata push.")
+                    activeMediaController?.let {
+                        mediaControllerCallback.onMetadataChanged(it.metadata)
+                        mediaControllerCallback.onPlaybackStateChanged(it.playbackState)
+                    }
+                }
+            }
         }
     }
 
@@ -112,8 +135,12 @@ class MediaNotificationListener : NotificationListenerService() {
             activeMediaController?.unregisterCallback(mediaControllerCallback)
             activeMediaController = newMediaController
             activeMediaController?.registerCallback(mediaControllerCallback)
-            mediaControllerCallback.onMetadataChanged(newMediaController?.metadata)
-            mediaControllerCallback.onPlaybackStateChanged(newMediaController?.playbackState)
+            
+            // Immediately push the current metadata of the new controller
+            newMediaController?.let {
+                mediaControllerCallback.onMetadataChanged(it.metadata)
+                mediaControllerCallback.onPlaybackStateChanged(it.playbackState)
+            }
         }
     }
 
@@ -170,14 +197,22 @@ class MediaNotificationListener : NotificationListenerService() {
                 positionUpdateJob?.cancel()
             }
 
-            val track = audioCastService?.metadata?.value?.copy(
-                isPlaying = isPlaying,
-                positionMs = state.position
-            )
-            if (track != null) {
-                audioCastService?.sendMetadata(track)
-                Log.d(TAG, "Sent playback state change: isPlaying=$isPlaying")
+            val currentMetadata = audioCastService?.metadata?.value
+            val track = if (currentMetadata != null) {
+                currentMetadata.copy(isPlaying = isPlaying, positionMs = state.position)
+            } else {
+                 TrackMetadata(
+                    title = activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE),
+                    artist = activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST),
+                    album = activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM),
+                    artworkUrl = activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
+                    durationMs = activeMediaController?.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION),
+                    positionMs = state.position,
+                    isPlaying = isPlaying
+                )
             }
+            audioCastService?.sendMetadata(track)
+            Log.d(TAG, "Sent playback state change: isPlaying=$isPlaying")
         }
     }
 
@@ -208,6 +243,7 @@ class MediaNotificationListener : NotificationListenerService() {
         activeMediaController?.unregisterCallback(mediaControllerCallback)
         positionUpdateJob?.cancel()
         commandCollectionJob?.cancel()
+        stateObservationJob?.cancel()
     }
 
     companion object {
