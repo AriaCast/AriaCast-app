@@ -17,66 +17,388 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <LinearLayout
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:padding="16dp"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/packetLogCard"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp"
-            android:clickable="true"
-            android:focusable="true">
+            android:orientation="vertical"
+            android:padding="16dp">
 
-            <LinearLayout
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="General"
+                android:textAppearance="?attr/textAppearanceLabelLarge"
+                android:textColor="?attr/colorPrimary" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/themeCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="16dp">
-
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@android:drawable/ic_menu_info_details"
-                    app:tint="?attr/colorPrimary" />
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp"
+                android:clickable="true"
+                android:focusable="true">
 
                 <LinearLayout
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="16dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Packet Exchange"
-                        android:textAppearance="?attr/textAppearanceTitleMedium" />
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@android:drawable/ic_menu_manage"
+                        app:tint="?attr/colorPrimary" />
 
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="View real-time app-server logs"
-                        android:textAppearance="?attr/textAppearanceBodySmall"
-                        android:textColor="?android:attr/textColorSecondary" />
+                        android:layout_marginStart="16dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Appearance"
+                            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                        <TextView
+                            android:id="@+id/themeStatusText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Follow System"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?android:attr/textColorSecondary" />
+                    </LinearLayout>
                 </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-                <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:src="@android:drawable/ic_media_next"
-                    app:tint="?attr/colorOutline" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/accentCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp"
+                android:clickable="true"
+                android:focusable="true">
 
-    </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:id="@+id/accentColorPreview"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@android:drawable/presence_online"
+                        app:tint="?attr/colorPrimary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Accent Color"
+                            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                        <TextView
+                            android:id="@+id/accentStatusText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Blue"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?android:attr/textColorSecondary" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/notificationAccessCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp"
+                android:clickable="true"
+                android:focusable="true">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@android:drawable/ic_lock_idle_alarm"
+                        app:tint="?attr/colorPrimary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Notification Access"
+                            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Required for media metadata"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?android:attr/textColorSecondary" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/resetServerCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp"
+                android:clickable="true"
+                android:focusable="true">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@android:drawable/ic_menu_close_clear_cancel"
+                        app:tint="?attr/colorError" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Reset Last Server"
+                            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Clear saved server connection details"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?android:attr/textColorSecondary" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="Advanced"
+                android:textAppearance="?attr/textAppearanceLabelLarge"
+                android:textColor="?attr/colorPrimary" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/packetLogCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp"
+                android:clickable="true"
+                android:focusable="true">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@android:drawable/ic_menu_info_details"
+                        app:tint="?attr/colorPrimary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Packet Exchange"
+                            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="View real-time app-server logs"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?android:attr/textColorSecondary" />
+                    </LinearLayout>
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@android:drawable/ic_media_next"
+                        app:tint="?attr/colorOutline" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="About"
+                android:textAppearance="?attr/textAppearanceLabelLarge"
+                android:textColor="?attr/colorPrimary" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/githubCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp"
+                android:clickable="true"
+                android:focusable="true">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@android:drawable/ic_menu_share"
+                        app:tint="?attr/colorPrimary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="GitHub Repository"
+                            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="View source code and contribute"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?android:attr/textColorSecondary" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/updateCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp"
+                android:clickable="true"
+                android:focusable="true">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@android:drawable/stat_notify_sync"
+                        app:tint="?attr/colorPrimary" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Check for Updates"
+                            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                        <TextView
+                            android:id="@+id/updateStatusText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="AriaCast v1.0.4"
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?android:attr/textColorSecondary" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

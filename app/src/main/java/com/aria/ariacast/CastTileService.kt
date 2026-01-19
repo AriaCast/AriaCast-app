@@ -60,28 +60,20 @@ class CastTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        val tile = qsTile ?: return
-        if (tile.state == Tile.STATE_ACTIVE) {
-            val intent = Intent(this, AudioCastService::class.java).apply {
-                action = AudioCastService.ACTION_STOP
-            }
-            startService(intent)
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            startActivityAndCollapse(pendingIntent)
         } else {
-            val intent = Intent(this, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                val pendingIntent = PendingIntent.getActivity(
-                    this,
-                    0,
-                    intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                startActivityAndCollapse(pendingIntent)
-            } else {
-                @Suppress("DEPRECATION")
-                startActivityAndCollapse(intent)
-            }
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(intent)
         }
     }
 

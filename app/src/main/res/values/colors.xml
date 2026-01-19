@@ -22,6 +22,11 @@
     
     <!-- Custom colors for a cool look -->
     <color name="accent_blue">#2979FF</color>
+    <color name="accent_purple">#AA00FF</color>
+    <color name="accent_green">#00E676</color>
+    <color name="accent_orange">#FF9100</color>
+    <color name="accent_pink">#FF4081</color>
+
     <color name="dark_grey">#121212</color>
     <color name="light_grey">#E0E0E0</color>
 </resources>

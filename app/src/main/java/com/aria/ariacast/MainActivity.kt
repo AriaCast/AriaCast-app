@@ -43,9 +43,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var castButton: MaterialButton
     private lateinit var discoveryButton: MaterialButton
     private lateinit var serverRecyclerView: RecyclerView
-    private lateinit var volumeControlLayout: LinearLayout
-    private lateinit var volumeUpButton: MaterialButton
-    private lateinit var volumeDownButton: MaterialButton
     private lateinit var permissionButton: MaterialButton
     private lateinit var statusCard: MaterialCardView
 
@@ -90,6 +87,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
+        val accentColor = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
+        setTheme(ThemeUtils.getThemeForAccent(accentColor))
+        
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -98,15 +99,11 @@ class MainActivity : AppCompatActivity() {
 
         mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         discoveryManager = DiscoveryManager(this)
-        sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
 
         stateTextView = findViewById(R.id.stateTextView)
         castButton = findViewById(R.id.castButton)
         discoveryButton = findViewById(R.id.discoveryButton)
         serverRecyclerView = findViewById(R.id.serverRecyclerView)
-        volumeControlLayout = findViewById(R.id.volumeControlLayout)
-        volumeUpButton = findViewById(R.id.volumeUpButton)
-        volumeDownButton = findViewById(R.id.volumeDownButton)
         permissionButton = findViewById(R.id.permissionButton)
         statusCard = findViewById(R.id.statusCard)
 
@@ -137,14 +134,6 @@ class MainActivity : AppCompatActivity() {
 
         discoveryButton.setOnClickListener {
             discoveryManager.startDiscovery()
-        }
-
-        volumeUpButton.setOnClickListener {
-            audioCastService?.sendVolumeCommand("up")
-        }
-
-        volumeDownButton.setOnClickListener {
-            audioCastService?.sendVolumeCommand("down")
         }
         
         permissionButton.setOnClickListener {
@@ -215,6 +204,11 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         checkNotificationListenerPermission()
+        
+        // Check if theme needs update
+        val currentAccent = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
+        // This is a simple way to "refresh" if settings changed. 
+        // For a more robust solution, use a listener or check against a stored value.
     }
 
     private fun checkNotificationListenerPermission() {
@@ -229,24 +223,20 @@ class MainActivity : AppCompatActivity() {
         stateTextView.text = state.name
         castButton.isEnabled = state == CastState.OFF && selectedServer != null || state == CastState.CASTING
         
+        val accentColor = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
+        val colorRes = ContextCompat.getColor(this, accentColor)
+
         if (state == CastState.CASTING) {
             castButton.text = "Stop"
             castButton.setIconResource(android.R.drawable.ic_media_pause)
-            statusCard.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.accent_blue)))
-            statusCard.setCardBackgroundColor(ContextCompat.getColor(this, R.color.blue_200))
-            
-            val platform = audioCastService?.serverPlatform ?: selectedServer?.platform
-            if (platform?.contains("Music", ignoreCase = true) == true) {
-                volumeControlLayout.visibility = View.GONE
-            } else {
-                volumeControlLayout.visibility = View.VISIBLE
-            }
+            statusCard.setStrokeColor(ColorStateList.valueOf(colorRes))
+            // Lighten the background slightly for casting state
+            statusCard.setCardBackgroundColor(ColorStateList.valueOf(colorRes).withAlpha(40))
         } else {
             castButton.text = "Start"
             castButton.setIconResource(android.R.drawable.ic_media_play)
             statusCard.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.light_grey)))
             statusCard.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface))
-            volumeControlLayout.visibility = View.GONE
         }
     }
 }
@@ -267,11 +257,15 @@ class ServerAdapter(private val onServerClick: (Server) -> Unit) : RecyclerView.
         holder.serverHost.text = server.host
         
         val context = holder.itemView.context
+        val sharedPrefs = context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
+        val accentColor = sharedPrefs.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
+        val colorRes = ContextCompat.getColor(context, accentColor)
+
         if (selectedItem == position) {
             holder.cardView.setStrokeWidth(4)
-            holder.cardView.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(context, R.color.accent_blue)))
+            holder.cardView.setStrokeColor(ColorStateList.valueOf(colorRes))
             holder.icon.setImageResource(android.R.drawable.ic_menu_slideshow)
-            holder.icon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.accent_blue))
+            holder.icon.imageTintList = ColorStateList.valueOf(colorRes)
         } else {
             holder.cardView.setStrokeWidth(0)
             holder.icon.setImageResource(android.R.drawable.ic_menu_slideshow)

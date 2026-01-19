@@ -1,7 +1,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Theme.AriaCast" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Primary brand color. -->
+        <!-- Default brand color. -->
         <item name="colorPrimary">@color/accent_blue</item>
         <item name="colorOnPrimary">@color/white</item>
         <item name="colorPrimaryContainer">@color/blue_200</item>
@@ -16,5 +16,21 @@
         <item name="android:windowLightStatusBar">true</item>
         
         <item name="android:windowBackground">@color/background</item>
+    </style>
+
+    <style name="Theme.AriaCast.Purple">
+        <item name="colorPrimary">@color/accent_purple</item>
+    </style>
+
+    <style name="Theme.AriaCast.Green">
+        <item name="colorPrimary">@color/accent_green</item>
+    </style>
+
+    <style name="Theme.AriaCast.Orange">
+        <item name="colorPrimary">@color/accent_orange</item>
+    </style>
+
+    <style name="Theme.AriaCast.Pink">
+        <item name="colorPrimary">@color/accent_pink</item>
     </style>
 </resources>
