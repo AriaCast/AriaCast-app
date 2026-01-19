@@ -25,11 +25,12 @@ class CastTileService : TileService() {
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
             val binder = service as AudioCastService.AudioCastBinder
-            audioCastService = binder.getService()
+            val boundService = binder.getService()
+            audioCastService = boundService
             isBound = true
 
             scope.launch {
-                audioCastService?.state?.collectLatest { state ->
+                boundService.state.collectLatest { state ->
                     updateTileState(state)
                 }
             }
@@ -55,12 +56,12 @@ class CastTileService : TileService() {
             unbindService(connection)
             isBound = false
         }
-        job.cancel()
     }
 
     override fun onClick() {
         super.onClick()
-        if (qsTile.state == Tile.STATE_ACTIVE) {
+        val tile = qsTile ?: return
+        if (tile.state == Tile.STATE_ACTIVE) {
             val intent = Intent(this, AudioCastService::class.java).apply {
                 action = AudioCastService.ACTION_STOP
             }
@@ -69,21 +70,32 @@ class CastTileService : TileService() {
             val intent = Intent(this, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            val pendingIntent = PendingIntent.getActivity(
-                this,
-                0,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            startActivityAndCollapse(pendingIntent)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                val pendingIntent = PendingIntent.getActivity(
+                    this,
+                    0,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                startActivityAndCollapse(pendingIntent)
+            } else {
+                @Suppress("DEPRECATION")
+                startActivityAndCollapse(intent)
+            }
         }
     }
 
     private fun updateTileState(state: CastState) {
-        qsTile.state = when (state) {
+        val tile = qsTile ?: return
+        tile.state = when (state) {
             CastState.CASTING, CastState.CONNECTING -> Tile.STATE_ACTIVE
             else -> Tile.STATE_INACTIVE
         }
-        qsTile.updateTile()
+        tile.updateTile()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        job.cancel()
     }
 }

@@ -58,6 +58,9 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".SettingsActivity" android:exported="false" />
+        <activity android:name=".PacketLogActivity" android:exported="false" />
+
     </application>
 
 </manifest>

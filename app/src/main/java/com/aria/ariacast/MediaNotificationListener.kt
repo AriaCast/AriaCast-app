@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -25,20 +26,26 @@ class MediaNotificationListener : NotificationListenerService() {
     private var isBound = false
     private var activeMediaController: MediaController? = null
     private var positionUpdateJob: Job? = null
+    private var commandCollectionJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private lateinit var mediaSessionManager: MediaSessionManager
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
             val binder = service as AudioCastService.AudioCastBinder
-            audioCastService = binder.getService()
+            val boundService = binder.getService()
+            audioCastService = boundService
             isBound = true
             Log.d(TAG, "Bound to AudioCastService")
+            
+            // Start collecting commands once service is bound
+            startCommandCollection(boundService)
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
             audioCastService = null
             isBound = false
+            commandCollectionJob?.cancel()
             Log.d(TAG, "Unbound from AudioCastService")
         }
     }
@@ -49,6 +56,40 @@ class MediaNotificationListener : NotificationListenerService() {
         Intent(this, AudioCastService::class.java).also { intent ->
             bindService(intent, connection, Context.BIND_AUTO_CREATE)
         }
+    }
+
+    private fun startCommandCollection(service: AudioCastService) {
+        commandCollectionJob?.cancel()
+        commandCollectionJob = scope.launch {
+            service.controlCommands.collectLatest { command: MediaCommand ->
+                handleIncomingCommand(command)
+            }
+        }
+    }
+
+    private fun handleIncomingCommand(command: MediaCommand) {
+        val controller = activeMediaController ?: run {
+            Log.w(TAG, "Received command $command but no active media controller found.")
+            return
+        }
+
+        val transportControls = controller.transportControls
+        when (command) {
+            MediaCommand.PLAY -> transportControls.play()
+            MediaCommand.PAUSE -> transportControls.pause()
+            MediaCommand.TOGGLE -> {
+                val state = controller.playbackState?.state
+                if (state == PlaybackState.STATE_PLAYING) {
+                    transportControls.pause()
+                } else {
+                    transportControls.play()
+                }
+            }
+            MediaCommand.NEXT -> transportControls.skipToNext()
+            MediaCommand.PREVIOUS -> transportControls.skipToPrevious()
+            MediaCommand.STOP -> transportControls.stop()
+        }
+        Log.d(TAG, "Executed command: $command on ${controller.packageName}")
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -166,6 +207,7 @@ class MediaNotificationListener : NotificationListenerService() {
         }
         activeMediaController?.unregisterCallback(mediaControllerCallback)
         positionUpdateJob?.cancel()
+        commandCollectionJob?.cancel()
     }
 
     companion object {

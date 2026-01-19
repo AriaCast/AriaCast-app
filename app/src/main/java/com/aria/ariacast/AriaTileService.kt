@@ -9,7 +9,6 @@ import android.os.IBinder
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import androidx.annotation.RequiresApi
-import com.aria.ariacast.AudioCastService.Companion.ACTION_STOP
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,11 +27,12 @@ class AriaTileService : TileService() {
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
             val binder = service as AudioCastService.AudioCastBinder
-            audioCastService = binder.getService()
+            val boundService = binder.getService()
+            audioCastService = boundService
             isBound = true
             // Once bound, start collecting state updates
             scope.launch {
-                audioCastService?.state?.collectLatest { state ->
+                boundService.state.collectLatest { state ->
                     updateTile(state)
                 }
             }
@@ -67,7 +67,8 @@ class AriaTileService : TileService() {
     // Called when the user taps the tile
     override fun onClick() {
         super.onClick()
-        when (qsTile.state) {
+        val tile = qsTile ?: return
+        when (tile.state) {
             // If the tile is inactive, casting is off. Tapping should start it.
             Tile.STATE_INACTIVE -> {
                 // Launching MainActivity is the correct way to request MediaProjection permission.
@@ -80,7 +81,7 @@ class AriaTileService : TileService() {
             // If the tile is active, casting is on. Tapping should stop it.
             Tile.STATE_ACTIVE -> {
                 val serviceIntent = Intent(this, AudioCastService::class.java).apply {
-                    action = ACTION_STOP
+                    action = AudioCastService.ACTION_STOP
                 }
                 startService(serviceIntent)
             }
@@ -91,25 +92,25 @@ class AriaTileService : TileService() {
      * Updates the tile's appearance based on the casting state.
      */
     private fun updateTile(state: CastState) {
-        qsTile.state = when (state) {
+        val tile = qsTile ?: return
+        
+        tile.state = when (state) {
             CastState.CASTING -> Tile.STATE_ACTIVE
             CastState.OFF -> Tile.STATE_INACTIVE
-            // Any other state (CONNECTING, ERROR, etc.) is considered unavailable.
-            // This prevents the user from trying to interact while the service is busy.
             else -> Tile.STATE_UNAVAILABLE
         }
 
         // Update the subtitle for more context
-        qsTile.subtitle = when (state) {
+        tile.subtitle = when (state) {
             CastState.OFF -> "Tap to cast"
             CastState.DISCOVERING -> "Discovering..."
             CastState.CONNECTING -> "Connecting..."
-            CastState.CASTING -> "Casting to device"
+            CastState.CASTING -> "Casting..."
             CastState.ERROR -> "Error occurred"
         }
 
         // Apply the changes to the tile
-        qsTile.updateTile()
+        tile.updateTile()
     }
 
     override fun onDestroy() {

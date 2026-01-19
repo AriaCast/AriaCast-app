@@ -12,6 +12,8 @@ import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
 import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -20,6 +22,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.Toolbar
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -90,6 +93,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        val toolbar = findViewById<Toolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
+
         mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         discoveryManager = DiscoveryManager(this)
         sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
@@ -155,7 +161,6 @@ class MainActivity : AppCompatActivity() {
                     val lastServer = servers.find { it.host == lastHost }
                     if (lastServer != null) {
                         selectedServer = lastServer
-                        // Highlight the last server in the list
                         val index = servers.indexOf(lastServer)
                         serverListAdapter.setSelectedItem(index)
                     }
@@ -173,6 +178,21 @@ class MainActivity : AppCompatActivity() {
         }
         
         checkNotificationListenerPermission()
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_settings -> {
+                startActivity(Intent(this, SettingsActivity::class.java))
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
     }
 
     override fun onStart() {
@@ -215,7 +235,6 @@ class MainActivity : AppCompatActivity() {
             statusCard.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.accent_blue)))
             statusCard.setCardBackgroundColor(ContextCompat.getColor(this, R.color.blue_200))
             
-            // Hide volume controls if the platform contains "Music"
             val platform = audioCastService?.serverPlatform ?: selectedServer?.platform
             if (platform?.contains("Music", ignoreCase = true) == true) {
                 volumeControlLayout.visibility = View.GONE
