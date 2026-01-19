@@ -73,7 +73,7 @@ class PacketLogAdapter(private val logs: MutableList<PacketLog>) : RecyclerView.
 
         val color = when (log.direction) {
             PacketDirection.IN -> ContextCompat.getColor(holder.itemView.context, R.color.accent_blue)
-            PacketDirection.OUT -> ContextCompat.getColor(holder.itemView.context, R.color.green_700)
+            PacketDirection.OUT -> ContextCompat.getColor(holder.itemView.context, R.color.secondaryDarkColor)
         }
         holder.direction.setTextColor(color)
     }
