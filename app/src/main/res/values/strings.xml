@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">AriaCast</string>
     <string name="tile_label">AriaCast</string>
+    <string name="app_version">1.0.6</string>
 </resources>

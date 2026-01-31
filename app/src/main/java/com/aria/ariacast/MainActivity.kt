@@ -1,5 +1,7 @@
 package com.aria.ariacast
 
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
@@ -17,13 +19,13 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -49,6 +51,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var discoveryManager: DiscoveryManager
     private lateinit var serverListAdapter: ServerAdapter
     private lateinit var sharedPreferences: SharedPreferences
+
+    private var currentCardAnimator: ValueAnimator? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
@@ -118,6 +122,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         castButton.setOnClickListener {
+            it.animate().scaleX(0.95f).scaleY(0.95f).setDuration(100).withEndAction {
+                it.animate().scaleX(1.0f).scaleY(1.0f).setDuration(100).start()
+            }.start()
+
             if (audioCastService?.state?.value == CastState.CASTING) {
                 val serviceIntent = Intent(this, AudioCastService::class.java).apply {
                     action = AudioCastService.ACTION_STOP
@@ -134,6 +142,7 @@ class MainActivity : AppCompatActivity() {
 
         discoveryButton.setOnClickListener {
             discoveryManager.startDiscovery()
+            serverRecyclerView.scheduleLayoutAnimation()
         }
         
         permissionButton.setOnClickListener {
@@ -204,11 +213,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         checkNotificationListenerPermission()
-        
-        // Check if theme needs update
-        val currentAccent = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
-        // This is a simple way to "refresh" if settings changed. 
-        // For a more robust solution, use a listener or check against a stored value.
     }
 
     private fun checkNotificationListenerPermission() {
@@ -220,23 +224,47 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUi(state: CastState) {
-        stateTextView.text = state.name
+        val oldStateText = stateTextView.text.toString()
+        if (oldStateText != state.name) {
+            stateTextView.animate().alpha(0f).setDuration(150).withEndAction {
+                stateTextView.text = state.name
+                stateTextView.animate().alpha(1f).setDuration(150).start()
+            }.start()
+        }
+        
         castButton.isEnabled = state == CastState.OFF && selectedServer != null || state == CastState.CASTING
         
         val accentColor = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
-        val colorRes = ContextCompat.getColor(this, accentColor)
+        val activeColor = ContextCompat.getColor(this, accentColor)
+        val idleColor = ContextCompat.getColor(this, R.color.light_grey)
+        val surfaceColor = ContextCompat.getColor(this, R.color.surface)
 
         if (state == CastState.CASTING) {
             castButton.text = "Stop"
             castButton.setIconResource(android.R.drawable.ic_media_pause)
-            statusCard.setStrokeColor(ColorStateList.valueOf(colorRes))
-            // Lighten the background slightly for casting state
-            statusCard.setCardBackgroundColor(ColorStateList.valueOf(colorRes).withAlpha(40))
+            animateCardColors(idleColor, activeColor, surfaceColor, ColorUtils.setAlphaComponent(activeColor, 40))
         } else {
             castButton.text = "Start"
             castButton.setIconResource(android.R.drawable.ic_media_play)
-            statusCard.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.light_grey)))
-            statusCard.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface))
+            animateCardColors(activeColor, idleColor, ColorUtils.setAlphaComponent(activeColor, 40), surfaceColor)
+        }
+    }
+
+    private fun animateCardColors(fromStroke: Int, toStroke: Int, fromBg: Int, toBg: Int) {
+        currentCardAnimator?.cancel()
+        
+        currentCardAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 400
+            val argbEvaluator = ArgbEvaluator()
+            addUpdateListener { animator ->
+                val fraction = animator.animatedValue as Float
+                val strokeColor = argbEvaluator.evaluate(fraction, fromStroke, toStroke) as Int
+                val bgColor = argbEvaluator.evaluate(fraction, fromBg, toBg) as Int
+                
+                statusCard.setStrokeColor(ColorStateList.valueOf(strokeColor))
+                statusCard.setCardBackgroundColor(ColorStateList.valueOf(bgColor))
+            }
+            start()
         }
     }
 }
@@ -264,12 +292,12 @@ class ServerAdapter(private val onServerClick: (Server) -> Unit) : RecyclerView.
         if (selectedItem == position) {
             holder.cardView.setStrokeWidth(4)
             holder.cardView.setStrokeColor(ColorStateList.valueOf(colorRes))
-            holder.icon.setImageResource(android.R.drawable.ic_menu_slideshow)
             holder.icon.imageTintList = ColorStateList.valueOf(colorRes)
+            holder.cardView.animate().scaleX(1.02f).scaleY(1.02f).setDuration(200).start()
         } else {
             holder.cardView.setStrokeWidth(0)
-            holder.icon.setImageResource(android.R.drawable.ic_menu_slideshow)
             holder.icon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.light_grey))
+            holder.cardView.animate().scaleX(1.0f).scaleY(1.0f).setDuration(200).start()
         }
 
         holder.itemView.setOnClickListener { 

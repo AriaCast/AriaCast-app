@@ -33,6 +33,7 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,6 +103,8 @@ class AudioCastService : Service() {
     private val _controlCommands = MutableSharedFlow<MediaCommand>(extraBufferCapacity = 10)
     val controlCommands: SharedFlow<MediaCommand> = _controlCommands.asSharedFlow()
 
+    private val metadataChannel = Channel<TrackMetadata>(Channel.CONFLATED)
+
     private val binder = AudioCastBinder()
 
     inner class AudioCastBinder : Binder() {
@@ -115,6 +118,16 @@ class AudioCastService : Service() {
         mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        
+        startMetadataWorker()
+    }
+
+    private fun startMetadataWorker() {
+        scope.launch {
+            for (metadata in metadataChannel) {
+                performMetadataUpdate(metadata)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -331,41 +344,43 @@ class AudioCastService : Service() {
     }
 
     fun sendMetadata(metadata: TrackMetadata) {
-        scope.launch {
-            val host = serverHost
-            val port = serverPort
-            
-            if (host == null) {
-                Log.e(TAG, "Cannot send metadata, server details not found. Title: ${metadata.title}")
-                return@launch
+        metadataChannel.trySend(metadata)
+    }
+
+    private suspend fun performMetadataUpdate(metadata: TrackMetadata) {
+        val host = serverHost
+        val port = serverPort
+        
+        if (host == null) {
+            Log.e(TAG, "Cannot send metadata, server details not found. Title: ${metadata.title}")
+            return
+        }
+        
+        try {
+            Log.d(TAG, "Attempting to send metadata to http://$host:$port/metadata")
+            val response = client.post {
+                url {
+                    protocol = URLProtocol.HTTP
+                    this.host = host
+                    this.port = port
+                    path("metadata")
+                }
+                contentType(ContentType.Application.Json)
+                setBody(mapOf("data" to metadata))
             }
             
-            try {
-                Log.d(TAG, "Attempting to send metadata to http://$host:$port/metadata")
-                val response = client.post {
-                    url {
-                        protocol = URLProtocol.HTTP
-                        this.host = host
-                        this.port = port
-                        path("metadata")
-                    }
-                    contentType(ContentType.Application.Json)
-                    setBody(mapOf("data" to metadata))
-                }
-                
-                if (response.status.isSuccess()) {
-                    _metadata.value = metadata
-                    PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Sent: ${metadata.title}")
-                    Log.d(TAG, "Successfully sent metadata update: ${metadata.title}")
-                } else {
-                    Log.e(TAG, "Server rejected metadata update. Status: ${response.status}")
-                    PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Failed: ${response.status}")
-                }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                Log.e(TAG, "HTTP Exception sending metadata update: ${e.localizedMessage}")
-                PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Error: ${e.localizedMessage}")
+            if (response.status.isSuccess()) {
+                _metadata.value = metadata
+                PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Sent: ${metadata.title}")
+                Log.d(TAG, "Successfully sent metadata update: ${metadata.title}")
+            } else {
+                Log.e(TAG, "Server rejected metadata update. Status: ${response.status}")
+                PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Failed: ${response.status}")
             }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.e(TAG, "HTTP Exception sending metadata update: ${e.localizedMessage}")
+            PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Error: ${e.localizedMessage}")
         }
     }
 
@@ -511,6 +526,7 @@ class AudioCastService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        job.cancel()
     }
 
     companion object {

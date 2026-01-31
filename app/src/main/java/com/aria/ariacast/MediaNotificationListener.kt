@@ -9,6 +9,7 @@ import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.IBinder
+import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -39,13 +40,8 @@ class MediaNotificationListener : NotificationListenerService() {
             isBound = true
             Log.d(TAG, "Bound to AudioCastService")
             
-            // Sync current state immediately upon binding
             handleMediaSessionsChanged()
-            
-            // Start collecting commands once service is bound
             startCommandCollection(boundService)
-            
-            // Observe service state to push metadata as soon as connection is ready
             startStateObservation(boundService)
         }
 
@@ -70,12 +66,9 @@ class MediaNotificationListener : NotificationListenerService() {
         stateObservationJob?.cancel()
         stateObservationJob = scope.launch {
             service.state.collectLatest { state ->
-                if (state == CastState.CASTING || state == CastState.CONNECTING) {
-                    Log.d(TAG, "Service state changed to $state, forcing metadata push.")
-                    activeMediaController?.let {
-                        mediaControllerCallback.onMetadataChanged(it.metadata)
-                        mediaControllerCallback.onPlaybackStateChanged(it.playbackState)
-                    }
+                if (state == CastState.CASTING) {
+                    Log.d(TAG, "Service state is CASTING, forcing metadata sync.")
+                    syncMetadata()
                 }
             }
         }
@@ -117,30 +110,42 @@ class MediaNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
-        if (sbn?.notification?.category != "transport") return
-        handleMediaSessionsChanged()
+        if (sbn?.notification?.category == "transport") {
+            handleMediaSessionsChanged()
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         super.onNotificationRemoved(sbn)
-        if (sbn?.notification?.category != "transport") return
-        handleMediaSessionsChanged()
+        if (sbn?.notification?.category == "transport") {
+            handleMediaSessionsChanged()
+        }
     }
 
     private fun handleMediaSessionsChanged() {
         val mediaControllers = getActiveMediaControllers()
-        val newMediaController = mediaControllers.firstOrNull()
+        // Prioritize the one that is currently playing
+        val newMediaController = mediaControllers.find { it.playbackState?.state == PlaybackState.STATE_PLAYING }
+            ?: mediaControllers.firstOrNull()
 
         if (newMediaController?.packageName != activeMediaController?.packageName) {
             activeMediaController?.unregisterCallback(mediaControllerCallback)
             activeMediaController = newMediaController
             activeMediaController?.registerCallback(mediaControllerCallback)
+            Log.d(TAG, "Switched media controller to: ${newMediaController?.packageName}")
+            syncMetadata()
             
-            // Immediately push the current metadata of the new controller
-            newMediaController?.let {
-                mediaControllerCallback.onMetadataChanged(it.metadata)
-                mediaControllerCallback.onPlaybackStateChanged(it.playbackState)
+            if (activeMediaController?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                startPositionUpdates()
+            } else {
+                positionUpdateJob?.cancel()
             }
+        } else if (newMediaController == null && activeMediaController != null) {
+            activeMediaController?.unregisterCallback(mediaControllerCallback)
+            activeMediaController = null
+            Log.d(TAG, "Cleared media controller")
+            syncMetadata()
+            positionUpdateJob?.cancel()
         }
     }
 
@@ -156,81 +161,65 @@ class MediaNotificationListener : NotificationListenerService() {
 
     private val mediaControllerCallback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) {
-            if (metadata == null) {
-                val clearTrack = TrackMetadata(
-                    title = null, artist = null, album = null, artworkUrl = null,
-                    durationMs = null, positionMs = null, isPlaying = false
-                )
-                audioCastService?.sendMetadata(clearTrack)
-                Log.d(TAG, "Sent clear metadata command on metadata change.")
-                return
-            }
-            val track = TrackMetadata(
-                title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE),
-                artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST),
-                album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM),
-                artworkUrl = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
-                durationMs = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION).takeIf { metadata.containsKey(MediaMetadata.METADATA_KEY_DURATION) },
-                positionMs = activeMediaController?.playbackState?.position,
-                isPlaying = activeMediaController?.playbackState?.state == PlaybackState.STATE_PLAYING
-            )
-            audioCastService?.sendMetadata(track)
-            Log.d(TAG, "Sent metadata on change: ${track.title}")
+            Log.d(TAG, "onMetadataChanged: ${metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)}")
+            syncMetadata()
         }
 
         override fun onPlaybackStateChanged(state: PlaybackState?) {
-            if (state == null) {
-                val clearTrack = TrackMetadata(
-                    title = null, artist = null, album = null, artworkUrl = null,
-                    durationMs = null, positionMs = null, isPlaying = false
-                )
-                audioCastService?.sendMetadata(clearTrack)
-                positionUpdateJob?.cancel()
-                Log.d(TAG, "Sent clear metadata command on playback state change.")
-                return
-            }
-            val isPlaying = state.state == PlaybackState.STATE_PLAYING
-
-            if (isPlaying) {
-                startPositionUpdates(state)
+            Log.d(TAG, "onPlaybackStateChanged: ${state?.state}")
+            syncMetadata()
+            if (state?.state == PlaybackState.STATE_PLAYING) {
+                startPositionUpdates()
             } else {
                 positionUpdateJob?.cancel()
             }
-
-            val currentMetadata = audioCastService?.metadata?.value
-            val track = if (currentMetadata != null) {
-                currentMetadata.copy(isPlaying = isPlaying, positionMs = state.position)
-            } else {
-                 TrackMetadata(
-                    title = activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE),
-                    artist = activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST),
-                    album = activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM),
-                    artworkUrl = activeMediaController?.metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
-                    durationMs = activeMediaController?.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION),
-                    positionMs = state.position,
-                    isPlaying = isPlaying
-                )
-            }
-            audioCastService?.sendMetadata(track)
-            Log.d(TAG, "Sent playback state change: isPlaying=$isPlaying")
         }
     }
 
-    private fun startPositionUpdates(initialPlaybackState: PlaybackState) {
+    private fun syncMetadata() {
+        val controller = activeMediaController
+        val service = audioCastService ?: return
+
+        if (controller == null) {
+            service.sendMetadata(TrackMetadata(null, null, null, null, null, null, false))
+            return
+        }
+
+        val metadata = controller.metadata
+        val playbackState = controller.playbackState
+
+        val isPlaying = playbackState?.state == PlaybackState.STATE_PLAYING
+        val position = if (isPlaying && playbackState != null) {
+            val timeDiff = SystemClock.elapsedRealtime() - playbackState.lastPositionUpdateTime
+            playbackState.position + (timeDiff * playbackState.playbackSpeed).toLong()
+        } else {
+            playbackState?.position
+        }
+
+        val track = TrackMetadata(
+            title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE),
+            artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST),
+            album = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM),
+            artworkUrl = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
+            durationMs = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.takeIf { it > 0 },
+            positionMs = position,
+            isPlaying = isPlaying
+        )
+        
+        Log.d(TAG, "Syncing metadata: ${track.title} - isPlaying=$isPlaying @ $position")
+        service.sendMetadata(track)
+    }
+
+    private fun startPositionUpdates() {
         positionUpdateJob?.cancel()
         positionUpdateJob = scope.launch {
-            var lastPosition = initialPlaybackState.position
             while (isActive) {
-                val currentTrack = audioCastService?.metadata?.value
-                if (currentTrack != null && currentTrack.isPlaying) {
-                    val newPosition = lastPosition + (initialPlaybackState.playbackSpeed * 1000).toLong()
-                    if (newPosition != currentTrack.positionMs) {
-                        val updatedTrack = currentTrack.copy(positionMs = newPosition)
-                        audioCastService?.sendMetadata(updatedTrack)
-                    }
-                    lastPosition = newPosition
-                }
                 delay(1000)
+                if (activeMediaController?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                    syncMetadata()
+                } else {
+                    break
+                }
             }
         }
     }
