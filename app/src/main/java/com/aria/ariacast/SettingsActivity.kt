@@ -83,15 +83,11 @@ class SettingsActivity : AppCompatActivity() {
         videoCastSwitch.isChecked = sharedPreferences.getBoolean(KEY_VIDEO_ENABLED, false)
         videoCastSwitch.setOnCheckedChangeListener { _, isChecked ->
             sharedPreferences.edit().putBoolean(KEY_VIDEO_ENABLED, isChecked).apply()
-            val status = if (isChecked) "Video enabled" else "Video disabled"
-            Toast.makeText(this, status, Toast.LENGTH_SHORT).show()
         }
 
         updateThemeStatusText()
         updateAccentStatus()
-        
-        val version = getString(R.string.app_version)
-        updateStatusText.text = "AriaCast v$version"
+        updateStatusText.text = "AriaCast v$APP_VERSION"
     }
 
     private fun openGitHub() {
@@ -100,10 +96,9 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun checkForUpdates(manual: Boolean) {
-        val version = getString(R.string.app_version)
         val latestVersion = "1.0.5"
         
-        if (latestVersion > version) {
+        if (latestVersion > APP_VERSION) {
             showUpdateDialog(latestVersion)
             showUpdateNotification(latestVersion)
         } else if (manual) {
@@ -271,6 +266,7 @@ class SettingsActivity : AppCompatActivity() {
         const val KEY_THEME = "prefs_theme"
         const val KEY_ACCENT_COLOR = "prefs_accent_color"
         const val KEY_VIDEO_ENABLED = "prefs_video_enabled"
+        const val APP_VERSION = "1.0.5"
         const val GITHUB_URL = "https://github.com/AirPlr/AriaCast-app"
         const val UPDATE_NOTIFICATION_ID = 1001
     }

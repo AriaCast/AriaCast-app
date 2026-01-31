@@ -1,5 +1,6 @@
 package com.aria.ariacast
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ForegroundServiceStartNotAllowedException
 import android.app.NotificationChannel
@@ -32,6 +33,7 @@ import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
+import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.client.plugins.websocket.*
@@ -50,13 +52,18 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
+import java.net.InetAddress
+import java.net.NetworkInterface
+import java.net.ServerSocket
 import java.nio.ByteBuffer
+import java.util.concurrent.TimeUnit
 import kotlin.math.pow
 
 class AudioCastService : Service() {
 
     private val job = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + job)
+    private var sessionJob: Job? = null
 
     private lateinit var mediaProjectionManager: MediaProjectionManager
     private var mediaProjection: MediaProjection? = null
@@ -79,14 +86,32 @@ class AudioCastService : Service() {
     var serverPlatform: String? = null
         private set
 
+    // Artwork hosting state
+    private var currentArtworkBytes: ByteArray? = null
+
     private val client by lazy {
         HttpClient(OkHttp) {
+            engine {
+                config {
+                    connectTimeout(10, TimeUnit.SECONDS)
+                    readTimeout(10, TimeUnit.SECONDS)
+                    writeTimeout(10, TimeUnit.SECONDS)
+                    val dispatcher = okhttp3.Dispatcher()
+                    dispatcher.maxRequests = 64
+                    dispatcher.maxRequestsPerHost = 16
+                    dispatcher(dispatcher)
+                }
+            }
             install(WebSockets) {
                 pingInterval = 5000
                 maxFrameSize = Long.MAX_VALUE
             }
+            install(HttpTimeout) {
+                requestTimeoutMillis = 5000
+                connectTimeoutMillis = 5000
+            }
             install(Logging) {
-                logger = object : io.ktor.client.plugins.logging.Logger {
+                logger = object : Logger {
                     override fun log(message: String) {
                         Log.i(TAG, "Ktor: $message")
                     }
@@ -102,7 +127,7 @@ class AudioCastService : Service() {
         }
     }
 
-    private val _state = MutableStateFlow<CastState>(CastState.OFF)
+    private val _state = MutableStateFlow(CastState.OFF)
     val state: StateFlow<CastState> = _state.asStateFlow()
 
     private val _stats = MutableStateFlow(CastingStats())
@@ -127,16 +152,69 @@ class AudioCastService : Service() {
     override fun onCreate() {
         super.onCreate()
         mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        sharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         
         startMetadataWorker()
+        startArtworkServer()
     }
 
     private fun startMetadataWorker() {
         scope.launch {
             for (metadata in metadataChannel) {
+                _metadata.value = metadata
                 performMetadataUpdate(metadata)
+            }
+        }
+    }
+
+    private fun CoroutineScope.startMetadataRefreshLoop() {
+        launch {
+            while (isActive) {
+                delay(10000)
+                _metadata.value?.let { currentMetadata ->
+                    Log.d(TAG, "Periodic metadata refresh: ${currentMetadata.title}")
+                    performMetadataUpdate(currentMetadata)
+                }
+            }
+        }
+    }
+
+    /**
+     * Starts a tiny HTTP server to host artwork for the Go server to download.
+     */
+    private fun startArtworkServer() {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val serverSocket = ServerSocket(ARTWORK_PORT)
+                Log.i(TAG, "Artwork server started on port $ARTWORK_PORT")
+                while (isActive) {
+                    val client = serverSocket.accept()
+                    launch {
+                        try {
+                            client.getInputStream().bufferedReader().readLine()
+                            val output = client.getOutputStream()
+                            val bytes = currentArtworkBytes
+                            if (bytes != null) {
+                                output.write("HTTP/1.1 200 OK\r\n".toByteArray())
+                                output.write("Content-Type: image/jpeg\r\n".toByteArray())
+                                output.write("Content-Length: ${bytes.size}\r\n".toByteArray())
+                                output.write("Connection: close\r\n\r\n".toByteArray())
+                                output.write(bytes)
+                            } else {
+                                output.write("HTTP/1.1 404 Not Found\r\n".toByteArray())
+                                output.write("Connection: close\r\n\r\n".toByteArray())
+                            }
+                            output.flush()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Artwork server error: ${e.message}")
+                        } finally {
+                            client.close()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Could not start artwork server: ${e.message}")
             }
         }
     }
@@ -171,8 +249,13 @@ class AudioCastService : Service() {
         return START_NOT_STICKY
     }
 
+    @SuppressLint("MissingPermission")
     private fun startCasting(mediaProjectionToken: Intent, serverHost: String, serverPort: Int) {
+        sessionJob?.cancel()
+        
         _state.value = CastState.CONNECTING
+        sessionJob = SupervisorJob()
+        val sessionScope = CoroutineScope(Dispatchers.IO + sessionJob!!)
 
         originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
@@ -236,18 +319,22 @@ class AudioCastService : Service() {
 
         val videoEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_VIDEO_ENABLED, false)
 
-        scope.launch {
+        sessionScope.launch {
             launch { startControlSession(serverHost, serverPort) }
             if (videoEnabled) {
                 launch { startVideoSession(serverHost, serverPort) }
             }
             startAudioSession(serverHost, serverPort)
         }
+        
+        sessionScope.startMetadataRefreshLoop()
+        
+        _metadata.value?.let { sendMetadata(it) }
     }
 
     private suspend fun startAudioSession(serverHost: String, serverPort: Int) {
         val audioBuffer = ByteBuffer.allocate(FRAME_SIZE)
-        var droppedFrames = 0
+        var droppedFramesCount = 0
         var reconnectAttempts = 0
 
         while (currentCoroutineContext().isActive) {
@@ -296,7 +383,7 @@ class AudioCastService : Service() {
                     audioRecord?.startRecording()
                     PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "Started Recording & Streaming")
                     
-                    val statsJob = launch { startStatsSession(serverHost, serverPort, droppedFrames) }
+                    val statsJob = launch { startStatsSession(serverHost, serverPort, droppedFramesCount) }
 
                     while (isActive) {
                         val readResult = audioRecord?.read(audioBuffer.array(), 0, FRAME_SIZE) ?: 0
@@ -305,7 +392,7 @@ class AudioCastService : Service() {
                                 val sent = outgoing.trySendBlocking(Frame.Binary(true, audioBuffer.array().copyOf()))
                                 if (!sent.isSuccess) {
                                     Log.w(TAG, "Backpressure: Dropping frame to maintain low latency")
-                                    droppedFrames++
+                                    droppedFramesCount++
                                     _stats.value = _stats.value.copy(droppedFrames = _stats.value.droppedFrames + 1)
                                     PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "Dropped Frame (Backpressure)")
                                 }
@@ -378,11 +465,17 @@ class AudioCastService : Service() {
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun setupVideoCodec() {
         try {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             val metrics = DisplayMetrics()
-            windowManager.defaultDisplay.getRealMetrics(metrics)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val windowMetrics = windowManager.currentWindowMetrics
+                metrics.densityDpi = windowMetrics.bounds.width()
+            } else {
+                windowManager.defaultDisplay.getRealMetrics(metrics)
+            }
             
             val width = VIDEO_WIDTH
             val height = VIDEO_HEIGHT
@@ -426,7 +519,6 @@ class AudioCastService : Service() {
     fun sendVolumeCommand(direction: String) {
         scope.launch {
             val host = serverHost
-            val port = serverPort
             if (controlSocketSession == null || host == null) {
                 Log.e(TAG, "Cannot send volume command, no active control session.")
                 return@launch
@@ -450,6 +542,10 @@ class AudioCastService : Service() {
         }
     }
 
+    fun setArtwork(bytes: ByteArray?) {
+        currentArtworkBytes = bytes
+    }
+
     fun sendMetadata(metadata: TrackMetadata) {
         metadataChannel.trySend(metadata)
     }
@@ -459,8 +555,17 @@ class AudioCastService : Service() {
         val port = serverPort
         
         if (host == null) {
-            Log.e(TAG, "Cannot send metadata, server details not found. Title: ${metadata.title}")
+            Log.w(TAG, "Metadata update deferred: serverHost is null for track: ${metadata.title}")
             return
+        }
+
+        // If metadata has a URL but it's not from us, we replace it with our local host URL if we have bytes
+        var finalMetadata = metadata
+        if (currentArtworkBytes != null) {
+            val myIp = getLocalIpAddress()
+            if (myIp != null) {
+                finalMetadata = metadata.copy(artworkUrl = "http://$myIp:$ARTWORK_PORT/artwork.jpg")
+            }
         }
         
         try {
@@ -473,13 +578,15 @@ class AudioCastService : Service() {
                     path("metadata")
                 }
                 contentType(ContentType.Application.Json)
-                setBody(mapOf("data" to metadata))
+                setBody(mapOf("data" to finalMetadata))
+                timeout {
+                    requestTimeoutMillis = 5000
+                }
             }
             
             if (response.status.isSuccess()) {
-                _metadata.value = metadata
-                PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Sent: ${metadata.title}")
-                Log.d(TAG, "Successfully sent metadata update: ${metadata.title}")
+                PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Sent: ${finalMetadata.title}")
+                Log.d(TAG, "Successfully sent metadata update: ${finalMetadata.title}")
             } else {
                 Log.e(TAG, "Server rejected metadata update. Status: ${response.status}")
                 PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Failed: ${response.status}")
@@ -489,6 +596,25 @@ class AudioCastService : Service() {
             Log.e(TAG, "HTTP Exception sending metadata update: ${e.localizedMessage}")
             PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Error: ${e.localizedMessage}")
         }
+    }
+
+    private fun getLocalIpAddress(): String? {
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val networkInterface = interfaces.nextElement()
+                val addresses = networkInterface.inetAddresses
+                while (addresses.hasMoreElements()) {
+                    val address = addresses.nextElement()
+                    if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
+                        return address.hostAddress
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting local IP: ${e.message}")
+        }
+        return null
     }
 
     private suspend fun startControlSession(serverHost: String, serverPort: Int) {
@@ -506,7 +632,7 @@ class AudioCastService : Service() {
                             try {
                                 val json = JSONObject(text)
                                 val action = json.getString("action")
-                                val command = MediaCommand.entries.find { it.name.lowercase() == action.lowercase() }
+                                val command = MediaCommand.entries.find { it.name.equals(action, ignoreCase = true) }
                                 if (command != null) {
                                     _controlCommands.emit(command)
                                     Log.d(TAG, "Received control command: $command")
@@ -528,7 +654,6 @@ class AudioCastService : Service() {
     }
 
     private suspend fun startStatsSession(serverHost: String, serverPort: Int, initialDroppedFrames: Int) {
-        var droppedFrames = initialDroppedFrames
         while (currentCoroutineContext().isActive) {
             try {
                 client.webSocket(host = serverHost, port = serverPort, path = "/stats") statsSocket@{
@@ -540,10 +665,9 @@ class AudioCastService : Service() {
                                 val json = JSONObject(text)
                                 _stats.value = CastingStats(
                                     bufferedFrames = json.optInt("bufferedFrames"),
-                                    droppedFrames = json.optInt("droppedFrames") + droppedFrames,
+                                    droppedFrames = json.optInt("droppedFrames") + initialDroppedFrames,
                                     receivedFrames = json.optInt("receivedFrames")
                                 )
-                                // Don't log every stat to avoid cluttering, maybe log once in a while or on significant changes
                                 updateNotification()
                             }
                         } ?: run {
@@ -592,11 +716,13 @@ class AudioCastService : Service() {
         serverName = null
         serverPlatform = null
 
-        job.cancelChildren()
+        sessionJob?.cancel()
+        sessionJob = null
+
         _state.value = CastState.OFF
         _stats.value = CastingStats()
-        _metadata.value = null
 
+        @Suppress("DEPRECATION")
         stopForeground(true)
         stopSelf()
     }
@@ -669,6 +795,8 @@ class AudioCastService : Service() {
 
         private const val RECONNECT_INITIAL_BACKOFF = 1000L
         private const val STATS_TIMEOUT = 10000L // 10 seconds
+        
+        private const val ARTWORK_PORT = 8090
     }
 }
 
