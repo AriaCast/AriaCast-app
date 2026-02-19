@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -30,6 +31,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var accentStatusText: TextView
     private lateinit var accentColorPreview: ImageView
     private lateinit var updateStatusText: TextView
+    private lateinit var videoCastSwitch: MaterialSwitch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
@@ -47,6 +49,7 @@ class SettingsActivity : AppCompatActivity() {
         accentStatusText = findViewById(R.id.accentStatusText)
         accentColorPreview = findViewById(R.id.accentColorPreview)
         updateStatusText = findViewById(R.id.updateStatusText)
+        videoCastSwitch = findViewById(R.id.videoCastSwitch)
 
         findViewById<MaterialCardView>(R.id.themeCard).setOnClickListener {
             showThemeSelectionDialog()
@@ -77,9 +80,18 @@ class SettingsActivity : AppCompatActivity() {
             checkForUpdates(manual = true)
         }
 
+        videoCastSwitch.isChecked = sharedPreferences.getBoolean(KEY_VIDEO_ENABLED, false)
+        videoCastSwitch.setOnCheckedChangeListener { _, isChecked ->
+            sharedPreferences.edit().putBoolean(KEY_VIDEO_ENABLED, isChecked).apply()
+            val status = if (isChecked) "Video enabled" else "Video disabled"
+            Toast.makeText(this, status, Toast.LENGTH_SHORT).show()
+        }
+
         updateThemeStatusText()
         updateAccentStatus()
-        updateStatusText.text = "AriaCast v$APP_VERSION"
+        
+        val version = getString(R.string.app_version)
+        updateStatusText.text = "AriaCast v$version"
     }
 
     private fun openGitHub() {
@@ -88,9 +100,10 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun checkForUpdates(manual: Boolean) {
+        val version = getString(R.string.app_version)
         val latestVersion = "1.0.5"
         
-        if (latestVersion > APP_VERSION) {
+        if (latestVersion > version) {
             showUpdateDialog(latestVersion)
             showUpdateNotification(latestVersion)
         } else if (manual) {
@@ -257,28 +270,8 @@ class SettingsActivity : AppCompatActivity() {
     companion object {
         const val KEY_THEME = "prefs_theme"
         const val KEY_ACCENT_COLOR = "prefs_accent_color"
-        const val APP_VERSION = "1.0.5"
+        const val KEY_VIDEO_ENABLED = "prefs_video_enabled"
         const val GITHUB_URL = "https://github.com/AirPlr/AriaCast-app"
         const val UPDATE_NOTIFICATION_ID = 1001
-    }
-}
-
-object ThemeUtils {
-    const val MODE_NIGHT_NO = AppCompatDelegate.MODE_NIGHT_NO
-    const val MODE_NIGHT_YES = AppCompatDelegate.MODE_NIGHT_YES
-    const val MODE_NIGHT_FOLLOW_SYSTEM = AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-
-    fun applyTheme(themeMode: Int) {
-        AppCompatDelegate.setDefaultNightMode(themeMode)
-    }
-
-    fun getThemeForAccent(accentColorResId: Int): Int {
-        return when (accentColorResId) {
-            R.color.accent_purple -> R.style.Theme_AriaCast_Purple
-            R.color.accent_green -> R.style.Theme_AriaCast_Green
-            R.color.accent_orange -> R.style.Theme_AriaCast_Orange
-            R.color.accent_pink -> R.style.Theme_AriaCast_Pink
-            else -> R.style.Theme_AriaCast
-        }
     }
 }

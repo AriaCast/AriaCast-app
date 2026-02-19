@@ -15,6 +15,16 @@
             app:navigationIcon="@android:drawable/ic_menu_revert"
             app:title="Packet Exchange" />
 
+        <androidx.appcompat.widget.SearchView
+            android:id="@+id/searchView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginBottom="8dp"
+            android:background="?attr/colorSurface"
+            app:iconifiedByDefault="false"
+            app:queryHint="Search logs..." />
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.recyclerview.widget.RecyclerView
