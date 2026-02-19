@@ -10,17 +10,24 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.util.DisplayMetrics
 import android.util.Log
+import android.view.WindowManager
 import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import io.ktor.client.*
@@ -54,10 +61,14 @@ class AudioCastService : Service() {
     private lateinit var mediaProjectionManager: MediaProjectionManager
     private var mediaProjection: MediaProjection? = null
     private var audioRecord: AudioRecord? = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var videoCodec: MediaCodec? = null
+    
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var audioManager: AudioManager
     private var originalVolume: Int = 0
     private var webSocketSession: DefaultClientWebSocketSession? = null
+    private var videoWebSocketSession: DefaultClientWebSocketSession? = null
     private var controlSocketSession: DefaultClientWebSocketSession? = null
 
     private var serverName: String? = null
@@ -175,7 +186,10 @@ class AudioCastService : Service() {
 
         try {
             val notification = createNotification()
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            } else 0
+            startForeground(NOTIFICATION_ID, notification, serviceType)
         } catch (e: Exception) {
             if (e is ForegroundServiceStartNotAllowedException) {
                 Log.e(TAG, "Foreground service start not allowed", e)
@@ -220,8 +234,13 @@ class AudioCastService : Service() {
             return
         }
 
+        val videoEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_VIDEO_ENABLED, false)
+
         scope.launch {
             launch { startControlSession(serverHost, serverPort) }
+            if (videoEnabled) {
+                launch { startVideoSession(serverHost, serverPort) }
+            }
             startAudioSession(serverHost, serverPort)
         }
     }
@@ -314,6 +333,94 @@ class AudioCastService : Service() {
                 delay(delayTime)
             }
         }
+    }
+
+    private suspend fun startVideoSession(serverHost: String, serverPort: Int) {
+        var reconnectAttempts = 0
+        while (currentCoroutineContext().isActive) {
+            try {
+                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Connecting to ws://$serverHost:$serverPort/video")
+                client.webSocket(host = serverHost, port = serverPort, path = "/video") videoSocket@{
+                    videoWebSocketSession = this
+                    reconnectAttempts = 0
+                    Log.i(TAG, "Connected to /video.")
+
+                    setupVideoCodec()
+                    
+                    val bufferInfo = MediaCodec.BufferInfo()
+                    while (isActive) {
+                        val outputBufferId = videoCodec?.dequeueOutputBuffer(bufferInfo, 10000L) ?: -1
+                        if (outputBufferId >= 0) {
+                            val outputBuffer = videoCodec?.getOutputBuffer(outputBufferId)
+                            if (outputBuffer != null) {
+                                val outData = ByteArray(bufferInfo.size)
+                                outputBuffer.get(outData)
+                                
+                                val sent = outgoing.trySendBlocking(Frame.Binary(true, outData))
+                                if (!sent.isSuccess) {
+                                    Log.w(TAG, "Video Backpressure: Dropping frame")
+                                }
+                            }
+                            videoCodec?.releaseOutputBuffer(outputBufferId, false)
+                        } else if (outputBufferId == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                            Log.d(TAG, "Video format changed: ${videoCodec?.outputFormat}")
+                        }
+                    }
+                    releaseVideoCodec()
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e(TAG, "Video WebSocket error: ${e.localizedMessage}")
+                releaseVideoCodec()
+                reconnectAttempts++
+                delay((RECONNECT_INITIAL_BACKOFF * 2.0.pow(reconnectAttempts.toDouble().coerceAtMost(5.0))).toLong())
+            }
+        }
+    }
+
+    private fun setupVideoCodec() {
+        try {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val metrics = DisplayMetrics()
+            windowManager.defaultDisplay.getRealMetrics(metrics)
+            
+            val width = VIDEO_WIDTH
+            val height = VIDEO_HEIGHT
+            val dpi = metrics.densityDpi
+
+            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
+            format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+            format.setInteger(MediaFormat.KEY_BIT_RATE, VIDEO_BITRATE)
+            format.setInteger(MediaFormat.KEY_FRAME_RATE, VIDEO_FPS)
+            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, VIDEO_IFRAME_INTERVAL)
+            format.setInteger(MediaFormat.KEY_PRIORITY, 0) // Real-time
+
+            videoCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            videoCodec?.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            val surface = videoCodec?.createInputSurface()
+            videoCodec?.start()
+
+            virtualDisplay = mediaProjection?.createVirtualDisplay(
+                "AriaCastVideo",
+                width, height, dpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                surface, null, null
+            )
+            Log.i(TAG, "Video codec and VirtualDisplay set up.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to setup video codec", e)
+        }
+    }
+
+    private fun releaseVideoCodec() {
+        virtualDisplay?.release()
+        virtualDisplay = null
+        try {
+            videoCodec?.stop()
+            videoCodec?.release()
+        } catch (e: Exception) {}
+        videoCodec = null
+        videoWebSocketSession = null
     }
 
     fun sendVolumeCommand(direction: String) {
@@ -472,6 +579,8 @@ class AudioCastService : Service() {
         audioRecord?.release()
         audioRecord = null
         
+        releaseVideoCodec()
+
         webSocketSession?.cancel()
         webSocketSession = null
 
@@ -505,8 +614,11 @@ class AudioCastService : Service() {
         val remoteViews = RemoteViews(packageName, R.layout.notification_casting)
         remoteViews.setTextViewText(R.id.notification_title, "AriaCast")
 
+        val videoEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_VIDEO_ENABLED, false)
+        val mode = if (videoEnabled) "Audio & Video" else "Audio Only"
+
         val statusText = when(state.value) {
-            CastState.CASTING -> "Casting to ${serverName ?: "Unknown"}"
+            CastState.CASTING -> "Casting to ${serverName ?: "Unknown"} ($mode)"
             CastState.CONNECTING -> "Connecting to ${serverName ?: "Unknown"}"
             else -> "Not Casting"
         }
@@ -548,6 +660,13 @@ class AudioCastService : Service() {
 
         const val SAMPLE_RATE = 48000
         const val FRAME_SIZE = 3840 // 20ms of 16-bit stereo audio
+        
+        const val VIDEO_WIDTH = 1280
+        const val VIDEO_HEIGHT = 720
+        const val VIDEO_BITRATE = 3000000 // 3 Mbps
+        const val VIDEO_FPS = 30
+        const val VIDEO_IFRAME_INTERVAL = 2
+
         private const val RECONNECT_INITIAL_BACKOFF = 1000L
         private const val STATS_TIMEOUT = 10000L // 10 seconds
     }

@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -30,6 +31,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var accentStatusText: TextView
     private lateinit var accentColorPreview: ImageView
     private lateinit var updateStatusText: TextView
+    private lateinit var videoCastSwitch: MaterialSwitch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
@@ -47,6 +49,7 @@ class SettingsActivity : AppCompatActivity() {
         accentStatusText = findViewById(R.id.accentStatusText)
         accentColorPreview = findViewById(R.id.accentColorPreview)
         updateStatusText = findViewById(R.id.updateStatusText)
+        videoCastSwitch = findViewById(R.id.videoCastSwitch)
 
         findViewById<MaterialCardView>(R.id.themeCard).setOnClickListener {
             showThemeSelectionDialog()
@@ -75,6 +78,13 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<MaterialCardView>(R.id.updateCard).setOnClickListener {
             checkForUpdates(manual = true)
+        }
+
+        videoCastSwitch.isChecked = sharedPreferences.getBoolean(KEY_VIDEO_ENABLED, false)
+        videoCastSwitch.setOnCheckedChangeListener { _, isChecked ->
+            sharedPreferences.edit().putBoolean(KEY_VIDEO_ENABLED, isChecked).apply()
+            val status = if (isChecked) "Video enabled" else "Video disabled"
+            Toast.makeText(this, status, Toast.LENGTH_SHORT).show()
         }
 
         updateThemeStatusText()
@@ -260,6 +270,7 @@ class SettingsActivity : AppCompatActivity() {
     companion object {
         const val KEY_THEME = "prefs_theme"
         const val KEY_ACCENT_COLOR = "prefs_accent_color"
+        const val KEY_VIDEO_ENABLED = "prefs_video_enabled"
         const val GITHUB_URL = "https://github.com/AirPlr/AriaCast-app"
         const val UPDATE_NOTIFICATION_ID = 1001
     }
