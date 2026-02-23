@@ -4,10 +4,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.IBinder
 import android.os.SystemClock
 import android.service.notification.NotificationListenerService
@@ -20,6 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 
 class MediaNotificationListener : NotificationListenerService() {
 
@@ -181,6 +184,7 @@ class MediaNotificationListener : NotificationListenerService() {
         val service = audioCastService ?: return
 
         if (controller == null) {
+            service.setArtwork(null)
             service.sendMetadata(TrackMetadata(null, null, null, null, null, null, false))
             return
         }
@@ -196,11 +200,42 @@ class MediaNotificationListener : NotificationListenerService() {
             playbackState?.position
         }
 
+        // Handle Artwork: Try to get Bitmap first, then URI
+        var artworkBytes: ByteArray? = null
+        val bitmap = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+            ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        
+        if (bitmap != null) {
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+            artworkBytes = stream.toByteArray()
+        } else {
+            val uriStr = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+                ?: metadata?.getString(MediaMetadata.METADATA_KEY_ART_URI)
+            if (uriStr != null) {
+                try {
+                    val uri = Uri.parse(uriStr)
+                    if (uri.scheme == "http" || uri.scheme == "https") {
+                        // For web URLs, we just pass them through as is
+                    } else {
+                        // For local URIs (content://), we read them into bytes
+                        contentResolver.openInputStream(uri)?.use { 
+                            artworkBytes = it.readBytes()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to read artwork URI: $uriStr")
+                }
+            }
+        }
+
+        service.setArtwork(artworkBytes)
+
         val track = TrackMetadata(
             title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE),
             artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST),
             album = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM),
-            artworkUrl = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
+            artworkUrl = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI) ?: metadata?.getString(MediaMetadata.METADATA_KEY_ART_URI),
             durationMs = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.takeIf { it > 0 },
             positionMs = position,
             isPlaying = isPlaying
