@@ -47,54 +47,67 @@ class PluginManager(private val context: Context) {
               "id": "music_assistant",
               "name": "MusicAssistant Control",
               "description": "Native controls and output selection for MusicAssistant servers.",
-              "version": "1.9.0",
+              "version": "1.9.2",
               "author": "AriaCast Team",
               "scriptPath": "music_assistant.js"
             }
         """.trimIndent()
 
         val maScript = """
-            console.info("MA Plugin 1.9.0 Loaded");
+            console.info("MA Plugin 1.9.2 Loaded");
 
             var currentHost = null;
             var isPolling = false;
 
-            events.onServiceConnected(function(s) {
-                var host = String(s.serverHost || "");
-                if (host === currentHost) return;
-                
-                currentHost = host;
-                console.info("MA: Service connected -> " + s.serverName + " (" + host + ")");
-                
-                if (host && !isPolling) {
-                    isPolling = true;
-                    bg.run(function() {
-                        while(currentHost === host) {
-                            try {
-                                renderMAUI(host);
-                            } catch(e) {
-                                console.error("MA: Refresh loop error: " + e);
-                            }
-                            java.lang.Thread.sleep(10000); 
+            function startPolling(host) {
+                if (isPolling) return;
+                isPolling = true;
+                bg.run(function() {
+                    console.info("MA: Starting polling for " + host);
+                    while(currentHost === host) {
+                        try {
+                            renderMAUI(host);
+                        } catch(e) {
+                            console.error("MA: Refresh loop error: " + e);
                         }
-                        isPolling = false;
-                    });
+                        java.lang.Thread.sleep(10000); 
+                    }
+                    isPolling = false;
+                    console.info("MA: Polling stopped for " + host);
+                });
+            }
+
+            events.onServiceConnected(function(s) {
+                // Just update service reference, UI handled by onStateChanged
+                console.info("MA: Service connected");
+                if (s) {
+                    storage.set("last_host", s.serverHost || "");
+                }
+            });
+
+            events.onStateChanged(function(state) {
+                if (!service) {
+                    ui.clear();
+                    currentHost = null;
+                    return;
                 }
 
-                events.onStateChanged(function(state) {
-                    if (state === "CONNECTING" || state === "CASTING") {
-                        var isMA = (s.serverPlatform || "").toLowerCase().indexOf("music") !== -1 || 
-                                   (s.serverName || "").toLowerCase().indexOf("musicassistant") !== -1;
-                        
-                        if (isMA && host) {
-                            renderMAUI(host);
-                        } else {
-                            ui.clear();
-                        }
-                    } else {
-                        ui.clear();
+                var name = String(service.serverName || "");
+                var host = String(service.serverHost || "");
+                var isMA = name.toLowerCase().indexOf("musicassistant") !== -1;
+
+                console.info("MA: State changed to " + state + " for " + name);
+
+                if (isMA && (state === "CONNECTING" || state === "CASTING")) {
+                    if (host !== currentHost) {
+                        currentHost = host;
+                        startPolling(host);
                     }
-                });
+                    renderMAUI(host);
+                } else {
+                    ui.clear();
+                    currentHost = null;
+                }
             });
 
             function getAuthHeaders() {
@@ -107,6 +120,8 @@ class PluginManager(private val context: Context) {
             }
 
             function renderMAUI(host) {
+                if (host !== currentHost) return; // Prevent rendering if host changed
+                
                 var token = storage.get("auth_token");
                 var baseUrl = "http://" + host + ":8095";
                 var wsUrl = "ws://" + host + ":8095/ws";
@@ -125,6 +140,9 @@ class PluginManager(private val context: Context) {
                 }
 
                 ui.run(function() {
+                    // Check again inside UI thread
+                    if (host !== currentHost) return;
+
                     ui.clear();
                     
                     var title = new android.widget.TextView(activity);
@@ -459,7 +477,6 @@ class PluginManager(private val context: Context) {
                                     try {
                                         cx.optimizationLevel = -1
                                         ScriptableObject.putProperty(scope, "service", RhinoContext.javaToJS(s, scope))
-                                        storageHelper.set("last_host", s.serverHost ?: "")
                                         callback.call(cx, scope, scope, arrayOf(RhinoContext.javaToJS(s, scope)))
                                     } finally {
                                         RhinoContext.exit()

@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private var audioCastService: AudioCastService? = null
     private var isBound = false
     private var selectedServer: Server? = null
+    private var isUserSelecting = false
 
     private lateinit var stateTextView: TextView
     private lateinit var castButton: MaterialButton
@@ -128,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         pluginContainer = findViewById(R.id.pluginContainer)
 
         serverListAdapter = ServerAdapter { server ->
+            isUserSelecting = true
             selectedServer = server
             if (server.name.contains("MusicAssistant", ignoreCase = true)) {
                 discoveryManager.startDiscovery()
@@ -160,6 +162,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         discoveryButton.setOnClickListener {
+            isUserSelecting = false
             discoveryManager.startDiscovery()
             serverRecyclerView.scheduleLayoutAnimation()
         }
@@ -174,7 +177,15 @@ class MainActivity : AppCompatActivity() {
                 serverListAdapter.submitList(servers)
 
                 val lastHost = sharedPreferences.getString(AudioCastService.KEY_LAST_SERVER_HOST, null)
-                if (lastHost != null) {
+                
+                if (isUserSelecting && selectedServer != null) {
+                    val currentHost = selectedServer?.host
+                    val found = servers.find { it.host == currentHost }
+                    if (found != null) {
+                        selectedServer = found
+                        serverListAdapter.setSelectedItem(servers.indexOf(found))
+                    }
+                } else if (lastHost != null) {
                     val lastServer = servers.find { it.host == lastHost }
                     if (lastServer != null) {
                         selectedServer = lastServer
