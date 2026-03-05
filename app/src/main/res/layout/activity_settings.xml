@@ -516,7 +516,7 @@
                             android:id="@+id/updateStatusText"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Ariacast 1.0.5"
+                            android:text="@string/ver"
                             android:textAppearance="?attr/textAppearanceBodySmall"
                             android:textColor="?android:attr/textColorSecondary" />
                     </LinearLayout>
