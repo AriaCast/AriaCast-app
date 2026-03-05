@@ -78,7 +78,8 @@ class AudioCastService : Service() {
     private var videoWebSocketSession: DefaultClientWebSocketSession? = null
     private var controlSocketSession: DefaultClientWebSocketSession? = null
 
-    private var serverName: String? = null
+    var serverName: String? = null
+        private set
     var serverHost: String? = null
         private set
     var serverPort: Int = 0

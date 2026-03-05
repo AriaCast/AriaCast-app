@@ -19,6 +19,7 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,6 +32,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -47,27 +50,38 @@ class MainActivity : AppCompatActivity() {
     private lateinit var serverRecyclerView: RecyclerView
     private lateinit var permissionButton: MaterialButton
     private lateinit var statusCard: MaterialCardView
+    lateinit var pluginContainer: LinearLayout
 
     private lateinit var discoveryManager: DiscoveryManager
     private lateinit var serverListAdapter: ServerAdapter
     private lateinit var sharedPreferences: SharedPreferences
+    private lateinit var pluginManager: PluginManager
+
+    private val _audioCastServiceFlow = MutableStateFlow<AudioCastService?>(null)
+    val audioCastServiceFlow = _audioCastServiceFlow.asStateFlow()
 
     private var currentCardAnimator: ValueAnimator? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
             val binder = service as AudioCastService.AudioCastBinder
-            audioCastService = binder.getService()
+            val s = binder.getService()
+            audioCastService = s
+            _audioCastServiceFlow.value = s
             isBound = true
             lifecycleScope.launch {
-                audioCastService?.state?.collectLatest { state ->
+                s.state.collectLatest { state ->
                     updateUi(state)
                 }
             }
+            
+            // Re-run plugins when service connects to ensure they pick up the active server immediately
+            pluginManager.runEnabledPlugins(this@MainActivity, s)
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
             audioCastService = null
+            _audioCastServiceFlow.value = null
             isBound = false
         }
     }
@@ -103,6 +117,7 @@ class MainActivity : AppCompatActivity() {
 
         mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         discoveryManager = DiscoveryManager(this)
+        pluginManager = PluginManager(this)
 
         stateTextView = findViewById(R.id.stateTextView)
         castButton = findViewById(R.id.castButton)
@@ -110,9 +125,13 @@ class MainActivity : AppCompatActivity() {
         serverRecyclerView = findViewById(R.id.serverRecyclerView)
         permissionButton = findViewById(R.id.permissionButton)
         statusCard = findViewById(R.id.statusCard)
+        pluginContainer = findViewById(R.id.pluginContainer)
 
         serverListAdapter = ServerAdapter { server ->
             selectedServer = server
+            if (server.name.contains("MusicAssistant", ignoreCase = true)) {
+                discoveryManager.startDiscovery()
+            }
             startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
         }
 
@@ -176,6 +195,9 @@ class MainActivity : AppCompatActivity() {
         }
         
         checkNotificationListenerPermission()
+
+        // Run enabled plugins
+        pluginManager.runEnabledPlugins(this, audioCastService)
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -293,11 +315,13 @@ class ServerAdapter(private val onServerClick: (Server) -> Unit) : RecyclerView.
             holder.cardView.setStrokeWidth(4)
             holder.cardView.setStrokeColor(ColorStateList.valueOf(colorRes))
             holder.icon.imageTintList = ColorStateList.valueOf(colorRes)
-            holder.cardView.animate().scaleX(1.02f).scaleY(1.02f).setDuration(200).start()
+            holder.cardView.scaleX = 1.02f
+            holder.cardView.scaleY = 1.02f
         } else {
             holder.cardView.setStrokeWidth(0)
             holder.icon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.light_grey))
-            holder.cardView.animate().scaleX(1.0f).scaleY(1.0f).setDuration(200).start()
+            holder.cardView.scaleX = 1.0f
+            holder.cardView.scaleY = 1.0f
         }
 
         holder.itemView.setOnClickListener { 

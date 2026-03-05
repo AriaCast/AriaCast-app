@@ -59,6 +59,10 @@ class SettingsActivity : AppCompatActivity() {
             showAccentSelectionDialog()
         }
 
+        findViewById<MaterialCardView>(R.id.pluginsCard).setOnClickListener {
+            startActivity(Intent(this, PluginsActivity::class.java))
+        }
+
         findViewById<MaterialCardView>(R.id.packetLogCard).setOnClickListener {
             handlePacketLogClick()
         }

@@ -36,7 +36,6 @@ class DiscoveryManager(private val context: Context) {
 
     private val nsdListener = object : NsdManager.DiscoveryListener {
         override fun onDiscoveryStarted(serviceType: String) {
-            // Keep scanning state if not already found something
             if (_state.value != DiscoveryState.FOUND) {
                 _state.value = DiscoveryState.SCANNING
             }
@@ -79,12 +78,19 @@ class DiscoveryManager(private val context: Context) {
 
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                 val name = serviceInfo.serviceName ?: return
-                val host = serviceInfo.host?.hostAddress ?: return
+                val hostAddress = serviceInfo.host?.hostAddress ?: return
+                
+                // Fix for 127.0.0.1 / localhost issues in some NSD implementations
+                if (hostAddress == "127.0.0.1" || hostAddress == "::1" || hostAddress.contains("localhost")) {
+                    Log.w(TAG, "NSD resolved to loopback address ($hostAddress) for $name, ignoring.")
+                    return
+                }
+
                 val port = serviceInfo.port
 
                 val server = Server(
                     name = name,
-                    host = host,
+                    host = hostAddress,
                     port = port,
                     version = serviceInfo.attributes["version"]?.toString(Charsets.UTF_8) ?: "",
                     codecs = serviceInfo.attributes["codecs"]?.toString(Charsets.UTF_8)?.split(",") ?: emptyList(),
@@ -111,14 +117,12 @@ class DiscoveryManager(private val context: Context) {
         }
         _state.value = DiscoveryState.SCANNING
         
-        // Start mDNS (NSD) discovery
         try {
             nsdManager.discoverServices("_audiocast._tcp", NsdManager.PROTOCOL_DNS_SD, nsdListener)
         } catch (e: Exception) {
             Log.e(TAG, "NSD discovery could not be started", e)
         }
         
-        // Start UDP broadcast discovery in parallel
         startUdpDiscoveryWithRetries()
     }
 
@@ -126,7 +130,6 @@ class DiscoveryManager(private val context: Context) {
         try {
             nsdManager.stopServiceDiscovery(nsdListener)
         } catch (e: Exception) {
-            // Ignore if not currently discovering
         }
     }
 
@@ -160,10 +163,15 @@ class DiscoveryManager(private val context: Context) {
                         socket.receive(responsePacket)
                         val jsonResponse = String(responsePacket.data, 0, responsePacket.length)
                         val json = JSONObject(jsonResponse)
+                        
+                        val responseIp = responsePacket.address.hostAddress ?: "127.0.0.1"
+                        
+                        // If the server reports 127.0.0.1 inside JSON or we receive from loopback, skip
+                        if (responseIp == "127.0.0.1" || responseIp == "::1") return@withContext
 
                         val server = Server(
                             name = json.optString("server_name", "Unknown AriaCast"),
-                            host = json.optString("ip", responsePacket.address.hostAddress),
+                            host = responseIp, // Always prefer the actual packet source IP
                             port = json.optInt("port", 12889),
                             version = json.optString("version", "1.0"),
                             codecs = listOf("pcm"),
@@ -179,7 +187,6 @@ class DiscoveryManager(private val context: Context) {
                             }
                         }
                     } catch (e: Exception) {
-                        // Timeout reached, exit receiving loop
                         break
                     }
                 }
@@ -202,6 +209,5 @@ enum class DiscoveryState {
     IDLE,
     SCANNING,
     FOUND,
-    NONE,
-    ERROR
+    NONE
 }

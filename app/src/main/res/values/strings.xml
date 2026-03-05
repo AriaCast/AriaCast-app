@@ -2,4 +2,6 @@
     <string name="app_name">AriaCast</string>
     <string name="app_version">1.0.7</string>
     <string name="tile_label">AriaCast</string>
+    <string name="ver">AriaCast 1.0.5</string>
+
 </resources>
