@@ -5,7 +5,7 @@
 
 # ANNOUNCEMENT: Seeking a Discord Moderator. Add me as a friend at @airplr
 
-# ![Discord Sercer](https://discord.gg/JpAkwGTG)
+# [Discord Server](https://discord.gg/JpAkwGTG)
 
 
 **Capture and stream your Android device's internal audio to any receiver on your local network.**
