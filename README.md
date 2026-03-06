@@ -1,6 +1,6 @@
 # AriaCast (Android Application)
 
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/AirPlr/AriaCast-app/total?style=for-the-badge)
+![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/AirPlr/AriaCast-app/latest/total?style=for-the-badge)
 
 
 **Capture and stream your Android device's internal audio to any receiver on your local network.**
