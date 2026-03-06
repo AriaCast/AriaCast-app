@@ -3,8 +3,6 @@
 ![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/AirPlr/AriaCast-app/latest/total?style=for-the-badge)
 
 
-# ANNOUNCEMENT: Seeking a Discord Moderator. Add me as a friend at @airplr
-
 # [Discord Server](https://discord.gg/JpAkwGTG)
 
 
