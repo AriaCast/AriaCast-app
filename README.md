@@ -51,9 +51,7 @@ AriaCast uses a robust foreground service to manage the capture and streaming li
 
 ### Start Casting
 
-You can start streaming in two ways:
-1.  **App Interface**: Open AriaCast, wait for it to discover servers, select your target, and tap **"Start Casting"**.
-2.  **Quick Settings**: Add the **AriaCast** tile to your Quick Settings panel for one-tap access to start/stop streaming.
+ Open AriaCast, wait for it to discover servers, select your target, and tap to Start Casting.
 
 ## Plugin System
 
