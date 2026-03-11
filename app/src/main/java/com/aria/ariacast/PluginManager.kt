@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import android.view.View
+import android.widget.LinearLayout
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,7 @@ class PluginManager(private val context: Context) {
 
     private val sharedPreferences = context.getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
     private var activeService: AudioCastService? = null
+    private val runningPluginIds = mutableSetOf<String>()
     
     private val internalPluginsDir: File
         get() = File(context.filesDir, "plugins")
@@ -36,19 +38,20 @@ class PluginManager(private val context: Context) {
     }
 
     private fun installBuiltInPluginsInternal() {
+        // MusicAssistant Plugin - Updated to v1.9.7 with stylized components
         val maJson = """
             {
               "id": "music_assistant",
               "name": "MusicAssistant Control",
               "description": "Native controls and output selection for MusicAssistant servers.",
-              "version": "1.9.2",
+              "version": "1.9.7",
               "author": "AriaCast Team",
               "scriptPath": "music_assistant.js"
             }
         """.trimIndent()
 
         val maScript = """
-            console.info("MA Plugin 1.9.2 Loaded");
+            console.info("MA Plugin 1.9.7 Loaded");
 
             var currentHost = null;
             var isPolling = false;
@@ -72,7 +75,6 @@ class PluginManager(private val context: Context) {
             }
 
             events.onServiceConnected(function(s) {
-                console.info("MA: Service connected");
                 if (s) {
                     storage.set("last_host", s.serverHost || "");
                 }
@@ -89,8 +91,6 @@ class PluginManager(private val context: Context) {
                 var host = String(service.serverHost || "");
                 var isMA = name.toLowerCase().indexOf("musicassistant") !== -1;
 
-                console.info("MA: State changed to " + state + " for " + name);
-
                 if (isMA && (state === "CONNECTING" || state === "CASTING")) {
                     if (host !== currentHost) {
                         currentHost = host;
@@ -103,15 +103,6 @@ class PluginManager(private val context: Context) {
                 }
             });
 
-            function getAuthHeaders() {
-                var token = storage.get("auth_token");
-                if (token) {
-                    var t = String(token).replace("Bearer ", "").replace(/"/g, "").trim();
-                    return JSON.stringify({ "Authorization": "Bearer " + t });
-                }
-                return null;
-            }
-
             function renderMAUI(host) {
                 if (host !== currentHost) return; 
                 
@@ -120,7 +111,6 @@ class PluginManager(private val context: Context) {
                 var wsUrl = "ws://" + host + ":8095/ws";
                 
                 var playersJson = null;
-
                 if (token) {
                     playersJson = ws.request(wsUrl, "players/all", null, token);
                 }
@@ -134,43 +124,30 @@ class PluginManager(private val context: Context) {
 
                 ui.run(function() {
                     if (host !== currentHost) return;
-
                     ui.clear();
                     
-                    var title = new android.widget.TextView(activity);
-                    title.setText("Music Assistant Players");
-                    title.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge);
-                    title.setPadding(40, 30, 0, 10);
-                    ui.add(title);
+                    var header = ui.inflate("item_plugin_header");
+                    var ht = ui.findView(header, "headerText");
+                    if (ht) ht.setText("Music Assistant Players");
+                    ui.add(header);
 
                     var isAuthenticated = playersJson && String(playersJson).indexOf("Error") !== 0;
 
                     if (!isAuthenticated) {
-                        var btnLayout = new android.widget.LinearLayout(activity);
-                        btnLayout.setOrientation(0);
-                        btnLayout.setPadding(40, 0, 40, 0);
-                        var lp = new android.widget.LinearLayout.LayoutParams(0, -2, 1);
-                        
-                        var loginBtn = new android.widget.Button(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
-                        loginBtn.setText("Login");
+                        var loginBtn = ui.inflate("item_plugin_button");
+                        var bt = ui.findView(loginBtn, "buttonText");
+                        if (bt) bt.setText("Login to " + host);
+                        var icon = ui.findView(loginBtn, "icon");
+                        if (icon) icon.setImageResource(android.R.drawable.ic_lock_lock);
                         loginBtn.setOnClickListener(function() { showLoginDialog(host); });
-                        loginBtn.setLayoutParams(lp);
-                        btnLayout.addView(loginBtn);
-
-                        var tokenBtn = new android.widget.Button(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle);
-                        tokenBtn.setText("Token");
-                        tokenBtn.setOnClickListener(function() { showTokenDialog(host); });
-                        tokenBtn.setLayoutParams(lp);
-                        btnLayout.addView(tokenBtn);
-
-                        ui.add(btnLayout);
+                        ui.add(loginBtn);
                     } else {
-                        var statusTxt = new android.widget.TextView(activity);
-                        statusTxt.setText("Authenticated • " + host);
-                        statusTxt.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall);
-                        statusTxt.setPadding(40, 0, 0, 20);
-                        statusTxt.setAlpha(0.6);
-                        ui.add(statusTxt);
+                        var status = ui.inflate("item_plugin_stat");
+                        var sl = ui.findView(status, "label");
+                        if (sl) sl.setText("Server Connection");
+                        var sv = ui.findView(status, "value");
+                        if (sv) sv.setText("Authenticated • " + host);
+                        ui.add(status);
                     }
 
                     if (playersJson && String(playersJson).length > 0 && String(playersJson).indexOf("Error") !== 0) {
@@ -179,16 +156,12 @@ class PluginManager(private val context: Context) {
                             var list = Array.isArray(players) ? players : (players.results || []);
                             
                             if (list.length === 0) {
-                                var emptyTxt = new android.widget.TextView(activity);
-                                emptyTxt.setText("No players found on server.");
-                                emptyTxt.setPadding(40, 10, 0, 10);
-                                ui.add(emptyTxt);
+                                var empty = ui.inflate("item_plugin_text");
+                                var et = ui.findView(empty, "text");
+                                if (et) et.setText("No players found on server.");
+                                ui.add(empty);
                                 return;
                             }
-
-                            var typedValue = new android.util.TypedValue();
-                            activity.getTheme().resolveAttribute(com.google.android.material.R.attr.colorPrimary, typedValue, true);
-                            var accentColor = typedValue.data;
 
                             list.forEach(function(p) {
                                 var itemView = ui.inflate("item_server");
@@ -203,75 +176,27 @@ class PluginManager(private val context: Context) {
                                 if (hostTxt) hostTxt.setText("MA Player • " + state);
 
                                 var isPlaying = String(state).toLowerCase() === "playing";
-                                if (isPlaying) {
+                                if (isPlaying && itemView.setStrokeWidth) {
+                                    var typedValue = new android.util.TypedValue();
+                                    activity.getTheme().resolveAttribute(com.google.android.material.R.attr.colorPrimary, typedValue, true);
                                     itemView.setStrokeWidth(6);
-                                    itemView.setStrokeColor(android.content.res.ColorStateList.valueOf(accentColor));
-                                } else {
-                                    itemView.setStrokeWidth(0);
-                                }
-
-                                var isActive = p.active && (p.active_source && p.active_source.indexOf("ariacast") !== -1);
-                                if (isActive) {
-                                    itemView.scaleX = 1.02;
-                                    itemView.scaleY = 1.02;
+                                    itemView.setStrokeColor(android.content.res.ColorStateList.valueOf(typedValue.data));
                                 }
 
                                 itemView.setOnClickListener(function(v) {
                                     bg.run(function() {
                                         var t = String(storage.get("auth_token") || "").replace("Bearer ", "").replace(/"/g, "").trim();
-                                        var rpcUrl = baseUrl + "/api";
-                                        var h = t ? JSON.stringify({ "Authorization": "Bearer " + t }) : null;
-                                        
-                                        var providersRes = ws.request(wsUrl, "providers", null, t);
-                                        if (!providersRes || String(providersRes).indexOf("Error") === 0) {
-                                            providersRes = http.post(rpcUrl, JSON.stringify({ command: "providers" }), h);
-                                        }
-                                        
-                                        var sourceId = null;
-                                        if (providersRes && String(providersRes).indexOf("Error") !== 0) {
-                                            try {
-                                                var providers = JSON.parse(providersRes);
-                                                for (var i = 0; i < providers.length; i++) {
-                                                    var prov = providers[i];
-                                                    if (prov.domain === "ariacast" || (prov.name && prov.name.indexOf("AriaCast") !== -1)) {
-                                                        sourceId = prov.instance_id || prov.domain;
-                                                        break;
-                                                    }
-                                                }
-                                            } catch(e) {}
-                                        }
-                                        
-                                        if (sourceId) {
-                                            var selectBody = JSON.stringify({ 
-                                                command: "players/cmd/select_source", 
-                                                args: { player_id: id, source: sourceId } 
-                                            });
-                                            http.post(rpcUrl, selectBody, h);
-                                        } else {
-                                            var fallbackBody = JSON.stringify({ command: "players/cmd/select", args: { player_id: id } });
-                                            http.post(rpcUrl, fallbackBody, h);
-                                        }
-                                        
+                                        http.post(baseUrl + "/api", JSON.stringify({ command: "players/cmd/select", args: { player_id: id } }), t ? JSON.stringify({ "Authorization": "Bearer " + t }) : null);
                                         java.lang.Thread.sleep(1000);
                                         renderMAUI(host);
                                     });
                                     android.widget.Toast.makeText(activity, "Targeting " + name, 0).show();
                                 });
-
                                 ui.add(itemView);
                             });
-                        } catch(e) { 
-                            console.error("MA: Parse error: " + e); 
+                        } catch(e) {
+                            console.error("MA UI Error: " + e);
                         }
-                    } else {
-                        var msg = new android.widget.TextView(activity);
-                        var errMsg = "Check connection and token.";
-                        if (!storage.get("auth_token")) errMsg = "Authentication required.";
-                        else if (String(playersJson).indexOf("Error") === 0) errMsg = playersJson;
-                        
-                        msg.setText(errMsg);
-                        msg.setPadding(40, 10, 0, 10);
-                        ui.add(msg);
                     }
                 });
             }
@@ -290,13 +215,11 @@ class PluginManager(private val context: Context) {
                 passField.setInputType(129);
                 layout.addView(passField);
                 builder.setView(layout);
-                builder.setPositiveButton("Login", function(d, w) {
+                builder.setPositiveButton("Login", function() {
                     var username = userField.getText().toString();
                     var password = passField.getText().toString();
                     bg.run(function() {
-                        var loginBody = JSON.stringify({ "credentials": { "username": username, "password": password } });
-                        var loginUrl = "http://" + host + ":8095/auth/login";
-                        var loginResponse = http.post(loginUrl, loginBody);
+                        var loginResponse = http.post("http://" + host + ":8095/auth/login", JSON.stringify({ "credentials": { "username": username, "password": password } }));
                         if (loginResponse && String(loginResponse).indexOf("token") !== -1) {
                             var data = JSON.parse(loginResponse);
                             if (data.token) {
@@ -306,64 +229,104 @@ class PluginManager(private val context: Context) {
                         }
                     });
                 });
-                builder.setNegativeButton("Cancel", null);
-                builder.show();
-            }
-
-            function showTokenDialog(host) {
-                var builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity);
-                builder.setTitle("Music Assistant Token");
-                var input = new android.widget.EditText(activity);
-                input.setHint("Token");
-                input.setText(storage.get("auth_token") || "");
-                var padding = 60;
-                var container = new android.widget.FrameLayout(activity);
-                container.setPadding(padding, 20, padding, 0);
-                container.addView(input);
-                builder.setView(container);
-                builder.setPositiveButton("Save", function() {
-                    var token = input.getText().toString().trim();
-                    if (token) {
-                        storage.set("auth_token", token);
-                        renderMAUI(host);
-                    }
-                });
-                builder.setNeutralButton("Clear", function() {
-                    storage.set("auth_token", "");
-                    renderMAUI(host);
-                });
                 builder.show();
             }
             
-            // Register external configuration call
             events.onConfigRequested(function() {
-                var host = storage.get("last_host") || "127.0.0.1";
-                var builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity);
-                builder.setTitle("Music Assistant Setup");
-                builder.setMessage("Choose how you want to authenticate with the server.");
-                builder.setPositiveButton("Login", function() { showLoginDialog(host); });
-                builder.setNeutralButton("Token", function() { showTokenDialog(host); });
-                builder.show();
+                showLoginDialog(storage.get("last_host") || "127.0.0.1");
             });
         """.trimIndent()
 
+        // UI Showcase Plugin - New built-in plugin to demonstrate SDK capabilities
+        val showcaseJson = """
+            {
+              "id": "ui_showcase",
+              "name": "Plugin SDK Showcase",
+              "description": "Demonstrates concurrent UI and stylized components for developers.",
+              "version": "1.0.0",
+              "author": "AriaCast Team",
+              "scriptPath": "ui_showcase.js"
+            }
+        """.trimIndent()
+
+        val showcaseScript = """
+            console.info("Showcase Plugin Loaded");
+
+            events.onServiceConnected(function(s) {
+                renderShowcase();
+            });
+
+            function renderShowcase() {
+                ui.run(function() {
+                    ui.clear();
+                    
+                    var header = ui.inflate("item_plugin_header");
+                    var ht = ui.findView(header, "headerText");
+                    if (ht) ht.setText("Plugin SDK Showcase");
+                    ui.add(header);
+
+                    var info = ui.inflate("item_plugin_text");
+                    var it = ui.findView(info, "text");
+                    if (it) it.setText("This UI is running concurrently with other plugins. Each plugin has its own isolated sub-container.");
+                    ui.add(info);
+
+                    var switchItem = ui.inflate("item_plugin_switch");
+                    var st = ui.findView(switchItem, "title");
+                    if (st) st.setText("Isolation Mode");
+                    var sd = ui.findView(switchItem, "description");
+                    if (sd) sd.setText("Ensures plugins don't overwrite each other's views.");
+                    var sw = ui.findView(switchItem, "switchWidget");
+                    if (sw) {
+                        sw.setChecked(true);
+                        sw.setEnabled(false);
+                    }
+                    ui.add(switchItem);
+
+                    var statItem = ui.inflate("item_plugin_stat");
+                    var sl = ui.findView(statItem, "label");
+                    if (sl) sl.setText("SDK Version");
+                    var sv = ui.findView(statItem, "value");
+                    if (sv) sv.setText("2.2.0");
+                    ui.add(statItem);
+
+                    var btn = ui.inflate("item_plugin_button");
+                    var bt = ui.findView(btn, "buttonText");
+                    if (bt) bt.setText("Try Action");
+                    btn.setOnClickListener(function() {
+                        android.widget.Toast.makeText(activity, "Plugin Action Triggered!", 0).show();
+                    });
+                    ui.add(btn);
+
+                    var progress = ui.inflate("item_plugin_progress");
+                    var pl = ui.findView(progress, "label");
+                    if (pl) pl.setText("Concurrent task running...");
+                    ui.add(progress);
+                    
+                    ui.add(ui.inflate("item_plugin_divider"));
+                    
+                    var media = ui.inflate("item_plugin_media");
+                    var mt = ui.findView(media, "title");
+                    if (mt) mt.setText("AriaCast Multi-UI");
+                    var ms = ui.findView(media, "subtitle");
+                    if (ms) ms.setText("Isolated • Native • Stylized");
+                    ui.add(media);
+                });
+            }
+        """.trimIndent()
+
         try {
-            val jsonFile = File(internalPluginsDir, "music_assistant.json")
-            val jsFile = File(internalPluginsDir, "music_assistant.js")
-            if (!jsonFile.exists()) jsonFile.writeText(maJson)
-            if (!jsFile.exists()) jsFile.writeText(maScript)
+            File(internalPluginsDir, "music_assistant.json").writeText(maJson)
+            File(internalPluginsDir, "music_assistant.js").writeText(maScript)
+            File(internalPluginsDir, "ui_showcase.json").writeText(showcaseJson)
+            File(internalPluginsDir, "ui_showcase.js").writeText(showcaseScript)
         } catch (e: Exception) {
-            Log.e("PluginManager", "Failed to install built-in plugins to internal folder", e)
+            Log.e("PluginManager", "Failed to install built-in plugins", e)
         }
     }
 
     fun getPlugins(): List<Plugin> {
         val plugins = mutableListOf<Plugin>()
-        
-        // Scan internal folder
         scanDirForPlugins(internalPluginsDir, plugins)
-        
-        // Scan custom folder if set
         val customPathUri = sharedPreferences.getString("plugin_folder_uri", null)
         if (!customPathUri.isNullOrEmpty()) {
             try {
@@ -376,7 +339,6 @@ class PluginManager(private val context: Context) {
                 Log.e("PluginManager", "Error accessing custom plugin folder URI", e)
             }
         }
-        
         return plugins
     }
 
@@ -420,7 +382,10 @@ class PluginManager(private val context: Context) {
     fun runEnabledPlugins(activity: MainActivity, service: AudioCastService?) {
         activeService = service
         getPlugins().filter { it.isEnabled }.forEach { plugin ->
-            runPlugin(plugin, activity, service)
+            if (!runningPluginIds.contains(plugin.id)) {
+                runningPluginIds.add(plugin.id)
+                runPlugin(plugin, activity, service)
+            }
         }
     }
     
@@ -432,14 +397,8 @@ class PluginManager(private val context: Context) {
     private fun runPlugin(plugin: Plugin, activity: android.app.Activity, initialService: AudioCastService?, isConfigOnly: Boolean = false) {
         var scriptContent: String? = null
         activeService = initialService
-        
-        // Try internal folder first
         val internalScriptFile = File(internalPluginsDir, plugin.scriptPath)
-        if (internalScriptFile.exists()) {
-            scriptContent = internalScriptFile.readText()
-        }
-        
-        // If not found, try custom folder URI
+        if (internalScriptFile.exists()) scriptContent = internalScriptFile.readText()
         if (scriptContent == null) {
             val customPathUri = sharedPreferences.getString("plugin_folder_uri", null)
             if (!customPathUri.isNullOrEmpty()) {
@@ -452,25 +411,22 @@ class PluginManager(private val context: Context) {
                             scriptContent = inputStream.bufferedReader().readText()
                         }
                     }
-                } catch (e: Exception) {
-                    Log.e("PluginManager", "Error reading script from custom folder URI", e)
-                }
+                } catch (e: Exception) {}
             }
         }
 
         if (scriptContent == null) {
-            Log.e("PluginManager", "Script file not found for plugin ${plugin.id}: ${plugin.scriptPath}")
+            Log.e("PluginManager", "Script not found for plugin ${plugin.id}")
+            runningPluginIds.remove(plugin.id)
             return
         }
 
         val finalScriptContent = scriptContent!!
-
         Thread {
             val rhino = RhinoContext.enter()
             rhino.optimizationLevel = -1
             try {
                 val scope = rhino.initStandardObjects()
-                
                 ScriptableObject.putProperty(scope, "activity", RhinoContext.javaToJS(activity, scope))
                 ScriptableObject.putProperty(scope, "context", RhinoContext.javaToJS(context, scope))
                 ScriptableObject.putProperty(scope, "service", RhinoContext.javaToJS(initialService, scope))
@@ -478,24 +434,20 @@ class PluginManager(private val context: Context) {
                 val uiHelper = object {
                     fun run(f: Runnable) = activity.runOnUiThread {
                         val cx = RhinoContext.enter()
-                        try {
-                            cx.optimizationLevel = -1
-                            f.run()
-                        } finally {
-                            RhinoContext.exit()
-                        }
+                        try { cx.optimizationLevel = -1; f.run() } finally { RhinoContext.exit() }
                     }
                     fun clear() = activity.runOnUiThread { 
                         if (activity is MainActivity) {
-                            activity.pluginContainer.removeAllViews() 
-                            activity.pluginContainer.visibility = View.GONE
+                            val container = getPluginSubContainer(activity, plugin.id)
+                            container.removeAllViews()
+                            container.visibility = View.GONE
+                            updateMainPluginContainerVisibility(activity)
                         }
                     }
                     fun inflate(layoutName: String): View? {
                         val id = activity.resources.getIdentifier(layoutName, "layout", activity.packageName)
                         if (id != 0 && activity is MainActivity) {
-                            val view = activity.layoutInflater.inflate(id, activity.pluginContainer, false)
-                            return view
+                            return activity.layoutInflater.inflate(id, activity.pluginContainer, false)
                         }
                         return null
                     }
@@ -503,9 +455,11 @@ class PluginManager(private val context: Context) {
                         val id = activity.resources.getIdentifier(name, "id", activity.packageName)
                         return if (id != 0) parent.findViewById(id) else null
                     }
-                    fun add(view: View) {
+                    fun add(view: View) = activity.runOnUiThread {
                         if (activity is MainActivity) {
-                            activity.pluginContainer.addView(view)
+                            val container = getPluginSubContainer(activity, plugin.id)
+                            container.addView(view)
+                            container.visibility = View.VISIBLE
                             activity.pluginContainer.visibility = View.VISIBLE
                         }
                     }
@@ -516,14 +470,9 @@ class PluginManager(private val context: Context) {
                     fun run(f: Runnable) {
                         Thread {
                             val cx = RhinoContext.enter()
-                            try {
-                                cx.optimizationLevel = -1
-                                f.run()
-                            } catch (e: Exception) {
-                                Log.e("PluginBG", "Error in background task", e)
-                            } finally {
-                                RhinoContext.exit()
-                            }
+                            try { cx.optimizationLevel = -1; f.run() } 
+                            catch (e: Exception) { Log.e("PluginBG", "Error", e) } 
+                            finally { RhinoContext.exit() }
                         }.start()
                     }
                 }
@@ -537,8 +486,7 @@ class PluginManager(private val context: Context) {
 
                 val events = object {
                     fun onServiceConnected(callback: org.mozilla.javascript.Function) {
-                        if (isConfigOnly) return
-                        if (activity !is MainActivity) return
+                        if (isConfigOnly || activity !is MainActivity) return
                         activity.lifecycleScope.launch(Dispatchers.IO) {
                             activity.audioCastServiceFlow.collectLatest { s ->
                                 activeService = s
@@ -548,19 +496,14 @@ class PluginManager(private val context: Context) {
                                         cx.optimizationLevel = -1
                                         ScriptableObject.putProperty(scope, "service", RhinoContext.javaToJS(s, scope))
                                         callback.call(cx, scope, scope, arrayOf(RhinoContext.javaToJS(s, scope)))
-                                    } finally {
-                                        RhinoContext.exit()
-                                    }
-                                } else {
-                                    activity.runOnUiThread { uiHelper.clear() }
-                                }
+                                    } finally { RhinoContext.exit() }
+                                } else { activity.runOnUiThread { uiHelper.clear() } }
                             }
                         }
                     }
 
                     fun onStateChanged(callback: org.mozilla.javascript.Function) {
-                        if (isConfigOnly) return
-                        if (activity !is MainActivity) return
+                        if (isConfigOnly || activity !is MainActivity) return
                         activity.lifecycleScope.launch(Dispatchers.IO) {
                             activity.audioCastServiceFlow.filterNotNull().collectLatest { s ->
                                 s.state.collectLatest { state ->
@@ -568,9 +511,7 @@ class PluginManager(private val context: Context) {
                                     try {
                                         cx.optimizationLevel = -1
                                         callback.call(cx, scope, scope, arrayOf(state.name))
-                                    } finally {
-                                        RhinoContext.exit()
-                                    }
+                                    } finally { RhinoContext.exit() }
                                 }
                             }
                         }
@@ -583,9 +524,7 @@ class PluginManager(private val context: Context) {
                             try {
                                 cx.optimizationLevel = -1
                                 callback.call(cx, scope, scope, arrayOf())
-                            } finally {
-                                RhinoContext.exit()
-                            }
+                            } finally { RhinoContext.exit() }
                         }
                     }
                 }
@@ -594,20 +533,14 @@ class PluginManager(private val context: Context) {
                 val wsHelper = object {
                     fun request(url: Any?, command: Any?, argsJson: Any?, token: Any?): String? {
                         val urlStr = url?.toString() ?: return "Error: Null URL"
-                        
-                        // Compatibility interception for Health Monitor plugin
-                        if (urlStr.contains("localhost:12889")) {
-                            return activeService?.getStatsJson() ?: "Error: Service not running"
-                        }
-
+                        if (urlStr.contains("localhost:12889")) return activeService?.getStatsJson() ?: "Error: Service not running"
                         val cmdStr = command?.toString() ?: return "Error: Null Command"
                         val args = argsJson?.toString()
                         val tokenStr = token?.toString()?.replace("Bearer ", "")?.replace("\"", "")?.trim()
                         val client = OkHttpClient.Builder().connectTimeout(5, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
                         val latch = CountDownLatch(1)
                         var result: String? = null
-                        val request = Request.Builder().url(urlStr).build()
-                        client.newWebSocket(request, object : WebSocketListener() {
+                        client.newWebSocket(Request.Builder().url(urlStr).build(), object : WebSocketListener() {
                             override fun onOpen(webSocket: WebSocket, response: Response) {
                                 if (tokenStr != null && tokenStr != "null" && tokenStr.isNotEmpty()) {
                                     webSocket.send(JSONObject().apply {
@@ -618,11 +551,11 @@ class PluginManager(private val context: Context) {
                                 } else { sendCmd(webSocket) }
                             }
                             private fun sendCmd(webSocket: WebSocket) {
-                                val msg = JSONObject()
-                                msg.put("command", cmdStr)
-                                msg.put("message_id", "plugin_cmd")
-                                msg.put("args", if (args != null && args != "null" && args.isNotEmpty()) JSONObject(args) else JSONObject())
-                                webSocket.send(msg.toString())
+                                webSocket.send(JSONObject().apply {
+                                    put("command", cmdStr)
+                                    put("message_id", "plugin_cmd")
+                                    put("args", if (args != null && args != "null" && args.isNotEmpty()) JSONObject(args) else JSONObject())
+                                }.toString())
                             }
                             override fun onMessage(webSocket: WebSocket, text: String) {
                                 try {
@@ -647,37 +580,27 @@ class PluginManager(private val context: Context) {
                 ScriptableObject.putProperty(scope, "ws", RhinoContext.javaToJS(wsHelper, scope))
 
                 val networkHelper = object {
-                    fun fetch(url: Any?): String? = fetch(url, null)
-                    fun fetch(url: Any?, headersJson: Any?): String? = try { 
-                        val urlStr = url?.toString() ?: return "Error: Null URL"
+                    fun fetch(url: Any?, headersJson: Any? = null): String? = try { 
+                        val urlStr = url?.toString() ?: ""
                         val conn = URL(urlStr).openConnection() as HttpURLConnection
                         conn.requestMethod = "GET"
                         conn.connectTimeout = 5000
                         conn.readTimeout = 5000
                         conn.setRequestProperty("Accept", "application/json")
-                        conn.setRequestProperty("User-Agent", "AriaCast-Plugin/1.0")
-                        conn.setRequestProperty("Host", URL(urlStr).host)
                         headersJson?.toString()?.let { if (it != "null" && it.isNotEmpty()) { val json = JSONObject(it); json.keys().forEach { key -> conn.setRequestProperty(key, json.getString(key)) } } }
                         if (conn.responseCode in 200..299) conn.inputStream.bufferedReader(Charsets.UTF_8).readText() else "Error: " + conn.responseCode
                     } catch (e: Exception) { "Error: " + e.message }
-                    fun post(url: Any?): String? = post(url, null, null)
-                    fun post(url: Any?, body: Any?): String? = post(url, body, null)
-                    fun post(url: Any?, body: Any?, headersJson: Any?): String? = try {
-                        val urlStr = url?.toString() ?: return "Error: Null URL"
+                    fun post(url: Any?, body: Any? = null, headersJson: Any? = null): String? = try {
+                        val urlStr = url?.toString() ?: ""
                         val bodyStr = body?.toString() ?: ""
                         val conn = URL(urlStr).openConnection() as HttpURLConnection
                         conn.requestMethod = "POST"
                         conn.doOutput = true
                         conn.connectTimeout = 5000
                         conn.readTimeout = 5000
-                        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                        conn.setRequestProperty("Accept", "application/json")
-                        conn.setRequestProperty("User-Agent", "AriaCast-Plugin/1.0")
-                        conn.setRequestProperty("Host", URL(urlStr).host)
+                        conn.setRequestProperty("Content-Type", "application/json")
                         headersJson?.toString()?.let { if (it != "null" && it.isNotEmpty()) { val json = JSONObject(it); json.keys().forEach { key -> conn.setRequestProperty(key, json.getString(key)) } } }
-                        val bytes = bodyStr.toByteArray(Charsets.UTF_8)
-                        conn.setFixedLengthStreamingMode(bytes.size)
-                        conn.outputStream.use { it.write(bytes) }
+                        conn.outputStream.use { it.write(bodyStr.toByteArray()) }
                         if (conn.responseCode in 200..299) conn.inputStream.bufferedReader(Charsets.UTF_8).readText() else "Error: " + conn.responseCode
                     } catch (e: Exception) { "Error: " + e.message }
                 }
@@ -697,5 +620,34 @@ class PluginManager(private val context: Context) {
                 RhinoContext.exit()
             }
         }.start()
+    }
+
+    private fun getPluginSubContainer(activity: MainActivity, pluginId: String): LinearLayout {
+        val tag = "plugin_sub_container_$pluginId"
+        var container = activity.pluginContainer.findViewWithTag<LinearLayout>(tag)
+        if (container == null) {
+            container = LinearLayout(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                orientation = LinearLayout.VERTICAL
+                this.tag = tag
+                visibility = View.GONE
+            }
+            activity.pluginContainer.addView(container)
+        }
+        return container
+    }
+
+    private fun updateMainPluginContainerVisibility(activity: MainActivity) {
+        var anyVisible = false
+        for (i in 0 until activity.pluginContainer.childCount) {
+            if (activity.pluginContainer.getChildAt(i).visibility == View.VISIBLE) {
+                anyVisible = true
+                break
+            }
+        }
+        activity.pluginContainer.visibility = if (anyVisible) View.VISIBLE else View.GONE
     }
 }

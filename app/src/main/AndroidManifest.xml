@@ -62,6 +62,7 @@
         <activity android:name=".SettingsActivity" android:exported="false" />
         <activity android:name=".PacketLogActivity" android:exported="false" />
         <activity android:name=".PluginsActivity" android:exported="false" />
+        <activity android:name=".WebViewActivity" android:theme="@style/Theme.AriaCast" android:exported="false" />
 
     </application>
 
