@@ -1,8 +1,10 @@
 package com.aria.ariacast
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import android.view.View
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
@@ -21,27 +23,19 @@ import java.util.concurrent.CountDownLatch
 class PluginManager(private val context: Context) {
 
     private val sharedPreferences = context.getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
+    private var activeService: AudioCastService? = null
     
-    private val pluginsDir: File
-        get() {
-            val customPath = sharedPreferences.getString("plugin_folder", null)
-            return if (!customPath.isNullOrEmpty()) {
-                File(customPath)
-            } else {
-                File(context.filesDir, "plugins")
-            }
-        }
+    private val internalPluginsDir: File
+        get() = File(context.filesDir, "plugins")
 
     init {
-        val dir = pluginsDir
-        if (!dir.exists()) {
-            dir.mkdirs()
+        if (!internalPluginsDir.exists()) {
+            internalPluginsDir.mkdirs()
         }
-        installBuiltInPlugins()
+        installBuiltInPluginsInternal()
     }
 
-    private fun installBuiltInPlugins() {
-        val dir = pluginsDir
+    private fun installBuiltInPluginsInternal() {
         val maJson = """
             {
               "id": "music_assistant",
@@ -78,7 +72,6 @@ class PluginManager(private val context: Context) {
             }
 
             events.onServiceConnected(function(s) {
-                // Just update service reference, UI handled by onStateChanged
                 console.info("MA: Service connected");
                 if (s) {
                     storage.set("last_host", s.serverHost || "");
@@ -120,7 +113,7 @@ class PluginManager(private val context: Context) {
             }
 
             function renderMAUI(host) {
-                if (host !== currentHost) return; // Prevent rendering if host changed
+                if (host !== currentHost) return; 
                 
                 var token = storage.get("auth_token");
                 var baseUrl = "http://" + host + ":8095";
@@ -140,7 +133,6 @@ class PluginManager(private val context: Context) {
                 }
 
                 ui.run(function() {
-                    // Check again inside UI thread
                     if (host !== currentHost) return;
 
                     ui.clear();
@@ -355,24 +347,70 @@ class PluginManager(private val context: Context) {
             });
         """.trimIndent()
 
-        val jsonFile = File(dir, "music_assistant.json")
-        val jsFile = File(dir, "music_assistant.js")
-        jsonFile.writeText(maJson)
-        jsFile.writeText(maScript)
+        try {
+            val jsonFile = File(internalPluginsDir, "music_assistant.json")
+            val jsFile = File(internalPluginsDir, "music_assistant.js")
+            if (!jsonFile.exists()) jsonFile.writeText(maJson)
+            if (!jsFile.exists()) jsFile.writeText(maScript)
+        } catch (e: Exception) {
+            Log.e("PluginManager", "Failed to install built-in plugins to internal folder", e)
+        }
     }
 
     fun getPlugins(): List<Plugin> {
         val plugins = mutableListOf<Plugin>()
-        pluginsDir.listFiles { _, name -> name.endsWith(".json") }?.forEach { file ->
+        
+        // Scan internal folder
+        scanDirForPlugins(internalPluginsDir, plugins)
+        
+        // Scan custom folder if set
+        val customPathUri = sharedPreferences.getString("plugin_folder_uri", null)
+        if (!customPathUri.isNullOrEmpty()) {
+            try {
+                val uri = Uri.parse(customPathUri)
+                val documentDir = DocumentFile.fromTreeUri(context, uri)
+                if (documentDir != null && documentDir.exists()) {
+                    scanDocumentDirForPlugins(documentDir, plugins)
+                }
+            } catch (e: Exception) {
+                Log.e("PluginManager", "Error accessing custom plugin folder URI", e)
+            }
+        }
+        
+        return plugins
+    }
+
+    private fun scanDirForPlugins(dir: File, plugins: MutableList<Plugin>) {
+        val files = dir.listFiles { _, name -> name.endsWith(".json") }
+        files?.forEach { file ->
             try {
                 val plugin = Plugin.fromJson(file.readText())
-                plugin.isEnabled = sharedPreferences.getBoolean(plugin.id, false)
-                plugins.add(plugin)
+                if (plugins.none { it.id == plugin.id }) {
+                    plugin.isEnabled = sharedPreferences.getBoolean(plugin.id, false)
+                    plugins.add(plugin)
+                }
             } catch (e: Exception) {
                 Log.e("PluginManager", "Error loading plugin metadata: ${file.name}", e)
             }
         }
-        return plugins
+    }
+
+    private fun scanDocumentDirForPlugins(dir: DocumentFile, plugins: MutableList<Plugin>) {
+        val files = dir.listFiles()
+        files.filter { it.name?.endsWith(".json") == true }.forEach { file ->
+            try {
+                context.contentResolver.openInputStream(file.uri)?.use { inputStream ->
+                    val json = inputStream.bufferedReader().readText()
+                    val plugin = Plugin.fromJson(json)
+                    if (plugins.none { it.id == plugin.id }) {
+                        plugin.isEnabled = sharedPreferences.getBoolean(plugin.id, false)
+                        plugins.add(plugin)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("PluginManager", "Error loading plugin metadata from DocumentFile: ${file.name}", e)
+            }
+        }
     }
 
     fun setPluginEnabled(pluginId: String, enabled: Boolean) {
@@ -380,6 +418,7 @@ class PluginManager(private val context: Context) {
     }
 
     fun runEnabledPlugins(activity: MainActivity, service: AudioCastService?) {
+        activeService = service
         getPlugins().filter { it.isEnabled }.forEach { plugin ->
             runPlugin(plugin, activity, service)
         }
@@ -391,8 +430,40 @@ class PluginManager(private val context: Context) {
     }
 
     private fun runPlugin(plugin: Plugin, activity: android.app.Activity, initialService: AudioCastService?, isConfigOnly: Boolean = false) {
-        val scriptFile = File(pluginsDir, plugin.scriptPath)
-        if (!scriptFile.exists()) return
+        var scriptContent: String? = null
+        activeService = initialService
+        
+        // Try internal folder first
+        val internalScriptFile = File(internalPluginsDir, plugin.scriptPath)
+        if (internalScriptFile.exists()) {
+            scriptContent = internalScriptFile.readText()
+        }
+        
+        // If not found, try custom folder URI
+        if (scriptContent == null) {
+            val customPathUri = sharedPreferences.getString("plugin_folder_uri", null)
+            if (!customPathUri.isNullOrEmpty()) {
+                try {
+                    val uri = Uri.parse(customPathUri)
+                    val documentDir = DocumentFile.fromTreeUri(context, uri)
+                    val scriptFile = documentDir?.findFile(plugin.scriptPath)
+                    if (scriptFile != null && scriptFile.exists()) {
+                        context.contentResolver.openInputStream(scriptFile.uri)?.use { inputStream ->
+                            scriptContent = inputStream.bufferedReader().readText()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("PluginManager", "Error reading script from custom folder URI", e)
+                }
+            }
+        }
+
+        if (scriptContent == null) {
+            Log.e("PluginManager", "Script file not found for plugin ${plugin.id}: ${plugin.scriptPath}")
+            return
+        }
+
+        val finalScriptContent = scriptContent!!
 
         Thread {
             val rhino = RhinoContext.enter()
@@ -465,13 +536,12 @@ class PluginManager(private val context: Context) {
                 ScriptableObject.putProperty(scope, "storage", RhinoContext.javaToJS(storageHelper, scope))
 
                 val events = object {
-                    private var configCallback: org.mozilla.javascript.Function? = null
-                    
                     fun onServiceConnected(callback: org.mozilla.javascript.Function) {
                         if (isConfigOnly) return
                         if (activity !is MainActivity) return
                         activity.lifecycleScope.launch(Dispatchers.IO) {
                             activity.audioCastServiceFlow.collectLatest { s ->
+                                activeService = s
                                 if (s != null) {
                                     val cx = RhinoContext.enter()
                                     try {
@@ -524,6 +594,12 @@ class PluginManager(private val context: Context) {
                 val wsHelper = object {
                     fun request(url: Any?, command: Any?, argsJson: Any?, token: Any?): String? {
                         val urlStr = url?.toString() ?: return "Error: Null URL"
+                        
+                        // Compatibility interception for Health Monitor plugin
+                        if (urlStr.contains("localhost:12889")) {
+                            return activeService?.getStatsJson() ?: "Error: Service not running"
+                        }
+
                         val cmdStr = command?.toString() ?: return "Error: Null Command"
                         val args = argsJson?.toString()
                         val tokenStr = token?.toString()?.replace("Bearer ", "")?.replace("\"", "")?.trim()
@@ -556,12 +632,12 @@ class PluginManager(private val context: Context) {
                                         if (json.optJSONObject("result")?.optBoolean("authenticated") == true) sendCmd(webSocket)
                                         else { result = "Error: Auth Failed"; webSocket.close(1000, "Auth Failed"); latch.countDown() }
                                     } else if (msgId == "plugin_cmd") {
-                                        result = if (json.has("error_code")) "Error: ${json.optString("details")}" else json.opt("result")?.toString() ?: text
+                                        result = if (json.has("error_code")) "Error: " + json.optString("details") else json.opt("result")?.toString() ?: text
                                         webSocket.close(1000, "Done"); latch.countDown()
                                     }
                                 } catch (e: Exception) {}
                             }
-                            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { result = "Error: ${t.message}"; latch.countDown() }
+                            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { result = "Error: " + t.message; latch.countDown() }
                             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { latch.countDown() }
                         })
                         if (!latch.await(15, TimeUnit.SECONDS)) result = result ?: "Error: Timeout"
@@ -582,8 +658,8 @@ class PluginManager(private val context: Context) {
                         conn.setRequestProperty("User-Agent", "AriaCast-Plugin/1.0")
                         conn.setRequestProperty("Host", URL(urlStr).host)
                         headersJson?.toString()?.let { if (it != "null" && it.isNotEmpty()) { val json = JSONObject(it); json.keys().forEach { key -> conn.setRequestProperty(key, json.getString(key)) } } }
-                        if (conn.responseCode in 200..299) conn.inputStream.bufferedReader(Charsets.UTF_8).readText() else "Error: ${conn.responseCode}"
-                    } catch (e: Exception) { "Error: ${e.message}" }
+                        if (conn.responseCode in 200..299) conn.inputStream.bufferedReader(Charsets.UTF_8).readText() else "Error: " + conn.responseCode
+                    } catch (e: Exception) { "Error: " + e.message }
                     fun post(url: Any?): String? = post(url, null, null)
                     fun post(url: Any?, body: Any?): String? = post(url, body, null)
                     fun post(url: Any?, body: Any?, headersJson: Any?): String? = try {
@@ -602,21 +678,21 @@ class PluginManager(private val context: Context) {
                         val bytes = bodyStr.toByteArray(Charsets.UTF_8)
                         conn.setFixedLengthStreamingMode(bytes.size)
                         conn.outputStream.use { it.write(bytes) }
-                        if (conn.responseCode in 200..299) conn.inputStream.bufferedReader(Charsets.UTF_8).readText() else "Error: ${conn.responseCode}"
-                    } catch (e: Exception) { "Error: ${e.message}" }
+                        if (conn.responseCode in 200..299) conn.inputStream.bufferedReader(Charsets.UTF_8).readText() else "Error: " + conn.responseCode
+                    } catch (e: Exception) { "Error: " + e.message }
                 }
                 ScriptableObject.putProperty(scope, "http", RhinoContext.javaToJS(networkHelper, scope))
 
                 val logger = object {
-                    fun info(msg: String) = Log.i("Plugin:${plugin.name}", msg)
-                    fun error(msg: String) = Log.e("Plugin:${plugin.name}", msg)
-                    fun warn(msg: String) = Log.w("Plugin:${plugin.name}", msg)
+                    fun info(msg: String) = Log.i("Plugin:" + plugin.name, msg)
+                    fun error(msg: String) = Log.e("Plugin:" + plugin.name, msg)
+                    fun warn(msg: String) = Log.w("Plugin:" + plugin.name, msg)
                 }
                 ScriptableObject.putProperty(scope, "console", RhinoContext.javaToJS(logger, scope))
 
-                rhino.evaluateString(scope, scriptFile.readText(), plugin.name, 1, null)
+                rhino.evaluateString(scope, finalScriptContent, plugin.name, 1, null)
             } catch (e: Exception) {
-                Log.e("PluginManager", "Error executing plugin: ${plugin.name}", e)
+                Log.e("PluginManager", "Error executing plugin: " + plugin.name, e)
             } finally {
                 RhinoContext.exit()
             }

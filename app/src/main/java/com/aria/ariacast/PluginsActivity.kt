@@ -33,23 +33,15 @@ class PluginsActivity : AppCompatActivity() {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
             
-            // We need a physical path for the PluginManager which uses java.io.File
-            // On modern Android, getting a File from a Tree Uri is tricky without a helper
-            // For now, we'll try to resolve it or inform the user.
-            // A better way is to modify PluginManager to use DocumentFile, but as a shortcut:
-            val path = FileUtils.getPath(this, it)
-            if (path != null) {
-                getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
-                    .edit()
-                    .putString("plugin_folder", path)
-                    .apply()
-                
-                pluginManager = PluginManager(this) // Re-init
-                refreshPlugins()
-                Toast.makeText(this, "Plugin folder updated", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Could not resolve physical path. Try a different folder.", Toast.LENGTH_LONG).show()
-            }
+            // Store the URI string instead of a physical path to support Scoped Storage
+            getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
+                .edit()
+                .putString("plugin_folder_uri", it.toString())
+                .apply()
+            
+            pluginManager = PluginManager(this) // Re-init
+            refreshPlugins()
+            Toast.makeText(this, "Plugin folder updated", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -82,6 +74,7 @@ class PluginsActivity : AppCompatActivity() {
                 .setNeutralButton("Use Default") { _, _ ->
                     getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
                         .edit()
+                        .remove("plugin_folder_uri")
                         .remove("plugin_folder")
                         .apply()
                     pluginManager = PluginManager(this)

@@ -90,6 +90,11 @@ class AudioCastService : Service() {
     // Artwork hosting state
     private var currentArtworkBytes: ByteArray? = null
 
+    // Bitrate tracking
+    private var lastBitrateTime = 0L
+    private var lastSentFramesForBitrate = 0L
+    private var currentBitrateString = "0 kbps"
+
     private val client by lazy {
         HttpClient(OkHttp) {
             engine {
@@ -181,9 +186,6 @@ class AudioCastService : Service() {
         }
     }
 
-    /**
-     * Starts a tiny HTTP server to host artwork for the Go server to download.
-     */
     private fun startArtworkServer() {
         scope.launch(Dispatchers.IO) {
             try {
@@ -336,6 +338,7 @@ class AudioCastService : Service() {
     private suspend fun startAudioSession(serverHost: String, serverPort: Int) {
         val audioBuffer = ByteBuffer.allocate(FRAME_SIZE)
         var droppedFramesCount = 0
+        var sentFramesCount = 0L
         var reconnectAttempts = 0
 
         while (currentCoroutineContext().isActive) {
@@ -391,7 +394,21 @@ class AudioCastService : Service() {
                         when {
                             readResult == FRAME_SIZE -> {
                                 val sent = outgoing.trySendBlocking(Frame.Binary(true, audioBuffer.array().copyOf()))
-                                if (!sent.isSuccess) {
+                                if (sent.isSuccess) {
+                                    sentFramesCount++
+                                    
+                                    // Update bitrate every second
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastBitrateTime >= 1000) {
+                                        val delta = sentFramesCount - lastSentFramesForBitrate
+                                        val bps = delta * FRAME_SIZE * 8
+                                        currentBitrateString = "${bps / 1000} kbps"
+                                        lastBitrateTime = now
+                                        lastSentFramesForBitrate = sentFramesCount
+                                    }
+
+                                    _stats.value = _stats.value.copy(sentFrames = sentFramesCount)
+                                } else {
                                     Log.w(TAG, "Backpressure: Dropping frame to maintain low latency")
                                     droppedFramesCount++
                                     _stats.value = _stats.value.copy(droppedFrames = _stats.value.droppedFrames + 1)
@@ -664,7 +681,7 @@ class AudioCastService : Service() {
                             if (frame is Frame.Text) {
                                 val text = frame.readText()
                                 val json = JSONObject(text)
-                                _stats.value = CastingStats(
+                                _stats.value = _stats.value.copy(
                                     bufferedFrames = json.optInt("bufferedFrames"),
                                     droppedFrames = json.optInt("droppedFrames") + initialDroppedFrames,
                                     receivedFrames = json.optInt("receivedFrames")
@@ -683,6 +700,18 @@ class AudioCastService : Service() {
                 delay(RECONNECT_INITIAL_BACKOFF)
             }
         }
+    }
+
+    fun getStatsJson(): String {
+        val s = _stats.value
+        return JSONObject().apply {
+            put("buffered_level", s.bufferedFrames)
+            put("dropped_frames", s.droppedFrames)
+            put("received_frames", s.receivedFrames)
+            put("sent_frames", s.sentFrames)
+            put("bitrate", currentBitrateString)
+            put("state", _state.value.name)
+        }.toString()
     }
 
     private val mediaProjectionCallback = object : MediaProjection.Callback() {
