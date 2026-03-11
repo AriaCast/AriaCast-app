@@ -15,7 +15,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.aria.ariacast"
-    compileSdk = 34
+    compileSdk = 35
 
     signingConfigs {
         create("release") {
@@ -32,9 +32,9 @@ android {
     defaultConfig {
         applicationId = "com.aria.ariacast"
         minSdk = 31
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 7
-        versionName = "1.0.8"
+        versionName = "1.0.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
