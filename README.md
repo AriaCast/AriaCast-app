@@ -3,9 +3,6 @@
 ![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/AirPlr/AriaCast-app/latest/total?style=for-the-badge)
 
 
-# [Discord Server](https://discord.gg/JpAkwGTG)
-
-
 **Capture and stream your Android device's internal audio to any receiver on your local network.**
 
 AriaCast is a powerful Android application that allows you to broadcast audio from *any* application—such as Spotify, YouTube Music, or Pocket Casts—to a designated custom server. This effectively turns any computer or compatible device on your network into a high-fidelity networked speaker.
