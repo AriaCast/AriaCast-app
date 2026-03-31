@@ -1,6 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background">#121212</color>
-    <color name="surface">#2C2C2C</color>
+    <!-- M3 Dark Palette -->
+    <color name="md_theme_primary">#FFB2BE</color>
+    <color name="md_theme_onPrimary">#66002A</color>
+    <color name="md_theme_primaryContainer">#8E003D</color>
+    <color name="md_theme_onPrimaryContainer">#FFD9DF</color>
+
+    <color name="md_theme_secondary">#E4BDC2</color>
+    <color name="md_theme_onSecondary">#43292D</color>
+    <color name="md_theme_secondaryContainer">#5C3F43</color>
+    <color name="md_theme_onSecondaryContainer">#FFD9DF</color>
+
+    <color name="md_theme_tertiary">#E9BE8B</color>
+    <color name="md_theme_onTertiary">#452B04</color>
+    <color name="md_theme_tertiaryContainer">#5F4119</color>
+    <color name="md_theme_onTertiaryContainer">#FFDDB4</color>
+
+    <color name="md_theme_background">#0F0E0E</color>
+    <color name="md_theme_onBackground">#EAE0E0</color>
+    <color name="md_theme_surface">#1D1B1B</color>
+    <color name="md_theme_onSurface">#EAE0E0</color>
+    <color name="md_theme_surfaceVariant">#514345</color>
+    <color name="md_theme_onSurfaceVariant">#D5C2C4</color>
+    <color name="md_theme_outline">#9E8C8E</color>
+
+    <!-- Accents (Dark versions) -->
+    <color name="accent_blue">#2979FF</color>
+    <color name="accent_purple">#D0BCFF</color>
+    <color name="accent_green">#B4F1A0</color>
+    <color name="accent_orange">#FFB870</color>
+    <color name="accent_pink">#FF4081</color>
+
+    <!-- UI Colors used in MainActivity -->
     <color name="light_grey">#404040</color>
+    <color name="surface_card">#1D1B1B</color>
 </resources>

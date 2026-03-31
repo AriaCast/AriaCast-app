@@ -53,10 +53,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusCard: MaterialCardView
     lateinit var pluginContainer: LinearLayout
 
-    private lateinit var discoveryManager: DiscoveryManager
+    lateinit var discoveryManager: DiscoveryManager
     private lateinit var serverListAdapter: ServerAdapter
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var pluginManager: PluginManager
+    private lateinit var updateManager: UpdateManager
+
+    private var currentAccentColor: Int = R.color.accent_blue
+    private var currentThemeMode: Int = ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM
 
     private val _audioCastServiceFlow = MutableStateFlow<AudioCastService?>(null)
     val audioCastServiceFlow = _audioCastServiceFlow.asStateFlow()
@@ -75,8 +79,6 @@ class MainActivity : AppCompatActivity() {
                     updateUi(state)
                 }
             }
-            
-            // Re-run plugins when service connects to ensure they pick up the active server immediately
             pluginManager.runEnabledPlugins(this@MainActivity, s)
         }
 
@@ -101,14 +103,15 @@ class MainActivity : AppCompatActivity() {
                 ContextCompat.startForegroundService(this, serviceIntent)
             }
         } else {
-            Toast.makeText(this, "MediaProjection permission denied.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.media_projection_denied), Toast.LENGTH_SHORT).show()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
-        val accentColor = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
-        setTheme(ThemeUtils.getThemeForAccent(accentColor))
+        currentAccentColor = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
+        currentThemeMode = sharedPreferences.getInt(SettingsActivity.KEY_THEME, ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM)
+        setTheme(ThemeUtils.getThemeForAccent(currentAccentColor))
         
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -119,6 +122,7 @@ class MainActivity : AppCompatActivity() {
         mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         discoveryManager = DiscoveryManager(this)
         pluginManager = PluginManager(this)
+        updateManager = UpdateManager(this)
 
         stateTextView = findViewById(R.id.stateTextView)
         castButton = findViewById(R.id.castButton)
@@ -128,14 +132,16 @@ class MainActivity : AppCompatActivity() {
         statusCard = findViewById(R.id.statusCard)
         pluginContainer = findViewById(R.id.pluginContainer)
 
-        serverListAdapter = ServerAdapter { server ->
-            isUserSelecting = true
-            selectedServer = server
-            if (server.name.contains("MusicAssistant", ignoreCase = true)) {
-                discoveryManager.startDiscovery()
+        serverListAdapter = ServerAdapter(
+            onServerClick = { server ->
+                isUserSelecting = true
+                selectedServer = server
+                startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
+            },
+            onDeleteClick = { server ->
+                discoveryManager.removeServer(server.name)
             }
-            startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
-        }
+        )
 
         serverRecyclerView.apply {
             adapter = serverListAdapter
@@ -143,10 +149,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         castButton.setOnClickListener {
-            it.animate().scaleX(0.95f).scaleY(0.95f).setDuration(100).withEndAction {
-                it.animate().scaleX(1.0f).scaleY(1.0f).setDuration(100).start()
-            }.start()
-
             if (audioCastService?.state?.value == CastState.CASTING) {
                 val serviceIntent = Intent(this, AudioCastService::class.java).apply {
                     action = AudioCastService.ACTION_STOP
@@ -156,7 +158,7 @@ class MainActivity : AppCompatActivity() {
                 if (selectedServer != null) {
                     startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
                 } else {
-                    Toast.makeText(this, "Please select a server first.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.select_server_first), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -179,8 +181,7 @@ class MainActivity : AppCompatActivity() {
                 val lastHost = sharedPreferences.getString(AudioCastService.KEY_LAST_SERVER_HOST, null)
                 
                 if (isUserSelecting && selectedServer != null) {
-                    val currentHost = selectedServer?.host
-                    val found = servers.find { it.host == currentHost }
+                    val found = servers.find { it.host == selectedServer?.host }
                     if (found != null) {
                         selectedServer = found
                         serverListAdapter.setSelectedItem(servers.indexOf(found))
@@ -189,8 +190,7 @@ class MainActivity : AppCompatActivity() {
                     val lastServer = servers.find { it.host == lastHost }
                     if (lastServer != null) {
                         selectedServer = lastServer
-                        val index = servers.indexOf(lastServer)
-                        serverListAdapter.setSelectedItem(index)
+                        serverListAdapter.setSelectedItem(servers.indexOf(lastServer))
                     }
                 }
             }
@@ -199,16 +199,17 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             discoveryManager.state.collectLatest {
                 discoveryButton.text = when (it) {
-                    DiscoveryState.SCANNING -> "Scanning..."
-                    else -> "Refresh"
+                    DiscoveryState.SCANNING -> getString(R.string.scanning)
+                    else -> getString(R.string.refresh)
                 }
             }
         }
         
         checkNotificationListenerPermission()
-
-        // Run enabled plugins
         pluginManager.runEnabledPlugins(this, audioCastService)
+        lifecycleScope.launch {
+            updateManager.checkForUpdates(manual = false)
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -246,6 +247,13 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         checkNotificationListenerPermission()
+        
+        // Refresh theme if it changed in settings
+        val newAccent = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
+        val newThemeMode = sharedPreferences.getInt(SettingsActivity.KEY_THEME, ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM)
+        if (newAccent != currentAccentColor || newThemeMode != currentThemeMode) {
+            recreate()
+        }
     }
 
     private fun checkNotificationListenerPermission() {
@@ -270,14 +278,14 @@ class MainActivity : AppCompatActivity() {
         val accentColor = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
         val activeColor = ContextCompat.getColor(this, accentColor)
         val idleColor = ContextCompat.getColor(this, R.color.light_grey)
-        val surfaceColor = ContextCompat.getColor(this, R.color.surface)
+        val surfaceColor = ContextCompat.getColor(this, R.color.surface_card)
 
         if (state == CastState.CASTING) {
-            castButton.text = "Stop"
+            castButton.text = getString(R.string.stop)
             castButton.setIconResource(android.R.drawable.ic_media_pause)
             animateCardColors(idleColor, activeColor, surfaceColor, ColorUtils.setAlphaComponent(activeColor, 40))
         } else {
-            castButton.text = "Start"
+            castButton.text = getString(R.string.start)
             castButton.setIconResource(android.R.drawable.ic_media_play)
             animateCardColors(activeColor, idleColor, ColorUtils.setAlphaComponent(activeColor, 40), surfaceColor)
         }
@@ -302,7 +310,10 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-class ServerAdapter(private val onServerClick: (Server) -> Unit) : RecyclerView.Adapter<ServerAdapter.ViewHolder>() {
+class ServerAdapter(
+    private val onServerClick: (Server) -> Unit,
+    private val onDeleteClick: (Server) -> Unit
+) : RecyclerView.Adapter<ServerAdapter.ViewHolder>() {
 
     private var servers = emptyList<Server>()
     private var selectedItem = -1
@@ -335,6 +346,15 @@ class ServerAdapter(private val onServerClick: (Server) -> Unit) : RecyclerView.
             holder.cardView.scaleY = 1.0f
         }
 
+        if (server.platform == "Manual") {
+            holder.moreButton.setImageResource(android.R.drawable.ic_menu_delete)
+            holder.moreButton.visibility = View.VISIBLE
+            holder.moreButton.setOnClickListener { onDeleteClick(server) }
+        } else {
+            holder.moreButton.setImageResource(android.R.drawable.ic_menu_more)
+            holder.moreButton.visibility = View.GONE
+        }
+
         holder.itemView.setOnClickListener { 
             onServerClick(server)
             setSelectedItem(position)
@@ -362,5 +382,6 @@ class ServerAdapter(private val onServerClick: (Server) -> Unit) : RecyclerView.
         val serverName: TextView = view.findViewById(R.id.serverName)
         val serverHost: TextView = view.findViewById(R.id.serverHost)
         val icon: ImageView = view.findViewById(R.id.serverIcon)
+        val moreButton: ImageView = view.findViewById(R.id.moreButton)
     }
 }

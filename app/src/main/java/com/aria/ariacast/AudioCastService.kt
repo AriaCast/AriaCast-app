@@ -145,6 +145,9 @@ class AudioCastService : Service() {
     private val _controlCommands = MutableSharedFlow<MediaCommand>(extraBufferCapacity = 10)
     val controlCommands: SharedFlow<MediaCommand> = _controlCommands.asSharedFlow()
 
+    private val _audioBufferFlow = MutableSharedFlow<ByteArray>(extraBufferCapacity = 5)
+    val audioBufferFlow: SharedFlow<ByteArray> = _audioBufferFlow.asSharedFlow()
+
     private val metadataChannel = Channel<TrackMetadata>(Channel.CONFLATED)
 
     private val binder = AudioCastBinder()
@@ -393,7 +396,10 @@ class AudioCastService : Service() {
                         val readResult = audioRecord?.read(audioBuffer.array(), 0, FRAME_SIZE) ?: 0
                         when {
                             readResult == FRAME_SIZE -> {
-                                val sent = outgoing.trySendBlocking(Frame.Binary(true, audioBuffer.array().copyOf()))
+                                val bufferCopy = audioBuffer.array().copyOf()
+                                _audioBufferFlow.emit(bufferCopy)
+                                
+                                val sent = outgoing.trySendBlocking(Frame.Binary(true, bufferCopy))
                                 if (sent.isSuccess) {
                                     sentFramesCount++
                                     
@@ -763,20 +769,20 @@ class AudioCastService : Service() {
     }
 
     private fun createNotification(): android.app.Notification {
-        val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, "AriaCast", NotificationManager.IMPORTANCE_LOW)
+        val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, getString(R.string.app_name), NotificationManager.IMPORTANCE_LOW)
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
 
         val remoteViews = RemoteViews(packageName, R.layout.notification_casting)
-        remoteViews.setTextViewText(R.id.notification_title, "AriaCast")
+        remoteViews.setTextViewText(R.id.notification_title, getString(R.string.app_name))
 
         val videoEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_VIDEO_ENABLED, false)
-        val mode = if (videoEnabled) "Audio & Video" else "Audio Only"
+        val mode = if (videoEnabled) getString(R.string.audio_video) else getString(R.string.audio_only)
 
         val statusText = when(state.value) {
-            CastState.CASTING -> "Casting to ${serverName ?: "Unknown"} ($mode)"
-            CastState.CONNECTING -> "Connecting to ${serverName ?: "Unknown"}"
-            else -> "Not Casting"
+            CastState.CASTING -> getString(R.string.casting_to, serverName ?: getString(R.string.unknown), mode)
+            CastState.CONNECTING -> getString(R.string.connecting_to, serverName ?: getString(R.string.unknown))
+            else -> getString(R.string.not_casting)
         }
         remoteViews.setTextViewText(R.id.notification_text, statusText)
 

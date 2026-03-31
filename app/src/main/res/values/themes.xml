@@ -1,36 +1,52 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Theme.AriaCast" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Default brand color. -->
-        <item name="colorPrimary">@color/accent_blue</item>
-        <item name="colorOnPrimary">@color/white</item>
-        <item name="colorPrimaryContainer">@color/blue_200</item>
-        <item name="colorOnPrimaryContainer">@color/blue_700</item>
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/md_theme_primary</item>
+        <item name="colorOnPrimary">@color/md_theme_onPrimary</item>
+        <item name="colorPrimaryContainer">@color/md_theme_primaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/md_theme_onPrimaryContainer</item>
         
         <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/secondaryColor</item>
-        <item name="colorOnSecondary">@color/black</item>
-        
-        <!-- Status bar color. -->
-        <item name="android:statusBarColor">?attr/colorSurface</item>
-        <item name="android:windowLightStatusBar">true</item>
-        
-        <item name="android:windowBackground">@color/background</item>
+        <item name="colorSecondary">@color/md_theme_secondary</item>
+        <item name="colorOnSecondary">@color/md_theme_onSecondary</item>
+        <item name="colorSecondaryContainer">@color/md_theme_secondaryContainer</item>
+        <item name="colorOnSecondaryContainer">@color/md_theme_onSecondaryContainer</item>
+
+        <!-- Tertiary brand color. -->
+        <item name="colorTertiary">@color/md_theme_tertiary</item>
+        <item name="colorOnTertiary">@color/md_theme_onTertiary</item>
+        <item name="colorTertiaryContainer">@color/md_theme_tertiaryContainer</item>
+        <item name="colorOnTertiaryContainer">@color/md_theme_onTertiaryContainer</item>
+
+        <item name="android:windowBackground">@color/md_theme_background</item>
+        <item name="android:statusBarColor">@color/md_theme_background</item>
+        <item name="android:navigationBarColor">@color/md_theme_background</item>
+
+        <item name="colorSurface">@color/md_theme_surface</item>
+        <item name="colorOnSurface">@color/md_theme_onSurface</item>
+        <item name="colorSurfaceVariant">@color/md_theme_surfaceVariant</item>
+        <item name="colorOnSurfaceVariant">@color/md_theme_onSurfaceVariant</item>
+        <item name="colorOutline">@color/md_theme_outline</item>
     </style>
 
-    <style name="Theme.AriaCast.Purple">
+    <style name="Theme.AriaCast.Blue" parent="Theme.AriaCast">
+        <item name="colorPrimary">@color/accent_blue</item>
+    </style>
+
+    <style name="Theme.AriaCast.Purple" parent="Theme.AriaCast">
         <item name="colorPrimary">@color/accent_purple</item>
     </style>
 
-    <style name="Theme.AriaCast.Green">
+    <style name="Theme.AriaCast.Green" parent="Theme.AriaCast">
         <item name="colorPrimary">@color/accent_green</item>
     </style>
 
-    <style name="Theme.AriaCast.Orange">
+    <style name="Theme.AriaCast.Orange" parent="Theme.AriaCast">
         <item name="colorPrimary">@color/accent_orange</item>
     </style>
 
-    <style name="Theme.AriaCast.Pink">
+    <style name="Theme.AriaCast.Pink" parent="Theme.AriaCast">
         <item name="colorPrimary">@color/accent_pink</item>
     </style>
 </resources>

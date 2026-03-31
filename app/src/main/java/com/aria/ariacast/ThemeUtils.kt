@@ -13,6 +13,7 @@ object ThemeUtils {
 
     fun getThemeForAccent(accentColorResId: Int): Int {
         return when (accentColorResId) {
+            R.color.accent_blue -> R.style.Theme_AriaCast_Blue
             R.color.accent_purple -> R.style.Theme_AriaCast_Purple
             R.color.accent_green -> R.style.Theme_AriaCast_Green
             R.color.accent_orange -> R.style.Theme_AriaCast_Orange

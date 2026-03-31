@@ -64,6 +64,22 @@ class PacketLogAdapter(private val allLogs: MutableList<PacketLog>) : RecyclerVi
     private var currentQuery: String = ""
 
     fun addLog(log: PacketLog) {
+        // Check if we should merge with the last log (which is at index 0 because we add new logs at the beginning)
+        val lastLog = allLogs.firstOrNull()
+        if (lastLog != null && 
+            lastLog.direction == log.direction && 
+            lastLog.type == log.type && 
+            lastLog.message == log.message) {
+            
+            // It's the same, it was already updated in PacketLogger, so we just update the UI
+            // The object in allLogs is the same one that was updated in PacketLogger
+            val filteredIndex = filteredLogs.indexOf(lastLog)
+            if (filteredIndex != -1) {
+                notifyItemChanged(filteredIndex)
+            }
+            return
+        }
+
         allLogs.add(0, log)
         if (allLogs.size > 500) allLogs.removeAt(allLogs.size - 1)
         
@@ -109,9 +125,16 @@ class PacketLogAdapter(private val allLogs: MutableList<PacketLog>) : RecyclerVi
         holder.time.text = log.timestamp
         holder.message.text = log.message
 
+        if (log.count > 1) {
+            holder.count.visibility = View.VISIBLE
+            holder.count.text = "x${log.count}"
+        } else {
+            holder.count.visibility = View.GONE
+        }
+
         val color = when (log.direction) {
             PacketDirection.IN -> ContextCompat.getColor(holder.itemView.context, R.color.accent_blue)
-            PacketDirection.OUT -> ContextCompat.getColor(holder.itemView.context, R.color.secondaryDarkColor)
+            PacketDirection.OUT -> ContextCompat.getColor(holder.itemView.context, R.color.md_theme_primary)
         }
         holder.direction.setTextColor(color)
     }
@@ -121,6 +144,7 @@ class PacketLogAdapter(private val allLogs: MutableList<PacketLog>) : RecyclerVi
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val direction: TextView = view.findViewById(R.id.directionText)
         val type: TextView = view.findViewById(R.id.typeText)
+        val count: TextView = view.findViewById(R.id.countText)
         val time: TextView = view.findViewById(R.id.timeText)
         val message: TextView = view.findViewById(R.id.messageText)
     }

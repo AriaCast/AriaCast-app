@@ -41,7 +41,7 @@ class PluginsActivity : AppCompatActivity() {
             
             pluginManager = PluginManager(this) // Re-init
             refreshPlugins()
-            Toast.makeText(this, "Plugin folder updated", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.plugin_folder_updated), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -65,13 +65,13 @@ class PluginsActivity : AppCompatActivity() {
 
         findViewById<FloatingActionButton>(R.id.addPluginFab).setOnClickListener {
             MaterialAlertDialogBuilder(this)
-                .setTitle("Plugin Folder")
-                .setMessage("Select a folder where you will place your .json and .js plugin files.")
-                .setPositiveButton("Select Folder") { _, _ ->
+                .setTitle(getString(R.string.plugin_folder_title))
+                .setMessage(getString(R.string.plugin_folder_message))
+                .setPositiveButton(getString(R.string.select_folder)) { _, _ ->
                     openDocumentTree.launch(null)
                 }
-                .setNegativeButton("Cancel", null)
-                .setNeutralButton("Use Default") { _, _ ->
+                .setNegativeButton(getString(R.string.cancel), null)
+                .setNeutralButton(getString(R.string.use_default)) { _, _ ->
                     getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
                         .edit()
                         .remove("plugin_folder_uri")
@@ -104,7 +104,7 @@ class PluginsActivity : AppCompatActivity() {
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val plugin = plugins[position]
             holder.name.text = plugin.name
-            holder.author.text = "by ${plugin.author} • v${plugin.version}"
+            holder.author.text = getString(R.string.plugin_author_format, plugin.author, plugin.version)
             holder.switch.isChecked = plugin.isEnabled
             
             holder.switch.setOnCheckedChangeListener { _, isChecked ->
@@ -119,9 +119,9 @@ class PluginsActivity : AppCompatActivity() {
         private fun showPluginDetails(plugin: Plugin) {
             MaterialAlertDialogBuilder(this@PluginsActivity)
                 .setTitle(plugin.name)
-                .setMessage("${plugin.description}\n\nVersion: ${plugin.version}\nAuthor: ${plugin.author}")
-                .setPositiveButton("Close", null)
-                .setNeutralButton("Configure") { _, _ ->
+                .setMessage(getString(R.string.plugin_details_format, plugin.description, plugin.version, plugin.author))
+                .setPositiveButton(getString(R.string.close), null)
+                .setNeutralButton(getString(R.string.configure)) { _, _ ->
                     pluginManager.requestPluginConfig(plugin.id, this@PluginsActivity)
                 }
                 .show()

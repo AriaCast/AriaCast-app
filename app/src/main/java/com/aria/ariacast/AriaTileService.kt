@@ -102,11 +102,11 @@ class AriaTileService : TileService() {
 
         // Update the subtitle for more context
         tile.subtitle = when (state) {
-            CastState.OFF -> "Tap to cast"
-            CastState.DISCOVERING -> "Discovering..."
-            CastState.CONNECTING -> "Connecting..."
-            CastState.CASTING -> "Casting..."
-            CastState.ERROR -> "Error occurred"
+            CastState.OFF -> getString(R.string.tile_tap_to_cast)
+            CastState.DISCOVERING -> getString(R.string.tile_discovering)
+            CastState.CONNECTING -> getString(R.string.tile_connecting)
+            CastState.CASTING -> getString(R.string.tile_casting)
+            CastState.ERROR -> getString(R.string.tile_error)
         }
 
         // Apply the changes to the tile

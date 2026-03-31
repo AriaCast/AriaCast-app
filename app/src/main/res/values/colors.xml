@@ -1,32 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primaryColor">#6200EE</color>
-    <color name="primaryLightColor">#9B67FF</color>
-    <color name="primaryDarkColor">#3700B3</color>
-    <color name="secondaryColor">#03DAC6</color>
-    <color name="secondaryLightColor">#66FFF9</color>
-    <color name="secondaryDarkColor">#00A896</color>
-    <color name="primaryTextColor">#000000</color>
-    <color name="secondaryTextColor">#000000</color>
+    <!-- M3 Light Palette -->
+    <color name="md_theme_primary">#B90063</color>
+    <color name="md_theme_onPrimary">#FFFFFF</color>
+    <color name="md_theme_primaryContainer">#FFD9DF</color>
+    <color name="md_theme_onPrimaryContainer">#3E001D</color>
 
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
-    <color name="background">#F5F5F5</color>
-    <color name="surface">#FFFFFF</color>
-    <color name="error">#B00020</color>
+    <color name="md_theme_secondary">#77565A</color>
+    <color name="md_theme_onSecondary">#FFFFFF</color>
+    <color name="md_theme_secondaryContainer">#FFD9DF</color>
+    <color name="md_theme_onSecondaryContainer">#2C1518</color>
 
-    <color name="blue_200">#FF90CAF9</color>
-    <color name="blue_500">#FF2196F3</color>
-    <color name="blue_700">#FF1976D2</color>
-    <color name="red_500">#FF0000</color>
-    
-    <!-- Custom colors for a cool look -->
+    <color name="md_theme_tertiary">#7A592D</color>
+    <color name="md_theme_onTertiary">#FFFFFF</color>
+    <color name="md_theme_tertiaryContainer">#FFDDB4</color>
+    <color name="md_theme_onTertiaryContainer">#2A1900</color>
+
+    <color name="md_theme_background">#FFFBFF</color>
+    <color name="md_theme_onBackground">#201A1B</color>
+    <color name="md_theme_surface">#FFFBFF</color>
+    <color name="md_theme_onSurface">#201A1B</color>
+    <color name="md_theme_surfaceVariant">#F4DDDF</color>
+    <color name="md_theme_onSurfaceVariant">#524345</color>
+    <color name="md_theme_outline">#847375</color>
+
+    <!-- Accents (Light versions or same) -->
     <color name="accent_blue">#2979FF</color>
-    <color name="accent_purple">#AA00FF</color>
-    <color name="accent_green">#00E676</color>
-    <color name="accent_orange">#FF9100</color>
-    <color name="accent_pink">#FF4081</color>
+    <color name="accent_purple">#9C27B0</color>
+    <color name="accent_green">#4CAF50</color>
+    <color name="accent_orange">#FF9800</color>
+    <color name="accent_pink">#E91E63</color>
 
-    <color name="dark_grey">#121212</color>
+    <!-- UI Colors used in MainActivity -->
     <color name="light_grey">#E0E0E0</color>
+    <color name="surface_card">#F5F5F5</color>
+
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
 </resources>

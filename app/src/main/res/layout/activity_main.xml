@@ -18,67 +18,65 @@
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            app:title="AriaCast"
-            app:titleCentered="true"
-            app:titleTextAppearance="@style/TextAppearance.Material3.TitleLarge" />
+            app:title="@string/app_name"
+            app:titleTextAppearance="@style/TextAppearance.Material3.HeadlineMedium"
+            app:titleTextColor="?attr/colorOnBackground" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:clipToPadding="false"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <LinearLayout
-            android:id="@+id/mainContentLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:animateLayoutChanges="true"
             android:orientation="vertical"
             android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/status"
+                android:textColor="?attr/colorPrimary"
+                android:textAppearance="?attr/textAppearanceTitleLarge"
+                android:textStyle="bold"
+                android:layout_marginBottom="12dp"/>
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/statusCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardCornerRadius="24dp"
+                android:layout_marginBottom="24dp"
+                app:cardCornerRadius="28dp"
                 app:cardElevation="0dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp">
+                app:cardBackgroundColor="?attr/colorSurfaceVariant">
 
                 <androidx.constraintlayout.widget.ConstraintLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:animateLayoutChanges="true"
                     android:padding="20dp">
-
-                    <TextView
-                        android:id="@+id/stateLabel"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Status"
-                        android:textAppearance="?attr/textAppearanceLabelLarge"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toTopOf="parent" />
 
                     <TextView
                         android:id="@+id/stateTextView"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="OFF"
-                        android:textAppearance="?attr/textAppearanceHeadlineMedium"
+                        android:text="@string/disconnected"
+                        android:textAppearance="?attr/textAppearanceTitleMedium"
                         android:textStyle="bold"
+                        app:layout_constraintBottom_toBottomOf="parent"
                         app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintTop_toBottomOf="@id/stateLabel" />
+                        app:layout_constraintTop_toTopOf="parent" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/castButton"
                         style="@style/Widget.Material3.Button"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Start Casting"
-                        app:cornerRadius="20dp"
+                        android:text="@string/connect"
+                        app:cornerRadius="24dp"
                         app:layout_constraintBottom_toBottomOf="parent"
                         app:layout_constraintEnd_toEndOf="parent"
                         app:layout_constraintTop_toTopOf="parent" />
@@ -86,68 +84,54 @@
                 </androidx.constraintlayout.widget.ConstraintLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Plugin Injected Elements Container moved below status -->
             <LinearLayout
                 android:id="@+id/pluginContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:layout_marginBottom="16dp"
-                android:visibility="gone" />
+                android:layout_marginBottom="24dp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/permissionButton"
-                style="@style/Widget.Material3.Button.TonalButton"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:text="Grant Notification Access"
-                android:visibility="gone"
-                app:icon="@android:drawable/ic_dialog_alert"
-                tools:visibility="visible" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginBottom="16dp"
-                android:background="?attr/colorOutlineVariant" />
-
-            <androidx.constraintlayout.widget.ConstraintLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp">
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="12dp">
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="Available Servers"
-                    android:textAppearance="?attr/textAppearanceTitleMedium"
-                    app:layout_constraintBottom_toBottomOf="parent"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintTop_toTopOf="parent" />
+                    android:layout_weight="1"
+                    android:text="@string/servers"
+                    android:textColor="?attr/colorPrimary"
+                    android:textAppearance="?attr/textAppearanceTitleLarge"
+                    android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/discoveryButton"
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Refresh"
-                    app:icon="@android:drawable/ic_menu_rotate"
-                    app:layout_constraintBottom_toBottomOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent"
-                    app:layout_constraintTop_toTopOf="parent" />
-
-            </androidx.constraintlayout.widget.ConstraintLayout>
+                    android:text="@string/refresh"
+                    app:icon="@android:drawable/stat_notify_sync" />
+            </LinearLayout>
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/serverRecyclerView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:clipToPadding="false"
-                android:layoutAnimation="@anim/layout_animation_fall_down"
                 android:nestedScrollingEnabled="false"
-                android:paddingBottom="16dp"
                 tools:listitem="@layout/item_server" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/permissionButton"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Grant Notification Permission"
+                android:visibility="gone"
+                app:icon="@android:drawable/ic_lock_idle_alarm" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

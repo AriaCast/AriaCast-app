@@ -7,6 +7,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 
 class WebViewActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
@@ -19,6 +22,7 @@ class WebViewActivity : AppCompatActivity() {
         val root = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             layoutParams = android.widget.LinearLayout.LayoutParams(-1, -1)
+            fitsSystemWindows = true
         }
 
         val toolbar = Toolbar(this).apply {
@@ -39,5 +43,11 @@ class WebViewActivity : AppCompatActivity() {
         root.addView(webView)
 
         setContentView(root)
+
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.updatePadding(top = systemBars.top, bottom = systemBars.bottom)
+            insets
+        }
     }
 }

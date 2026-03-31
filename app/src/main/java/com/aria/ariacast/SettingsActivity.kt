@@ -1,27 +1,22 @@
 package com.aria.ariacast
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
+import kotlinx.coroutines.launch
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -30,8 +25,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var themeStatusText: TextView
     private lateinit var accentStatusText: TextView
     private lateinit var accentColorPreview: ImageView
-    private lateinit var updateStatusText: TextView
     private lateinit var videoCastSwitch: MaterialSwitch
+    private lateinit var updateManager: UpdateManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
@@ -48,40 +43,43 @@ class SettingsActivity : AppCompatActivity() {
         themeStatusText = findViewById(R.id.themeStatusText)
         accentStatusText = findViewById(R.id.accentStatusText)
         accentColorPreview = findViewById(R.id.accentColorPreview)
-        updateStatusText = findViewById(R.id.updateStatusText)
         videoCastSwitch = findViewById(R.id.videoCastSwitch)
+        updateManager = UpdateManager(this)
 
-        findViewById<MaterialCardView>(R.id.themeCard).setOnClickListener {
+        findViewById<View>(R.id.themeLayout).setOnClickListener {
             showThemeSelectionDialog()
         }
 
-        findViewById<MaterialCardView>(R.id.accentCard).setOnClickListener {
+        findViewById<View>(R.id.accentLayout).setOnClickListener {
             showAccentSelectionDialog()
         }
 
-        findViewById<MaterialCardView>(R.id.pluginsCard).setOnClickListener {
+        findViewById<View>(R.id.pluginsLayout).setOnClickListener {
             startActivity(Intent(this, PluginsActivity::class.java))
         }
 
-        findViewById<MaterialCardView>(R.id.packetLogCard).setOnClickListener {
-            handlePacketLogClick()
-        }
-
-        findViewById<MaterialCardView>(R.id.resetServerCard).setOnClickListener {
-            resetLastServer()
-        }
-
-        findViewById<MaterialCardView>(R.id.notificationAccessCard).setOnClickListener {
+        findViewById<View>(R.id.notificationAccessLayout).setOnClickListener {
             val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
             startActivity(intent)
         }
 
-        findViewById<MaterialCardView>(R.id.githubCard).setOnClickListener {
+        findViewById<View>(R.id.updateLayout).setOnClickListener {
+            lifecycleScope.launch {
+                updateManager.checkForUpdates(manual = true)
+            }
+        }
+
+        findViewById<View>(R.id.githubLayout).setOnClickListener {
             openGitHub()
         }
 
-        findViewById<MaterialCardView>(R.id.updateCard).setOnClickListener {
-            checkForUpdates(manual = true)
+        findViewById<View>(R.id.resetServerLayout).setOnClickListener {
+            resetLastServer()
+        }
+
+        findViewById<View>(R.id.resetServerLayout).setOnLongClickListener {
+            handlePacketLogClick()
+            true
         }
 
         videoCastSwitch.isChecked = sharedPreferences.getBoolean(KEY_VIDEO_ENABLED, false)
@@ -89,9 +87,11 @@ class SettingsActivity : AppCompatActivity() {
             sharedPreferences.edit().putBoolean(KEY_VIDEO_ENABLED, isChecked).apply()
         }
 
+        val versionText = findViewById<TextView>(R.id.versionText)
+        versionText.text = getString(R.string.version_format, getString(R.string.app_version))
+
         updateThemeStatusText()
         updateAccentStatus()
-        updateStatusText.text = "AriaCast v$APP_VERSION"
     }
 
     private fun openGitHub() {
@@ -99,63 +99,12 @@ class SettingsActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    private fun checkForUpdates(manual: Boolean) {
-        val latestVersion = "1.0.5"
-        
-        if (latestVersion > APP_VERSION) {
-            showUpdateDialog(latestVersion)
-            showUpdateNotification(latestVersion)
-        } else if (manual) {
-            Toast.makeText(this, "You are on the latest version!", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun showUpdateDialog(latestVersion: String) {
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Update Available")
-            .setMessage("A new version (v$latestVersion) of AriaCast is available. Would you like to download it from GitHub?")
-            .setPositiveButton("Download") { _, _ ->
-                openGitHub()
-            }
-            .setNegativeButton("Later", null)
-            .show()
-    }
-
-    private fun showUpdateNotification(latestVersion: String) {
-        val channelId = "updates_channel"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = "App Updates"
-            val descriptionText = "Notifications for new AriaCast versions"
-            val importance = NotificationManager.IMPORTANCE_DEFAULT
-            val channel = NotificationChannel(channelId, name, importance).apply {
-                description = descriptionText
-            }
-            val notificationManager: NotificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
-        }
-
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL))
-        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-
-        val builder = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.drawable.ic_tile_icon)
-            .setContentTitle("Update Available")
-            .setContentText("AriaCast v$latestVersion is now available on GitHub.")
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-
-        try {
-            with(NotificationManagerCompat.from(this)) {
-                notify(UPDATE_NOTIFICATION_ID, builder.build())
-            }
-        } catch (e: SecurityException) {
-        }
-    }
-
     private fun showThemeSelectionDialog() {
-        val themes = arrayOf("Light", "Dark", "Follow System")
+        val themes = arrayOf(
+            getString(R.string.theme_light),
+            getString(R.string.theme_dark),
+            getString(R.string.theme_follow_system)
+        )
         val sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
         val currentTheme = sharedPreferences.getInt(KEY_THEME, ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM)
         
@@ -166,7 +115,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         MaterialAlertDialogBuilder(this)
-            .setTitle("Select Appearance")
+            .setTitle(getString(R.string.select_appearance))
             .setSingleChoiceItems(themes, checkedItem) { dialog, which ->
                 val selectedTheme = when(which) {
                     0 -> ThemeUtils.MODE_NIGHT_NO
@@ -183,7 +132,13 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun showAccentSelectionDialog() {
-        val accents = arrayOf("Blue", "Purple", "Green", "Orange", "Pink")
+        val accents = arrayOf(
+            getString(R.string.accent_blue),
+            getString(R.string.accent_purple),
+            getString(R.string.accent_green),
+            getString(R.string.accent_orange),
+            getString(R.string.accent_pink)
+        )
         val colors = intArrayOf(
             R.color.accent_blue,
             R.color.accent_purple,
@@ -198,7 +153,7 @@ class SettingsActivity : AppCompatActivity() {
         val checkedItem = colors.indexOf(currentAccent).coerceAtLeast(0)
 
         MaterialAlertDialogBuilder(this)
-            .setTitle("Select Accent Color")
+            .setTitle(getString(R.string.select_accent_color))
             .setSingleChoiceItems(accents, checkedItem) { dialog, which ->
                 val selectedColor = colors[which]
                 sharedPreferences.edit().putInt(KEY_ACCENT_COLOR, selectedColor).apply()
@@ -214,9 +169,9 @@ class SettingsActivity : AppCompatActivity() {
         val sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
         val currentTheme = sharedPreferences.getInt(KEY_THEME, ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM)
         themeStatusText.text = when(currentTheme) {
-            ThemeUtils.MODE_NIGHT_NO -> "Light"
-            ThemeUtils.MODE_NIGHT_YES -> "Dark"
-            else -> "Follow System"
+            ThemeUtils.MODE_NIGHT_NO -> getString(R.string.theme_light)
+            ThemeUtils.MODE_NIGHT_YES -> getString(R.string.theme_dark)
+            else -> getString(R.string.theme_follow_system)
         }
     }
 
@@ -225,11 +180,11 @@ class SettingsActivity : AppCompatActivity() {
         val currentAccent = sharedPreferences.getInt(KEY_ACCENT_COLOR, R.color.accent_blue)
         
         val accentName = when(currentAccent) {
-            R.color.accent_purple -> "Purple"
-            R.color.accent_green -> "Green"
-            R.color.accent_orange -> "Orange"
-            R.color.accent_pink -> "Pink"
-            else -> "Blue"
+            R.color.accent_purple -> getString(R.string.accent_purple)
+            R.color.accent_green -> getString(R.string.accent_green)
+            R.color.accent_orange -> getString(R.string.accent_orange)
+            R.color.accent_pink -> getString(R.string.accent_pink)
+            else -> getString(R.string.accent_blue)
         }
         
         accentStatusText.text = accentName
@@ -250,7 +205,11 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, PacketLogActivity::class.java))
         } else {
             val remaining = 3 - packetLogClickCount
-            val message = if (remaining == 1) "One more tap to enter..." else "$remaining more taps to enter..."
+            val message = if (remaining == 1) {
+                getString(R.string.secret_logs_one_tap)
+            } else {
+                getString(R.string.secret_logs_multiple_taps, remaining)
+            }
             Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         }
     }
@@ -263,15 +222,13 @@ class SettingsActivity : AppCompatActivity() {
             remove(AudioCastService.KEY_LAST_SERVER_NAME)
             apply()
         }
-        Toast.makeText(this, "Last server connection cleared", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.server_cleared), Toast.LENGTH_SHORT).show()
     }
 
     companion object {
         const val KEY_THEME = "prefs_theme"
         const val KEY_ACCENT_COLOR = "prefs_accent_color"
         const val KEY_VIDEO_ENABLED = "prefs_video_enabled"
-        const val APP_VERSION = "1.0.5"
-        const val GITHUB_URL = "https://github.com/AirPlr/AriaCast-app"
-        const val UPDATE_NOTIFICATION_ID = 1001
+        const val GITHUB_URL = "https://github.com/AriaCast/AriaCast-app"
     }
 }

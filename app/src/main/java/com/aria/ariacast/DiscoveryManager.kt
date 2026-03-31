@@ -1,10 +1,10 @@
 package com.aria.ariacast
 
 import android.content.Context
-import android.net.ConnectivityManager
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.util.Log
+import android.util.Patterns
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,7 +18,6 @@ import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-import kotlin.math.pow
 
 class DiscoveryManager(private val context: Context) {
 
@@ -80,7 +79,6 @@ class DiscoveryManager(private val context: Context) {
                 val name = serviceInfo.serviceName ?: return
                 val hostAddress = serviceInfo.host?.hostAddress ?: return
                 
-                // Fix for 127.0.0.1 / localhost issues in some NSD implementations
                 if (hostAddress == "127.0.0.1" || hostAddress == "::1" || hostAddress.contains("localhost")) {
                     Log.w(TAG, "NSD resolved to loopback address ($hostAddress) for $name, ignoring.")
                     return
@@ -109,11 +107,44 @@ class DiscoveryManager(private val context: Context) {
         }
     }
 
+    fun addManualServer(host: String, port: Int, name: String = "Manual Server"): Boolean {
+        if (!Patterns.IP_ADDRESS.matcher(host).matches()) {
+            Log.e(TAG, "Invalid IP address provided: $host")
+            return false
+        }
+
+        val server = Server(
+            name = name,
+            host = host,
+            port = port,
+            version = "1.0",
+            codecs = listOf("pcm"),
+            sampleRate = 48000,
+            channels = 2,
+            platform = "Manual"
+        )
+        synchronized(discoveredServers) {
+            discoveredServers[name] = server
+            _servers.value = discoveredServers.values.toList()
+            _state.value = DiscoveryState.FOUND
+        }
+        return true
+    }
+
+    fun removeServer(name: String) {
+        synchronized(discoveredServers) {
+            discoveredServers.remove(name)
+            _servers.value = discoveredServers.values.toList()
+            if (discoveredServers.isEmpty()) {
+                _state.value = DiscoveryState.IDLE
+            }
+        }
+    }
+
     fun startDiscovery() {
         stopDiscovery()
         synchronized(discoveredServers) {
-            _servers.value = emptyList()
-            discoveredServers.clear()
+            _servers.value = discoveredServers.values.toList() // Keep manual servers
         }
         _state.value = DiscoveryState.SCANNING
         
@@ -166,12 +197,11 @@ class DiscoveryManager(private val context: Context) {
                         
                         val responseIp = responsePacket.address.hostAddress ?: "127.0.0.1"
                         
-                        // If the server reports 127.0.0.1 inside JSON or we receive from loopback, skip
                         if (responseIp == "127.0.0.1" || responseIp == "::1") return@withContext
 
                         val server = Server(
                             name = json.optString("server_name", "Unknown AriaCast"),
-                            host = responseIp, // Always prefer the actual packet source IP
+                            host = responseIp,
                             port = json.optInt("port", 12889),
                             version = json.optString("version", "1.0"),
                             codecs = listOf("pcm"),
