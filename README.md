@@ -15,6 +15,19 @@ AriaCast is a powerful Android application that allows you to broadcast audio fr
 <img width="45%" alt="AriaCast Quick toggle Screenshot" src="https://github.com/user-attachments/assets/e30ae4bc-a950-44bf-942d-5ef667d6f878" />
 
 
+---
+
+### ⚠️ Root Users Only
+
+This application cannot capture DRM-protected content by default due to Android's system-level restrictions. If you have a **rooted device**, you can attempt to bypass these limitations using the following module:
+
+* **Tool:** [LSPosed/DisableFlagSecure](https://github.com/LSPosed/DisableFlagSecure)
+* **Requirement:** Magisk + LSPosed Framework
+
+> **Disclaimer:** Use this at your own risk. Bypassing `FLAG_SECURE` may violate the Terms of Service of some applications and could lead to account suspension or stability issues.
+
+---
+
 
 *   **System-Wide Audio Streaming**: Captures the internal audio output of your Android device using the `MediaProjection` API and streams it in real-time with low latency.
 *   **Real-Time Metadata**: Automatically detects currently playing media using the `NotificationListenerService`. Syncs rich metadata (Title, Artist, Album, Artwork) to the receiver instantly.
