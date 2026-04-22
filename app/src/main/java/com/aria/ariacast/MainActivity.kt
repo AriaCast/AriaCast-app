@@ -28,7 +28,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.ContextCompat
@@ -40,6 +39,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -75,7 +75,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var pluginManager: PluginManager
     private lateinit var updateManager: UpdateManager
-    private val viewModel: MainViewModel by viewModels()
 
     private var currentAccentColor: Int = R.color.accent_blue
     private var currentThemeMode: Int = ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM
@@ -95,13 +94,9 @@ class MainActivity : AppCompatActivity() {
             val s = binder.getService()
             audioCastService = s
             _audioCastServiceFlow.value = s
-            viewModel.setService(s)
             isBound = true
-            
             lifecycleScope.launch {
-                combine(s.state, s.activeDestinations) { state, dests ->
-                    Pair(state, dests)
-                }.collectLatest { (state, _) ->
+                s.state.collectLatest { state ->
                     updateUi(state)
                     updateSyncUi()
                 }
@@ -112,7 +107,6 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceDisconnected(arg0: ComponentName) {
             audioCastService = null
             _audioCastServiceFlow.value = null
-            viewModel.setService(null)
             isBound = false
         }
     }
@@ -204,15 +198,15 @@ class MainActivity : AppCompatActivity() {
 
         groupListAdapter = GroupAdapter(
             onGroupClick = { group ->
-                val groupServers = discoveryManager.servers.value.filter { group.hosts.contains(it.host) }
-                if (groupServers.size == group.hosts.size) {
-                    castToServers(groupServers)
+                val servers = discoveryManager.servers.value.filter { group.hosts.contains(it.host) }
+                if (servers.size == group.hosts.size) {
+                    castToServers(servers)
                 } else {
                     Toast.makeText(this, "Some devices in this group are offline", Toast.LENGTH_SHORT).show()
                 }
             },
             onDeleteClick = { group ->
-                viewModel.deleteGroup(group)
+                deleteGroup(group)
             }
         )
 
@@ -255,14 +249,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         lifecycleScope.launch {
-            combine(discoveryManager.servers, _audioCastServiceFlow, _refreshTrigger, viewModel.savedGroups) { servers, service, _, _ ->
+            combine(discoveryManager.servers, _audioCastServiceFlow, _refreshTrigger) { servers, service, _ ->
                 Pair(servers, service)
             }.collectLatest { (servers, service) ->
                 serverListAdapter.submitList(servers)
 
                 val isMultiroomEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_MULTIROOM_ENABLED, false)
                 if (isMultiroomEnabled) {
-                    val activeGroups = viewModel.savedGroups.value.filter { group ->
+                    val groups = getSavedGroups()
+                    val activeGroups = groups.filter { group ->
                         group.hosts.all { host -> servers.any { it.host == host } }
                     }
                     groupsSection.visibility = View.VISIBLE
@@ -381,6 +376,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun getSavedGroups(): List<CastGroup> {
+        val json = sharedPreferences.getString("saved_groups", "[]") ?: "[]"
+        val array = JSONArray(json)
+        val groups = mutableListOf<CastGroup>()
+        for (i in 0 until array.length()) {
+            groups.add(CastGroup.fromJson(array.getString(i)))
+        }
+        return groups
+    }
+
+    private fun saveGroups(groups: List<CastGroup>) {
+        val array = JSONArray()
+        groups.forEach { array.put(it.toJson()) }
+        sharedPreferences.edit().putString("saved_groups", array.toString()).apply()
+        _refreshTrigger.value++
+    }
+
+    private fun deleteGroup(group: CastGroup) {
+        val groups = getSavedGroups().toMutableList()
+        groups.removeAll { it.name == group.name }
+        saveGroups(groups)
+    }
+
     private fun showCreateGroupDialog() {
         val servers = discoveryManager.servers.value
         if (servers.isEmpty()) {
@@ -409,9 +427,9 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Save") { _, _ ->
                 val name = nameInput.text.toString()
                 if (name.isNotEmpty() && selectedHosts.isNotEmpty()) {
-                    val groups = viewModel.savedGroups.value.toMutableList()
+                    val groups = getSavedGroups().toMutableList()
                     groups.add(CastGroup(name, selectedHosts.toList()))
-                    viewModel.saveGroups(groups)
+                    saveGroups(groups)
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -424,7 +442,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        findViewById<View>(item.itemId)?.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        statusCard.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         return when (item.itemId) {
             R.id.action_settings -> {
                 startActivity(Intent(this, SettingsActivity::class.java))
@@ -440,7 +458,6 @@ class MainActivity : AppCompatActivity() {
             bindService(intent, connection, Context.BIND_AUTO_CREATE)
         }
         discoveryManager.startDiscovery()
-        viewModel.updateMultiroomEnabled()
     }
 
     override fun onStop() {
@@ -468,7 +485,6 @@ class MainActivity : AppCompatActivity() {
         groupsSection.visibility = if (isMultiroomEnabled) View.VISIBLE else View.GONE
         _refreshTrigger.value++
         updateSyncUi()
-        viewModel.updateMultiroomEnabled()
     }
 
     private fun checkNotificationListenerPermission() {
