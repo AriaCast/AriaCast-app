@@ -50,7 +50,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.Json
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -58,6 +60,14 @@ import java.net.ServerSocket
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 import kotlin.math.pow
+
+data class CastDestination(
+    val name: String,
+    val host: String,
+    val port: Int,
+    val platform: String? = null,
+    var delayMs: Int = 0
+)
 
 class AudioCastService : Service() {
 
@@ -74,23 +84,19 @@ class AudioCastService : Service() {
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var audioManager: AudioManager
     private var originalVolume: Int = 0
-    private var webSocketSession: DefaultClientWebSocketSession? = null
-    private var videoWebSocketSession: DefaultClientWebSocketSession? = null
-    private var controlSocketSession: DefaultClientWebSocketSession? = null
+    
+    private val _activeDestinations = MutableStateFlow<List<CastDestination>>(emptyList())
+    val activeDestinations: StateFlow<List<CastDestination>> = _activeDestinations.asStateFlow()
+    
+    private val controlSessions = mutableMapOf<String, DefaultClientWebSocketSession>()
 
-    var serverName: String? = null
-        private set
-    var serverHost: String? = null
-        private set
-    var serverPort: Int = 0
-        private set
-    var serverPlatform: String? = null
-        private set
+    // Compatibility properties
+    val serverHost: String? get() = _activeDestinations.value.firstOrNull()?.host
+    val serverName: String? get() = if (_activeDestinations.value.size > 1) "Multiroom Group" else _activeDestinations.value.firstOrNull()?.name
+    val serverPort: Int get() = _activeDestinations.value.firstOrNull()?.port ?: 0
+    val serverPlatform: String? get() = _activeDestinations.value.firstOrNull()?.platform
 
-    // Artwork hosting state
     private var currentArtworkBytes: ByteArray? = null
-
-    // Bitrate tracking
     private var lastBitrateTime = 0L
     private var lastSentFramesForBitrate = 0L
     private var currentBitrateString = "0 kbps"
@@ -133,7 +139,7 @@ class AudioCastService : Service() {
         }
     }
 
-    private val _state = MutableStateFlow(CastState.OFF)
+    private val _state = MutableStateFlow<CastState>(CastState.OFF)
     val state: StateFlow<CastState> = _state.asStateFlow()
 
     private val _stats = MutableStateFlow(CastingStats())
@@ -145,7 +151,7 @@ class AudioCastService : Service() {
     private val _controlCommands = MutableSharedFlow<MediaCommand>(extraBufferCapacity = 10)
     val controlCommands: SharedFlow<MediaCommand> = _controlCommands.asSharedFlow()
 
-    private val _audioBufferFlow = MutableSharedFlow<ByteArray>(extraBufferCapacity = 5)
+    private val _audioBufferFlow = MutableSharedFlow<ByteArray>(extraBufferCapacity = 10)
     val audioBufferFlow: SharedFlow<ByteArray> = _audioBufferFlow.asSharedFlow()
 
     private val metadataChannel = Channel<TrackMetadata>(Channel.CONFLATED)
@@ -182,7 +188,6 @@ class AudioCastService : Service() {
             while (isActive) {
                 delay(10000)
                 _metadata.value?.let { currentMetadata ->
-                    Log.d(TAG, "Periodic metadata refresh: ${currentMetadata.title}")
                     performMetadataUpdate(currentMetadata)
                 }
             }
@@ -193,7 +198,6 @@ class AudioCastService : Service() {
         scope.launch(Dispatchers.IO) {
             try {
                 val serverSocket = ServerSocket(ARTWORK_PORT)
-                Log.i(TAG, "Artwork server started on port $ARTWORK_PORT")
                 while (isActive) {
                     val client = serverSocket.accept()
                     launch {
@@ -213,7 +217,6 @@ class AudioCastService : Service() {
                             }
                             output.flush()
                         } catch (e: Exception) {
-                            Log.e(TAG, "Artwork server error: ${e.message}")
                         } finally {
                             client.close()
                         }
@@ -235,15 +238,31 @@ class AudioCastService : Service() {
                     intent.getParcelableExtra(EXTRA_MEDIA_PROJECTION_TOKEN)
                 }
 
-                val intentServerHost = intent.getStringExtra(EXTRA_SERVER_HOST)
-                val intentServerPort = intent.getIntExtra(EXTRA_SERVER_PORT, 0)
-                serverName = intent.getStringExtra(EXTRA_SERVER_NAME)
-                serverPlatform = intent.getStringExtra(EXTRA_SERVER_PLATFORM)
+                val destinations = mutableListOf<CastDestination>()
+                val serversJson = intent.getStringExtra(EXTRA_SERVERS_JSON)
+                if (serversJson != null) {
+                    val array = JSONArray(serversJson)
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        destinations.add(CastDestination(
+                            name = obj.getString("name"),
+                            host = obj.getString("host"),
+                            port = obj.getInt("port"),
+                            platform = obj.optString("platform", null)
+                        ))
+                    }
+                } else {
+                    val host = intent.getStringExtra(EXTRA_SERVER_HOST)
+                    val port = intent.getIntExtra(EXTRA_SERVER_PORT, 0)
+                    val name = intent.getStringExtra(EXTRA_SERVER_NAME)
+                    val platform = intent.getStringExtra(EXTRA_SERVER_PLATFORM)
+                    if (host != null && port != 0 && name != null) {
+                        destinations.add(CastDestination(name, host, port, platform))
+                    }
+                }
 
-                if (mediaProjectionToken != null && intentServerHost != null && intentServerPort != 0 && serverName != null) {
-                    serverHost = intentServerHost
-                    serverPort = intentServerPort
-                    startCasting(mediaProjectionToken, intentServerHost, intentServerPort)
+                if (mediaProjectionToken != null && destinations.isNotEmpty()) {
+                    startCasting(mediaProjectionToken, destinations)
                 }
                 return START_STICKY
             }
@@ -256,9 +275,10 @@ class AudioCastService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun startCasting(mediaProjectionToken: Intent, serverHost: String, serverPort: Int) {
+    private fun startCasting(mediaProjectionToken: Intent, destinations: List<CastDestination>) {
         sessionJob?.cancel()
         
+        _activeDestinations.value = destinations
         _state.value = CastState.CONNECTING
         sessionJob = SupervisorJob()
         val sessionScope = CoroutineScope(Dispatchers.IO + sessionJob!!)
@@ -266,11 +286,13 @@ class AudioCastService : Service() {
         originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
 
-        with(sharedPreferences.edit()) {
-            putString(KEY_LAST_SERVER_HOST, serverHost)
-            putInt(KEY_LAST_SERVER_PORT, serverPort)
-            putString(KEY_LAST_SERVER_NAME, serverName)
-            apply()
+        if (destinations.size == 1) {
+            with(sharedPreferences.edit()) {
+                putString(KEY_LAST_SERVER_HOST, destinations[0].host)
+                putInt(KEY_LAST_SERVER_PORT, destinations[0].port)
+                putString(KEY_LAST_SERVER_NAME, destinations[0].name)
+                apply()
+            }
         }
 
         try {
@@ -326,138 +348,107 @@ class AudioCastService : Service() {
         val videoEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_VIDEO_ENABLED, false)
 
         sessionScope.launch {
-            launch { startControlSession(serverHost, serverPort) }
-            if (videoEnabled) {
-                launch { startVideoSession(serverHost, serverPort) }
+            launch { 
+                audioRecord?.startRecording()
+                val audioBuffer = ByteBuffer.allocate(FRAME_SIZE)
+                while (isActive) {
+                    val readResult = audioRecord?.read(audioBuffer.array(), 0, FRAME_SIZE) ?: 0
+                    if (readResult == FRAME_SIZE) {
+                        _audioBufferFlow.emit(audioBuffer.array().copyOf())
+                    } else if (readResult < 0) {
+                        Log.e(TAG, "AudioRecord read error: $readResult")
+                        break
+                    }
+                }
             }
-            startAudioSession(serverHost, serverPort)
+
+            destinations.forEach { dest ->
+                launch { startControlSession(dest) }
+                if (videoEnabled && destinations.size == 1) { 
+                    launch { startVideoSession(dest) }
+                }
+                launch { startAudioSession(dest) }
+                launch { startStatsSession(dest) }
+            }
         }
         
         sessionScope.startMetadataRefreshLoop()
-        
         _metadata.value?.let { sendMetadata(it) }
     }
 
-    private suspend fun startAudioSession(serverHost: String, serverPort: Int) {
-        val audioBuffer = ByteBuffer.allocate(FRAME_SIZE)
-        var droppedFramesCount = 0
+    private suspend fun startAudioSession(dest: CastDestination) {
         var sentFramesCount = 0L
         var reconnectAttempts = 0
 
         while (currentCoroutineContext().isActive) {
             try {
-                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Connecting to ws://$serverHost:$serverPort/audio")
-                client.webSocket(host = serverHost, port = serverPort, path = "/audio") audioSocket@{
-                    webSocketSession = this
+                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Connecting to ws://${dest.host}:${dest.port}/audio")
+                client.webSocket(host = dest.host, port = dest.port, path = "/audio") audioSocket@{
                     reconnectAttempts = 0
-                    Log.i(TAG, "Connected to /audio. Awaiting handshake...")
-
+                    
                     val handshakeFrame = try {
                         withTimeout(3000L) { incoming.receive() }
-                    } catch (e: TimeoutCancellationException) {
-                        Log.e(TAG, "Handshake timeout. Server did not send response.")
-                        PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Handshake timeout")
-                        _state.value = CastState.ERROR
-                        return@audioSocket
-                    }
-
-                    if (handshakeFrame !is Frame.Text) {
-                        Log.e(TAG, "Invalid handshake frame type: ${handshakeFrame.frameType.name}")
-                        _state.value = CastState.ERROR
-                        return@audioSocket
-                    }
-
-                    val handshakeText = handshakeFrame.readText()
-                    PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, handshakeText)
-                    try {
-                        val handshakeJson = JSONObject(handshakeText)
-                        val handshakeType = handshakeJson.optString("type")
-                        if (handshakeType != "handshake" && handshakeJson.optString("status") != "READY") {
-                            Log.e(TAG, "Handshake failed, invalid response: $handshakeText")
-                            _state.value = CastState.ERROR
-                            return@audioSocket
-                        }
-                        Log.i(TAG, "Server is READY. Starting stream.")
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to parse handshake JSON: $handshakeText", e)
-                        _state.value = CastState.ERROR
                         return@audioSocket
                     }
+
+                    if (handshakeFrame !is Frame.Text) return@audioSocket
 
                     _state.value = CastState.CASTING
                     updateNotification()
 
-                    audioRecord?.startRecording()
-                    PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "Started Recording & Streaming")
+                    val delayQueue = java.util.LinkedList<ByteArray>()
                     
-                    val statsJob = launch { startStatsSession(serverHost, serverPort, droppedFramesCount) }
-
-                    while (isActive) {
-                        val readResult = audioRecord?.read(audioBuffer.array(), 0, FRAME_SIZE) ?: 0
-                        when {
-                            readResult == FRAME_SIZE -> {
-                                val bufferCopy = audioBuffer.array().copyOf()
-                                _audioBufferFlow.emit(bufferCopy)
-                                
-                                val sent = outgoing.trySendBlocking(Frame.Binary(true, bufferCopy))
-                                if (sent.isSuccess) {
-                                    sentFramesCount++
-                                    
-                                    // Update bitrate every second
-                                    val now = System.currentTimeMillis()
-                                    if (now - lastBitrateTime >= 1000) {
-                                        val delta = sentFramesCount - lastSentFramesForBitrate
-                                        val bps = delta * FRAME_SIZE * 8
-                                        currentBitrateString = "${bps / 1000} kbps"
-                                        lastBitrateTime = now
-                                        lastSentFramesForBitrate = sentFramesCount
-                                    }
-
-                                    _stats.value = _stats.value.copy(sentFrames = sentFramesCount)
-                                } else {
-                                    Log.w(TAG, "Backpressure: Dropping frame to maintain low latency")
-                                    droppedFramesCount++
-                                    _stats.value = _stats.value.copy(droppedFrames = _stats.value.droppedFrames + 1)
-                                    PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "Dropped Frame (Backpressure)")
-                                }
-                            }
-                            readResult < 0 -> {
-                                Log.e(TAG, "AudioRecord read error: $readResult")
-                                _state.value = CastState.ERROR
-                                return@audioSocket
-                            }
+                    audioBufferFlow.collect { buffer: ByteArray ->
+                        delayQueue.add(buffer)
+                        
+                        // Real-time latency lookup
+                        val currentDelay = _activeDestinations.value.find { it.host == dest.host }?.delayMs ?: 0
+                        val requiredFrames = currentDelay / 20 
+                        
+                        var sendCount = 0
+                        while (delayQueue.size > requiredFrames && sendCount < 2) {
+                            val frame = delayQueue.removeFirst()
+                            sendAudioFrame(this@audioSocket, frame)
+                            sentFramesCount++
+                            sendCount++
+                            
+                            if (delayQueue.size == requiredFrames) break
                         }
+                        
+                        val now = System.currentTimeMillis()
+                        if (now - lastBitrateTime >= 1000) {
+                            val delta = sentFramesCount - lastSentFramesForBitrate
+                            val bps = delta * FRAME_SIZE * 8
+                            currentBitrateString = "${bps / 1000} kbps"
+                            lastBitrateTime = now
+                            lastSentFramesForBitrate = sentFramesCount
+                        }
+                        _stats.value = _stats.value.copy(sentFrames = sentFramesCount)
                     }
-                    statsJob.cancelAndJoin()
-                    audioRecord?.stop()
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                Log.e(TAG, "WebSocket error: ${e.localizedMessage}")
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Audio Socket Error: ${e.localizedMessage}")
-                audioRecord?.stop()
                 reconnectAttempts++
                 val delayTime = (RECONNECT_INITIAL_BACKOFF * 2.0.pow(reconnectAttempts.toDouble().coerceAtMost(5.0))).toLong()
-                _state.value = CastState.CONNECTING
-                updateNotification()
-                Log.d(TAG, "Reconnecting in ${delayTime}ms...")
                 delay(delayTime)
             }
         }
     }
 
-    private suspend fun startVideoSession(serverHost: String, serverPort: Int) {
+    private fun sendAudioFrame(session: DefaultClientWebSocketSession, buffer: ByteArray) {
+        val sent = session.outgoing.trySendBlocking(Frame.Binary(true, buffer))
+        if (!sent.isSuccess) {
+            _stats.value = _stats.value.copy(droppedFrames = _stats.value.droppedFrames + 1)
+        }
+    }
+
+    private suspend fun startVideoSession(dest: CastDestination) {
         var reconnectAttempts = 0
         while (currentCoroutineContext().isActive) {
             try {
-                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Connecting to ws://$serverHost:$serverPort/video")
-                client.webSocket(host = serverHost, port = serverPort, path = "/video") videoSocket@{
-                    videoWebSocketSession = this
-                    reconnectAttempts = 0
-                    Log.i(TAG, "Connected to /video.")
-
+                client.webSocket(host = dest.host, port = dest.port, path = "/video") videoSocket@{
                     setupVideoCodec()
-                    
                     val bufferInfo = MediaCodec.BufferInfo()
                     while (isActive) {
                         val outputBufferId = videoCodec?.dequeueOutputBuffer(bufferInfo, 10000L) ?: -1
@@ -466,22 +457,15 @@ class AudioCastService : Service() {
                             if (outputBuffer != null) {
                                 val outData = ByteArray(bufferInfo.size)
                                 outputBuffer.get(outData)
-                                
-                                val sent = outgoing.trySendBlocking(Frame.Binary(true, outData))
-                                if (!sent.isSuccess) {
-                                    Log.w(TAG, "Video Backpressure: Dropping frame")
-                                }
+                                outgoing.trySendBlocking(Frame.Binary(true, outData))
                             }
                             videoCodec?.releaseOutputBuffer(outputBufferId, false)
-                        } else if (outputBufferId == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                            Log.d(TAG, "Video format changed: ${videoCodec?.outputFormat}")
                         }
                     }
                     releaseVideoCodec()
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                Log.e(TAG, "Video WebSocket error: ${e.localizedMessage}")
                 releaseVideoCodec()
                 reconnectAttempts++
                 delay((RECONNECT_INITIAL_BACKOFF * 2.0.pow(reconnectAttempts.toDouble().coerceAtMost(5.0))).toLong())
@@ -501,16 +485,11 @@ class AudioCastService : Service() {
                 windowManager.defaultDisplay.getRealMetrics(metrics)
             }
             
-            val width = VIDEO_WIDTH
-            val height = VIDEO_HEIGHT
-            val dpi = metrics.densityDpi
-
-            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
+            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, VIDEO_WIDTH, VIDEO_HEIGHT)
             format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             format.setInteger(MediaFormat.KEY_BIT_RATE, VIDEO_BITRATE)
             format.setInteger(MediaFormat.KEY_FRAME_RATE, VIDEO_FPS)
             format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, VIDEO_IFRAME_INTERVAL)
-            format.setInteger(MediaFormat.KEY_PRIORITY, 0) // Real-time
 
             videoCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
             videoCodec?.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
@@ -518,52 +497,52 @@ class AudioCastService : Service() {
             videoCodec?.start()
 
             virtualDisplay = mediaProjection?.createVirtualDisplay(
-                "AriaCastVideo",
-                width, height, dpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                surface, null, null
+                "AriaCastVideo", VIDEO_WIDTH, VIDEO_HEIGHT, metrics.densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, surface, null, null
             )
-            Log.i(TAG, "Video codec and VirtualDisplay set up.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to setup video codec", e)
-        }
+        } catch (e: Exception) {}
     }
 
     private fun releaseVideoCodec() {
         virtualDisplay?.release()
         virtualDisplay = null
-        try {
-            videoCodec?.stop()
-            videoCodec?.release()
-        } catch (e: Exception) {}
+        try { videoCodec?.stop(); videoCodec?.release() } catch (e: Exception) {}
         videoCodec = null
-        videoWebSocketSession = null
     }
 
     fun sendVolumeCommand(direction: String) {
         scope.launch {
-            val host = serverHost
-            if (controlSocketSession == null || host == null) {
-                Log.e(TAG, "Cannot send volume command, no active control session.")
-                return@launch
-            }
-            if (serverPlatform?.contains("Music", ignoreCase = true) == true) {
-                Log.w(TAG, "Volume control disabled for Music platform.")
-                return@launch
-            }
-            try {
-                val command = JSONObject().apply {
-                    put("command", "volume")
-                    put("direction", direction)
-                }.toString()
-                controlSocketSession?.send(Frame.Text(command))
-                PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL, "Volume $direction")
-                Log.i(TAG, "Sent volume command: $command")
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                Log.e(TAG, "Failed to send volume command", e)
+            controlSessions.values.forEach { session ->
+                try {
+                    val command = JSONObject().apply {
+                        put("command", "volume")
+                        put("direction", direction)
+                    }.toString()
+                    session.send(Frame.Text(command))
+                } catch (e: Exception) {}
             }
         }
+    }
+
+    fun setDelay(host: String, delayMs: Int) {
+        val current = _activeDestinations.value.toMutableList()
+        val index = current.indexOfFirst { it.host == host }
+        if (index != -1) {
+            current[index] = current[index].copy(delayMs = delayMs)
+            _activeDestinations.value = current
+        }
+    }
+
+    fun getActiveDestinationsJson(): String {
+        val array = JSONArray()
+        _activeDestinations.value.forEach { dest ->
+            array.put(JSONObject().apply {
+                put("name", dest.name)
+                put("host", dest.host)
+                put("delayMs", dest.delayMs)
+            })
+        }
+        return array.toString()
     }
 
     fun setArtwork(bytes: ByteArray?) {
@@ -575,15 +554,9 @@ class AudioCastService : Service() {
     }
 
     private suspend fun performMetadataUpdate(metadata: TrackMetadata) {
-        val host = serverHost
-        val port = serverPort
-        
-        if (host == null) {
-            Log.w(TAG, "Metadata update deferred: serverHost is null for track: ${metadata.title}")
-            return
-        }
+        val destinations = _activeDestinations.value
+        if (destinations.isEmpty()) return
 
-        // If metadata has a URL but it's not from us, we replace it with our local host URL if we have bytes
         var finalMetadata = metadata
         if (currentArtworkBytes != null) {
             val myIp = getLocalIpAddress()
@@ -592,33 +565,20 @@ class AudioCastService : Service() {
             }
         }
         
-        try {
-            Log.d(TAG, "Attempting to send metadata to http://$host:$port/metadata")
-            val response = client.post {
-                url {
-                    protocol = URLProtocol.HTTP
-                    this.host = host
-                    this.port = port
-                    path("metadata")
+        destinations.forEach { dest ->
+            try {
+                client.post {
+                    url {
+                        protocol = URLProtocol.HTTP
+                        host = dest.host
+                        port = dest.port
+                        path("metadata")
+                    }
+                    contentType(ContentType.Application.Json)
+                    setBody(mapOf("data" to finalMetadata))
+                    timeout { requestTimeoutMillis = 5000 }
                 }
-                contentType(ContentType.Application.Json)
-                setBody(mapOf("data" to finalMetadata))
-                timeout {
-                    requestTimeoutMillis = 5000
-                }
-            }
-            
-            if (response.status.isSuccess()) {
-                PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Sent: ${finalMetadata.title}")
-                Log.d(TAG, "Successfully sent metadata update: ${finalMetadata.title}")
-            } else {
-                Log.e(TAG, "Server rejected metadata update. Status: ${response.status}")
-                PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Failed: ${response.status}")
-            }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            Log.e(TAG, "HTTP Exception sending metadata update: ${e.localizedMessage}")
-            PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata Error: ${e.localizedMessage}")
+            } catch (e: Exception) {}
         }
     }
 
@@ -635,74 +595,57 @@ class AudioCastService : Service() {
                     }
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting local IP: ${e.message}")
-        }
+        } catch (e: Exception) {}
         return null
     }
 
-    private suspend fun startControlSession(serverHost: String, serverPort: Int) {
+    private suspend fun startControlSession(dest: CastDestination) {
         while (currentCoroutineContext().isActive) {
             try {
-                PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL, "Connecting to ws://$serverHost:$serverPort/control")
-                client.webSocket(host = serverHost, port = serverPort, path = "/control") {
-                    controlSocketSession = this
-                    Log.i(TAG, "Control session established.")
-                    PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Control Connected")
+                client.webSocket(host = dest.host, port = dest.port, path = "/control") {
+                    controlSessions[dest.host] = this
                     for (frame in incoming) {
                         if (frame is Frame.Text) {
                             val text = frame.readText()
-                            PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, text)
                             try {
                                 val json = JSONObject(text)
                                 val action = json.getString("action")
                                 val command = MediaCommand.entries.find { it.name.equals(action, ignoreCase = true) }
                                 if (command != null) {
                                     _controlCommands.emit(command)
-                                    Log.d(TAG, "Received control command: $command")
                                 }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Failed to parse control message: $text", e)
-                            }
+                            } catch (e: Exception) {}
                         }
                     }
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                Log.e(TAG, "Control WebSocket error: ${e.localizedMessage}")
-                PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Control Socket Error: ${e.localizedMessage}")
-                controlSocketSession = null
+                controlSessions.remove(dest.host)
                 delay(RECONNECT_INITIAL_BACKOFF)
             }
         }
     }
 
-    private suspend fun startStatsSession(serverHost: String, serverPort: Int, initialDroppedFrames: Int) {
+    private suspend fun startStatsSession(dest: CastDestination) {
         while (currentCoroutineContext().isActive) {
             try {
-                client.webSocket(host = serverHost, port = serverPort, path = "/stats") statsSocket@{
+                client.webSocket(host = dest.host, port = dest.port, path = "/stats") statsSocket@{
                     while(isActive) {
                         withTimeoutOrNull(STATS_TIMEOUT) {
                             val frame = incoming.receive()
                             if (frame is Frame.Text) {
-                                val text = frame.readText()
-                                val json = JSONObject(text)
+                                val json = JSONObject(frame.readText())
                                 _stats.value = _stats.value.copy(
                                     bufferedFrames = json.optInt("bufferedFrames"),
-                                    droppedFrames = json.optInt("droppedFrames") + initialDroppedFrames,
                                     receivedFrames = json.optInt("receivedFrames")
                                 )
                                 updateNotification()
                             }
-                        } ?: run {
-                            Log.w(TAG, "Stats timeout, reconnecting...")
-                            return@statsSocket
-                        }
+                        } ?: return@statsSocket
                     }
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                Log.e(TAG, "Stats WebSocket error: ${e.localizedMessage}")
                 delay(RECONNECT_INITIAL_BACKOFF)
             }
         }
@@ -717,47 +660,30 @@ class AudioCastService : Service() {
             put("sent_frames", s.sentFrames)
             put("bitrate", currentBitrateString)
             put("state", _state.value.name)
+            put("destinations_count", _activeDestinations.value.size)
         }.toString()
     }
 
     private val mediaProjectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
-            Log.w(TAG, "MediaProjection revoked.")
-            _state.value = CastState.ERROR
             stopCasting()
         }
     }
 
     private fun stopCasting() {
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, originalVolume, 0)
-        
-        mediaProjection?.unregisterCallback(mediaProjectionCallback)
         mediaProjection?.stop()
         mediaProjection = null
-
         audioRecord?.stop()
         audioRecord?.release()
         audioRecord = null
-        
         releaseVideoCodec()
-
-        webSocketSession?.cancel()
-        webSocketSession = null
-
-        controlSocketSession?.cancel()
-        controlSocketSession = null
-
-        serverHost = null
-        serverPort = 0
-        serverName = null
-        serverPlatform = null
-
+        controlSessions.clear()
+        _activeDestinations.value = emptyList()
         sessionJob?.cancel()
         sessionJob = null
-
         _state.value = CastState.OFF
         _stats.value = CastingStats()
-
         @Suppress("DEPRECATION")
         stopForeground(true)
         stopSelf()
@@ -776,19 +702,18 @@ class AudioCastService : Service() {
         val remoteViews = RemoteViews(packageName, R.layout.notification_casting)
         remoteViews.setTextViewText(R.id.notification_title, getString(R.string.app_name))
 
-        val videoEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_VIDEO_ENABLED, false)
-        val mode = if (videoEnabled) getString(R.string.audio_video) else getString(R.string.audio_only)
-
+        val destinations = _activeDestinations.value
         val statusText = when(state.value) {
-            CastState.CASTING -> getString(R.string.casting_to, serverName ?: getString(R.string.unknown), mode)
-            CastState.CONNECTING -> getString(R.string.connecting_to, serverName ?: getString(R.string.unknown))
+            CastState.CASTING -> {
+                if (destinations.size > 1) "Casting to ${destinations.size} devices"
+                else getString(R.string.casting_to, destinations.firstOrNull()?.name ?: "Unknown", "")
+            }
+            CastState.CONNECTING -> "Connecting..."
             else -> getString(R.string.not_casting)
         }
         remoteViews.setTextViewText(R.id.notification_text, statusText)
 
-        val stopIntent = Intent(this, AudioCastService::class.java).apply {
-            action = ACTION_STOP
-        }
+        val stopIntent = Intent(this, AudioCastService::class.java).apply { action = ACTION_STOP }
         val stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE)
         remoteViews.setOnClickPendingIntent(R.id.notification_stop_button, stopPendingIntent)
 
@@ -814,6 +739,7 @@ class AudioCastService : Service() {
         const val EXTRA_SERVER_PORT = "com.aria.ariacast.EXTRA_SERVER_PORT"
         const val EXTRA_SERVER_NAME = "com.aria.ariacast.EXTRA_SERVER_NAME"
         const val EXTRA_SERVER_PLATFORM = "com.aria.ariacast.EXTRA_SERVER_PLATFORM"
+        const val EXTRA_SERVERS_JSON = "com.aria.ariacast.EXTRA_SERVERS_JSON"
 
         const val PREFS_NAME = "AriaCastPrefs"
         const val KEY_LAST_SERVER_HOST = "last_server_host"
@@ -821,34 +747,16 @@ class AudioCastService : Service() {
         const val KEY_LAST_SERVER_NAME = "last_server_name"
 
         const val SAMPLE_RATE = 48000
-        const val FRAME_SIZE = 3840 // 20ms of 16-bit stereo audio
+        const val FRAME_SIZE = 3840 
         
         const val VIDEO_WIDTH = 1280
         const val VIDEO_HEIGHT = 720
-        const val VIDEO_BITRATE = 3000000 // 3 Mbps
+        const val VIDEO_BITRATE = 3000000 
         const val VIDEO_FPS = 30
         const val VIDEO_IFRAME_INTERVAL = 2
 
         private const val RECONNECT_INITIAL_BACKOFF = 1000L
-        private const val STATS_TIMEOUT = 10000L // 10 seconds
-        
+        private const val STATS_TIMEOUT = 10000L 
         private const val ARTWORK_PORT = 8090
     }
-}
-
-enum class CastState {
-    OFF,
-    DISCOVERING,
-    CONNECTING,
-    CASTING,
-    ERROR
-}
-
-enum class MediaCommand {
-    PLAY,
-    PAUSE,
-    TOGGLE,
-    NEXT,
-    PREVIOUS,
-    STOP
 }

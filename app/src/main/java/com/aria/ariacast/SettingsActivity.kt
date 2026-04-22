@@ -26,13 +26,14 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var accentStatusText: TextView
     private lateinit var accentColorPreview: ImageView
     private lateinit var videoCastSwitch: MaterialSwitch
+    private lateinit var multiroomSwitch: MaterialSwitch
     private lateinit var updateManager: UpdateManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
         val accentColor = sharedPreferences.getInt(KEY_ACCENT_COLOR, R.color.accent_blue)
         setTheme(ThemeUtils.getThemeForAccent(accentColor))
-        
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
 
@@ -44,6 +45,7 @@ class SettingsActivity : AppCompatActivity() {
         accentStatusText = findViewById(R.id.accentStatusText)
         accentColorPreview = findViewById(R.id.accentColorPreview)
         videoCastSwitch = findViewById(R.id.videoCastSwitch)
+        multiroomSwitch = findViewById(R.id.multiroomSwitch)
         updateManager = UpdateManager(this)
 
         findViewById<View>(R.id.themeLayout).setOnClickListener {
@@ -87,6 +89,11 @@ class SettingsActivity : AppCompatActivity() {
             sharedPreferences.edit().putBoolean(KEY_VIDEO_ENABLED, isChecked).apply()
         }
 
+        multiroomSwitch.isChecked = sharedPreferences.getBoolean(KEY_MULTIROOM_ENABLED, false)
+        multiroomSwitch.setOnCheckedChangeListener { _, isChecked ->
+            sharedPreferences.edit().putBoolean(KEY_MULTIROOM_ENABLED, isChecked).apply()
+        }
+
         val versionText = findViewById<TextView>(R.id.versionText)
         versionText.text = getString(R.string.version_format, getString(R.string.app_version))
 
@@ -107,7 +114,7 @@ class SettingsActivity : AppCompatActivity() {
         )
         val sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
         val currentTheme = sharedPreferences.getInt(KEY_THEME, ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM)
-        
+
         val checkedItem = when(currentTheme) {
             ThemeUtils.MODE_NIGHT_NO -> 0
             ThemeUtils.MODE_NIGHT_YES -> 1
@@ -122,7 +129,7 @@ class SettingsActivity : AppCompatActivity() {
                     1 -> ThemeUtils.MODE_NIGHT_YES
                     else -> ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM
                 }
-                
+
                 sharedPreferences.edit().putInt(KEY_THEME, selectedTheme).apply()
                 ThemeUtils.applyTheme(selectedTheme)
                 updateThemeStatusText()
@@ -146,10 +153,10 @@ class SettingsActivity : AppCompatActivity() {
             R.color.accent_orange,
             R.color.accent_pink
         )
-        
+
         val sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
         val currentAccent = sharedPreferences.getInt(KEY_ACCENT_COLOR, R.color.accent_blue)
-        
+
         val checkedItem = colors.indexOf(currentAccent).coerceAtLeast(0)
 
         MaterialAlertDialogBuilder(this)
@@ -157,7 +164,7 @@ class SettingsActivity : AppCompatActivity() {
             .setSingleChoiceItems(accents, checkedItem) { dialog, which ->
                 val selectedColor = colors[which]
                 sharedPreferences.edit().putInt(KEY_ACCENT_COLOR, selectedColor).apply()
-                
+
                 updateAccentStatus()
                 dialog.dismiss()
                 recreate()
@@ -178,7 +185,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun updateAccentStatus() {
         val sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
         val currentAccent = sharedPreferences.getInt(KEY_ACCENT_COLOR, R.color.accent_blue)
-        
+
         val accentName = when(currentAccent) {
             R.color.accent_purple -> getString(R.string.accent_purple)
             R.color.accent_green -> getString(R.string.accent_green)
@@ -186,7 +193,7 @@ class SettingsActivity : AppCompatActivity() {
             R.color.accent_pink -> getString(R.string.accent_pink)
             else -> getString(R.string.accent_blue)
         }
-        
+
         accentStatusText.text = accentName
         accentColorPreview.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(this, currentAccent))
     }
@@ -229,6 +236,7 @@ class SettingsActivity : AppCompatActivity() {
         const val KEY_THEME = "prefs_theme"
         const val KEY_ACCENT_COLOR = "prefs_accent_color"
         const val KEY_VIDEO_ENABLED = "prefs_video_enabled"
+        const val KEY_MULTIROOM_ENABLED = "prefs_multiroom_enabled"
         const val GITHUB_URL = "https://github.com/AriaCast/AriaCast-app"
     }
 }

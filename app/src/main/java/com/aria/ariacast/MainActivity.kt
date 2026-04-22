@@ -9,20 +9,26 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.ContextCompat
@@ -32,17 +38,22 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.slider.Slider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var mediaProjectionManager: MediaProjectionManager
     private var audioCastService: AudioCastService? = null
     private var isBound = false
-    private var selectedServer: Server? = null
+    private var selectedServers: List<Server> = emptyList()
     private var isUserSelecting = false
 
     private lateinit var stateTextView: TextView
@@ -51,19 +62,30 @@ class MainActivity : AppCompatActivity() {
     private lateinit var serverRecyclerView: RecyclerView
     private lateinit var permissionButton: MaterialButton
     private lateinit var statusCard: MaterialCardView
+    private lateinit var groupsSection: LinearLayout
+    private lateinit var groupRecyclerView: RecyclerView
+    private lateinit var addGroupButton: MaterialButton
+    private lateinit var syncSection: LinearLayout
+    private lateinit var syncSliderContainer: LinearLayout
     lateinit var pluginContainer: LinearLayout
 
     lateinit var discoveryManager: DiscoveryManager
     private lateinit var serverListAdapter: ServerAdapter
+    private lateinit var groupListAdapter: GroupAdapter
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var pluginManager: PluginManager
     private lateinit var updateManager: UpdateManager
+    private val viewModel: MainViewModel by viewModels()
 
     private var currentAccentColor: Int = R.color.accent_blue
     private var currentThemeMode: Int = ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM
 
     private val _audioCastServiceFlow = MutableStateFlow<AudioCastService?>(null)
     val audioCastServiceFlow = _audioCastServiceFlow.asStateFlow()
+
+    private val _refreshTrigger = MutableStateFlow(0)
+    
+    private val activeTouchHosts = mutableSetOf<String>()
 
     private var currentCardAnimator: ValueAnimator? = null
 
@@ -73,10 +95,15 @@ class MainActivity : AppCompatActivity() {
             val s = binder.getService()
             audioCastService = s
             _audioCastServiceFlow.value = s
+            viewModel.setService(s)
             isBound = true
+            
             lifecycleScope.launch {
-                s.state.collectLatest { state ->
+                combine(s.state, s.activeDestinations) { state, dests ->
+                    Pair(state, dests)
+                }.collectLatest { (state, _) ->
                     updateUi(state)
+                    updateSyncUi()
                 }
             }
             pluginManager.runEnabledPlugins(this@MainActivity, s)
@@ -85,26 +112,47 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceDisconnected(arg0: ComponentName) {
             audioCastService = null
             _audioCastServiceFlow.value = null
+            viewModel.setService(null)
             isBound = false
         }
     }
 
     private val startMediaProjection = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (it.resultCode == Activity.RESULT_OK && it.data != null) {
-            selectedServer?.let { server ->
+            if (selectedServers.isNotEmpty()) {
                 val serviceIntent = Intent(this, AudioCastService::class.java).apply {
                     action = AudioCastService.ACTION_START
                     putExtra(AudioCastService.EXTRA_MEDIA_PROJECTION_TOKEN, it.data)
-                    putExtra(AudioCastService.EXTRA_SERVER_HOST, server.host)
-                    putExtra(AudioCastService.EXTRA_SERVER_PORT, server.port)
-                    putExtra(AudioCastService.EXTRA_SERVER_NAME, server.name)
-                    putExtra(AudioCastService.EXTRA_SERVER_PLATFORM, server.platform)
+                    
+                    if (selectedServers.size == 1) {
+                        val server = selectedServers[0]
+                        putExtra(AudioCastService.EXTRA_SERVER_HOST, server.host)
+                        putExtra(AudioCastService.EXTRA_SERVER_PORT, server.port)
+                        putExtra(AudioCastService.EXTRA_SERVER_NAME, server.name)
+                        putExtra(AudioCastService.EXTRA_SERVER_PLATFORM, server.platform)
+                    } else {
+                        val array = JSONArray()
+                        selectedServers.forEach { s ->
+                            array.put(JSONObject().apply {
+                                put("name", s.name)
+                                put("host", s.host)
+                                put("port", s.port)
+                                put("platform", s.platform)
+                            })
+                        }
+                        putExtra(AudioCastService.EXTRA_SERVERS_JSON, array.toString())
+                    }
                 }
                 ContextCompat.startForegroundService(this, serviceIntent)
             }
         } else {
             Toast.makeText(this, getString(R.string.media_projection_denied), Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun castToServers(servers: List<Server>) {
+        selectedServers = servers
+        startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -131,14 +179,20 @@ class MainActivity : AppCompatActivity() {
         permissionButton = findViewById(R.id.permissionButton)
         statusCard = findViewById(R.id.statusCard)
         pluginContainer = findViewById(R.id.pluginContainer)
+        groupsSection = findViewById(R.id.groupsSection)
+        groupRecyclerView = findViewById(R.id.groupRecyclerView)
+        addGroupButton = findViewById(R.id.addGroupButton)
+        syncSection = findViewById(R.id.syncSection)
+        syncSliderContainer = findViewById(R.id.syncSliderContainer)
 
         serverListAdapter = ServerAdapter(
             onServerClick = { server ->
+                statusCard.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 isUserSelecting = true
-                selectedServer = server
-                startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
+                castToServers(listOf(server))
             },
             onDeleteClick = { server ->
+                statusCard.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                 discoveryManager.removeServer(server.name)
             }
         )
@@ -148,14 +202,34 @@ class MainActivity : AppCompatActivity() {
             layoutManager = LinearLayoutManager(this@MainActivity)
         }
 
+        groupListAdapter = GroupAdapter(
+            onGroupClick = { group ->
+                val groupServers = discoveryManager.servers.value.filter { group.hosts.contains(it.host) }
+                if (groupServers.size == group.hosts.size) {
+                    castToServers(groupServers)
+                } else {
+                    Toast.makeText(this, "Some devices in this group are offline", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDeleteClick = { group ->
+                viewModel.deleteGroup(group)
+            }
+        )
+
+        groupRecyclerView.apply {
+            adapter = groupListAdapter
+            layoutManager = LinearLayoutManager(this@MainActivity)
+        }
+
         castButton.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             if (audioCastService?.state?.value == CastState.CASTING) {
                 val serviceIntent = Intent(this, AudioCastService::class.java).apply {
                     action = AudioCastService.ACTION_STOP
                 }
                 startService(serviceIntent)
             } else {
-                if (selectedServer != null) {
+                if (selectedServers.isNotEmpty()) {
                     startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
                 } else {
                     Toast.makeText(this, getString(R.string.select_server_first), Toast.LENGTH_SHORT).show()
@@ -164,35 +238,56 @@ class MainActivity : AppCompatActivity() {
         }
 
         discoveryButton.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             isUserSelecting = false
             discoveryManager.startDiscovery()
             serverRecyclerView.scheduleLayoutAnimation()
         }
         
+        addGroupButton.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            showCreateGroupDialog()
+        }
+
         permissionButton.setOnClickListener {
             val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
             startActivity(intent)
         }
 
         lifecycleScope.launch {
-            discoveryManager.servers.collectLatest { servers ->
+            combine(discoveryManager.servers, _audioCastServiceFlow, _refreshTrigger, viewModel.savedGroups) { servers, service, _, _ ->
+                Pair(servers, service)
+            }.collectLatest { (servers, service) ->
                 serverListAdapter.submitList(servers)
+
+                val isMultiroomEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_MULTIROOM_ENABLED, false)
+                if (isMultiroomEnabled) {
+                    val activeGroups = viewModel.savedGroups.value.filter { group ->
+                        group.hosts.all { host -> servers.any { it.host == host } }
+                    }
+                    groupsSection.visibility = View.VISIBLE
+                    groupListAdapter.submitList(activeGroups)
+                } else {
+                    groupsSection.visibility = View.GONE
+                }
 
                 val lastHost = sharedPreferences.getString(AudioCastService.KEY_LAST_SERVER_HOST, null)
                 
-                if (isUserSelecting && selectedServer != null) {
-                    val found = servers.find { it.host == selectedServer?.host }
+                if (isUserSelecting && selectedServers.size == 1) {
+                    val found = servers.find { it.host == selectedServers[0].host }
                     if (found != null) {
-                        selectedServer = found
+                        selectedServers = listOf(found)
                         serverListAdapter.setSelectedItem(servers.indexOf(found))
                     }
-                } else if (lastHost != null) {
+                } else if (lastHost != null && selectedServers.isEmpty()) {
                     val lastServer = servers.find { it.host == lastHost }
                     if (lastServer != null) {
-                        selectedServer = lastServer
+                        selectedServers = listOf(lastServer)
                         serverListAdapter.setSelectedItem(servers.indexOf(lastServer))
                     }
                 }
+                
+                updateSyncUi()
             }
         }
 
@@ -212,12 +307,124 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateSyncUi() {
+        val s = audioCastService
+        val isMultiroomEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_MULTIROOM_ENABLED, false)
+        
+        if (isMultiroomEnabled && s != null && s.state.value == CastState.CASTING) {
+            val destinations = s.activeDestinations.value
+            if (destinations.size > 1) {
+                syncSection.visibility = View.VISIBLE
+                
+                val currentHosts = destinations.map { it.host }
+                val existingSliders = mutableMapOf<String, View>()
+                for (i in 0 until syncSliderContainer.childCount) {
+                    val child = syncSliderContainer.getChildAt(i)
+                    val host = child.tag as? String
+                    if (host != null) {
+                        if (host in currentHosts) {
+                            existingSliders[host] = child
+                        } else {
+                            syncSliderContainer.removeView(child)
+                        }
+                    }
+                }
+
+                destinations.forEach { dest ->
+                    var sliderItem = existingSliders[dest.host]
+                    if (sliderItem == null) {
+                        sliderItem = layoutInflater.inflate(R.layout.item_plugin_slider, syncSliderContainer, false)
+                        sliderItem.tag = dest.host
+                        syncSliderContainer.addView(sliderItem)
+                    }
+
+                    val label = sliderItem.findViewById<TextView>(R.id.label)
+                    val slider = sliderItem.findViewById<Slider>(R.id.slider)
+                    
+                    label.text = "${dest.name} (${dest.delayMs}ms)"
+                    
+                    if (!activeTouchHosts.contains(dest.host)) {
+                        slider.apply {
+                            valueFrom = 0f
+                            valueTo = 2000f
+                            stepSize = 20f
+                            value = dest.delayMs.toFloat().coerceIn(0f, 2000f)
+                            
+                            clearOnChangeListeners()
+                            addOnChangeListener { _, value, fromUser ->
+                                if (fromUser) {
+                                    s.setDelay(dest.host, value.toInt())
+                                    label.text = "${dest.name} (${value.toInt()}ms)"
+                                    performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                }
+                            }
+                            
+                            addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+                                override fun onStartTrackingTouch(slider: Slider) {
+                                    activeTouchHosts.add(dest.host)
+                                    slider.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                }
+                                override fun onStopTrackingTouch(slider: Slider) {
+                                    activeTouchHosts.remove(dest.host)
+                                    s.setDelay(dest.host, slider.value.toInt())
+                                    slider.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                                }
+                            })
+                        }
+                    }
+                }
+            } else {
+                syncSection.visibility = View.GONE
+            }
+        } else {
+            syncSection.visibility = View.GONE
+        }
+    }
+
+    private fun showCreateGroupDialog() {
+        val servers = discoveryManager.servers.value
+        if (servers.isEmpty()) {
+            Toast.makeText(this, "No servers discovered", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_create_group, null)
+        val nameInput = dialogView.findViewById<EditText>(R.id.groupNameInput)
+        val serverListLayout = dialogView.findViewById<LinearLayout>(R.id.serverSelectionList)
+        val selectedHosts = mutableSetOf<String>()
+
+        servers.forEach { server ->
+            val checkBox = CheckBox(this).apply {
+                text = server.name
+                setOnCheckedChangeListener { _, isChecked ->
+                    if (isChecked) selectedHosts.add(server.host) else selectedHosts.remove(server.host)
+                }
+            }
+            serverListLayout.addView(checkBox)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Create Speaker Group")
+            .setView(dialogView)
+            .setPositiveButton("Save") { _, _ ->
+                val name = nameInput.text.toString()
+                if (name.isNotEmpty() && selectedHosts.isNotEmpty()) {
+                    val groups = viewModel.savedGroups.value.toMutableList()
+                    groups.add(CastGroup(name, selectedHosts.toList()))
+                    viewModel.saveGroups(groups)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        findViewById<View>(item.itemId)?.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         return when (item.itemId) {
             R.id.action_settings -> {
                 startActivity(Intent(this, SettingsActivity::class.java))
@@ -233,6 +440,7 @@ class MainActivity : AppCompatActivity() {
             bindService(intent, connection, Context.BIND_AUTO_CREATE)
         }
         discoveryManager.startDiscovery()
+        viewModel.updateMultiroomEnabled()
     }
 
     override fun onStop() {
@@ -248,12 +456,19 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         checkNotificationListenerPermission()
         
-        // Refresh theme if it changed in settings
         val newAccent = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
         val newThemeMode = sharedPreferences.getInt(SettingsActivity.KEY_THEME, ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM)
         if (newAccent != currentAccentColor || newThemeMode != currentThemeMode) {
             recreate()
         }
+
+        pluginManager.runEnabledPlugins(this, audioCastService)
+        
+        val isMultiroomEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_MULTIROOM_ENABLED, false)
+        groupsSection.visibility = if (isMultiroomEnabled) View.VISIBLE else View.GONE
+        _refreshTrigger.value++
+        updateSyncUi()
+        viewModel.updateMultiroomEnabled()
     }
 
     private fun checkNotificationListenerPermission() {
@@ -273,7 +488,7 @@ class MainActivity : AppCompatActivity() {
             }.start()
         }
         
-        castButton.isEnabled = state == CastState.OFF && selectedServer != null || state == CastState.CASTING
+        castButton.isEnabled = (state == CastState.OFF && selectedServers.isNotEmpty()) || state == CastState.CASTING
         
         val accentColor = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
         val activeColor = ContextCompat.getColor(this, accentColor)
@@ -307,6 +522,47 @@ class MainActivity : AppCompatActivity() {
             }
             start()
         }
+    }
+}
+
+class GroupAdapter(
+    private val onGroupClick: (CastGroup) -> Unit,
+    private val onDeleteClick: (CastGroup) -> Unit
+) : RecyclerView.Adapter<GroupAdapter.ViewHolder>() {
+
+    private var groups = emptyList<CastGroup>()
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_group, parent, false)
+        return ViewHolder(view)
+    }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        val group = groups[position]
+        holder.groupName.text = group.name
+        holder.groupMembers.text = "${group.hosts.size} devices"
+        
+        holder.itemView.setOnClickListener { 
+            it.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            onGroupClick(group) 
+        }
+        holder.deleteButton.setOnClickListener { 
+            it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            onDeleteClick(group) 
+        }
+    }
+
+    override fun getItemCount() = groups.size
+
+    fun submitList(newGroups: List<CastGroup>) {
+        groups = newGroups
+        notifyDataSetChanged()
+    }
+
+    class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val groupName: TextView = view.findViewById(R.id.groupName)
+        val groupMembers: TextView = view.findViewById(R.id.groupMembers)
+        val deleteButton: ImageButton = view.findViewById(R.id.deleteGroupButton)
     }
 }
 
@@ -349,13 +605,17 @@ class ServerAdapter(
         if (server.platform == "Manual") {
             holder.moreButton.setImageResource(android.R.drawable.ic_menu_delete)
             holder.moreButton.visibility = View.VISIBLE
-            holder.moreButton.setOnClickListener { onDeleteClick(server) }
+            holder.moreButton.setOnClickListener { 
+                it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                onDeleteClick(server) 
+            }
         } else {
             holder.moreButton.setImageResource(android.R.drawable.ic_menu_more)
             holder.moreButton.visibility = View.GONE
         }
 
         holder.itemView.setOnClickListener { 
+            it.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             onServerClick(server)
             setSelectedItem(position)
         }
