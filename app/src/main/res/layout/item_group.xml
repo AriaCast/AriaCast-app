@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="8dp"
+    android:layout_marginVertical="4dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="0dp"
+    app:cardBackgroundColor="@android:color/transparent"
+    app:rippleColor="?attr/colorControlHighlight">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp">
+
+        <com.google.android.material.imageview.ShapeableImageView
+            android:id="@+id/groupIcon"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:scaleType="centerInside"
+            android:src="@android:drawable/ic_menu_slideshow"
+            android:padding="12dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Small"
+            app:tint="?attr/colorPrimary" />
+
+        <TextView
+            android:id="@+id/groupName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="Group Name"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textColor="?attr/colorOnBackground"
+            android:textStyle="bold"
+            app:layout_constraintEnd_toStartOf="@+id/deleteGroupButton"
+            app:layout_constraintStart_toEndOf="@id/groupIcon"
+            app:layout_constraintTop_toTopOf="@id/groupIcon"
+            app:layout_constraintBottom_toTopOf="@id/groupMembers"
+            app:layout_constraintVertical_chainStyle="packed"/>
+
+        <TextView
+            android:id="@+id/groupMembers"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="3 devices"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?android:attr/textColorSecondary"
+            app:layout_constraintEnd_toStartOf="@+id/deleteGroupButton"
+            app:layout_constraintStart_toEndOf="@id/groupIcon"
+            app:layout_constraintTop_toBottomOf="@id/groupName"
+            app:layout_constraintBottom_toBottomOf="@id/groupIcon"/>
+
+        <ImageButton
+            android:id="@+id/deleteGroupButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_delete"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:tint="?android:attr/textColorSecondary" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</com.google.android.material.card.MaterialCardView>
