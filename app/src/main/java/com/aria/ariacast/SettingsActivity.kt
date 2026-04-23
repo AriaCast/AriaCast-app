@@ -11,7 +11,9 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -24,6 +26,7 @@ class SettingsActivity : AppCompatActivity() {
     private var lastClickTime: Long = 0
     private lateinit var themeStatusText: TextView
     private lateinit var accentStatusText: TextView
+    private lateinit var languageStatusText: TextView
     private lateinit var accentColorPreview: ImageView
     private lateinit var videoCastSwitch: MaterialSwitch
     private lateinit var multiroomSwitch: MaterialSwitch
@@ -43,6 +46,7 @@ class SettingsActivity : AppCompatActivity() {
 
         themeStatusText = findViewById(R.id.themeStatusText)
         accentStatusText = findViewById(R.id.accentStatusText)
+        languageStatusText = findViewById(R.id.languageStatusText)
         accentColorPreview = findViewById(R.id.accentColorPreview)
         videoCastSwitch = findViewById(R.id.videoCastSwitch)
         multiroomSwitch = findViewById(R.id.multiroomSwitch)
@@ -54,6 +58,10 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.accentLayout).setOnClickListener {
             showAccentSelectionDialog()
+        }
+
+        findViewById<View>(R.id.languageLayout).setOnClickListener {
+            showLanguageSelectionDialog()
         }
 
         findViewById<View>(R.id.pluginsLayout).setOnClickListener {
@@ -99,6 +107,7 @@ class SettingsActivity : AppCompatActivity() {
 
         updateThemeStatusText()
         updateAccentStatus()
+        updateLanguageStatusText()
     }
 
     private fun openGitHub() {
@@ -172,6 +181,38 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showLanguageSelectionDialog() {
+        val languages = arrayOf(
+            getString(R.string.language_default),
+            "English",
+            "Deutsch",
+            "Español",
+            "Français",
+            "Italiano",
+            "Nederlands",
+            "日本語",
+            "简体中文"
+        )
+        val codes = arrayOf("", "en", "de", "es", "fr", "it", "nl", "ja", "zh")
+
+        val currentLocaleCode = AppCompatDelegate.getApplicationLocales().get(0)?.language ?: ""
+        val checkedItem = codes.indexOf(currentLocaleCode).coerceAtLeast(0)
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.select_language))
+            .setSingleChoiceItems(languages, checkedItem) { dialog, which ->
+                val selectedCode = codes[which]
+                val appLocale: LocaleListCompat = if (selectedCode.isEmpty()) {
+                    LocaleListCompat.getEmptyLocaleList()
+                } else {
+                    LocaleListCompat.forLanguageTags(selectedCode)
+                }
+                AppCompatDelegate.setApplicationLocales(appLocale)
+                dialog.dismiss()
+            }
+            .show()
+    }
+
     private fun updateThemeStatusText() {
         val sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
         val currentTheme = sharedPreferences.getInt(KEY_THEME, ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM)
@@ -196,6 +237,21 @@ class SettingsActivity : AppCompatActivity() {
 
         accentStatusText.text = accentName
         accentColorPreview.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(this, currentAccent))
+    }
+
+    private fun updateLanguageStatusText() {
+        val currentLocaleCode = AppCompatDelegate.getApplicationLocales().get(0)?.language ?: ""
+        languageStatusText.text = when(currentLocaleCode) {
+            "en" -> "English"
+            "de" -> "Deutsch"
+            "es" -> "Español"
+            "fr" -> "Français"
+            "it" -> "Italiano"
+            "nl" -> "Nederlands"
+            "ja" -> "日本語"
+            "zh" -> "简体中文"
+            else -> getString(R.string.language_default)
+        }
     }
 
     private fun handlePacketLogClick() {

@@ -1,0 +1,102 @@
+<resources>
+    <string name="update_available_title">Nieuwe update beschikbaar</string>
+    <string name="update_available_message">Versie %1$s is beschikbaar. Wilt u deze downloaden?\n\n%2$s</string>
+    <string name="download">Downloaden</string>
+    <string name="later">Later</string>
+    <string name="up_to_date_title">Up-to-date</string>
+    <string name="up_to_date_message">U gebruikt al de nieuwste versie.</string>
+    <string name="ok">OK</string>
+    <string name="update_failed_title">Updatecontrole mislukt</string>
+    <string name="update_failed_message">Kon geen verbinding maken met GitHub om op updates te controleren.</string>
+
+    <!-- Main Activity -->
+    <string name="media_projection_denied">MediaProjection-toestemming geweigerd.</string>
+    <string name="select_server_first">Selecteer eerst een server.</string>
+    <string name="scanning">Scannen…</string>
+    <string name="refresh">Vernieuwen</string>
+    <string name="stop">Stop</string>
+    <string name="start">Start</string>
+    <string name="home">Home</string>
+    <string name="audio">Audio</string>
+    <string name="devices">Apparaten</string>
+    <string name="logs">Logs</string>
+    <string name="status">Status</string>
+    <string name="disconnected">VERBINDING VERBROKEN</string>
+    <string name="connect">Verbinden</string>
+    <string name="servers">Servers</string>
+    <string name="ready_to_cast">Klaar om te casten</string>
+    <string name="manual_entry">Handmatige invoer</string>
+    <string name="manual_entry_desc">Voer server IP en poort in</string>
+    <string name="ip_address">IP-adres</string>
+    <string name="port">Poort</string>
+    <string name="add">Toevoegen</string>
+
+    <!-- Settings Activity -->
+    <string name="settings">Instellingen</string>
+    <string name="general">Algemeen</string>
+    <string name="extensions">Extensies</string>
+    <string name="casting">Casten</string>
+    <string name="about">Over</string>
+    <string name="version_format">Versie %1$s</string>
+    <string name="select_appearance">Selecteer weergave</string>
+    <string name="select_accent_color">Selecteer accentkleur</string>
+    <string name="theme_light">Licht</string>
+    <string name="theme_dark">Donker</string>
+    <string name="theme_follow_system">Systeem volgen</string>
+    <string name="accent_blue">Blauw</string>
+    <string name="accent_purple">Paars</string>
+    <string name="accent_green">Groen</string>
+    <string name="accent_orange">Oranje</string>
+    <string name="accent_pink">Roze</string>
+    <string name="secret_logs_one_tap">Nog één tik om geheime logs te openen…</string>
+    <string name="secret_logs_multiple_taps">Nog %1$d tikken om geheime logs te openen…</string>
+    <string name="server_cleared">Laatste serververbinding gewist</string>
+    <string name="appearance">Weergave</string>
+    <string name="accent_color">Accentkleur</string>
+    <string name="language">Taal</string>
+    <string name="select_language">Selecteer taal</string>
+    <string name="language_default">Systeemstandaard</string>
+    <string name="enable_video">Video inschakelen</string>
+    <string name="enable_video_desc">Cast schermvideo samen met audio</string>
+    <string name="plugins">Plugins</string>
+    <string name="manage_plugins_desc">Beheer script-gebaseerde extensies</string>
+    <string name="notification_access">Meldingstoegang</string>
+    <string name="notification_access_desc">Vereist voor media-metadata</string>
+    <string name="check_for_updates">Controleren op updates</string>
+    <string name="github_repo">GitHub-repository</string>
+    <string name="github_repo_desc">Bekijk broncode en meld problemen</string>
+    <string name="reset_last_server">Laatste server resetten</string>
+    <string name="reset_last_server_desc">Wis opgeslagen serververbindingsdetails</string>
+
+    <!-- Plugins Activity -->
+    <string name="plugin_folder_updated">Plugin-map bijgewerkt</string>
+    <string name="plugin_folder_title">Plugin-map</string>
+    <string name="plugin_folder_message">Selecteer een map voor uw .json- en .js-pluginbestanden.</string>
+    <string name="select_folder">Map selecteren</string>
+    <string name="cancel">Annuleren</string>
+    <string name="use_default">Standaard gebruiken</string>
+    <string name="plugin_author_format">door %1$s • v%2$s</string>
+    <string name="close">Sluiten</string>
+    <string name="configure">Configureren</string>
+    <string name="plugin_details_format">%1$s\n\nVersie: %2$s\nAuteur: %3$s</string>
+
+    <!-- AudioCastService -->
+    <string name="audio_video">Audio &amp; Video</string>
+    <string name="audio_only">Alleen audio</string>
+    <string name="casting_to">Casten naar %1$s (%2$s)</string>
+    <string name="connecting_to">Verbinden met %1$s</string>
+    <string name="not_casting">Niet aan het casten</string>
+    <string name="unknown">Onbekend</string>
+
+    <!-- Tile Service -->
+    <string name="tile_tap_to_cast">Tik om te casten</string>
+    <string name="tile_discovering">Ontdekken…</string>
+    <string name="tile_connecting">Verbinden…</string>
+    <string name="tile_casting">Casten…</string>
+    <string name="tile_error">Er is een fout opgetreden</string>
+
+    <!-- Packet Log Activity -->
+    <string name="packet_logs">Pakketlogs</string>
+    <string name="search_logs">Logs doorzoeken…</string>
+    <string name="clear_logs">Logs wissen</string>
+</resources>

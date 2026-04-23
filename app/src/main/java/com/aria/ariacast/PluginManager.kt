@@ -199,7 +199,7 @@ class PluginManager(private val context: Context) {
               "id": "visualizer",
               "name": "Live Waveform",
               "description": "High-performance real-time audio waveform visualizer.",
-              "version": "1.1.0",
+              "version": "1.1.2",
               "author": "AriaCast Team",
               "scriptPath": "visualizer.js"
             }

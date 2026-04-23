@@ -1,0 +1,102 @@
+<resources>
+    <string name="update_available_title">有新更新可用</string>
+    <string name="update_available_message">版本 %1$s 已可用。是否要下载？\n\n%2$s</string>
+    <string name="download">下载</string>
+    <string name="later">稍后</string>
+    <string name="up_to_date_title">已是最新</string>
+    <string name="up_to_date_message">您已在使用最新版本。</string>
+    <string name="ok">确定</string>
+    <string name="update_failed_title">检查更新失败</string>
+    <string name="update_failed_message">无法连接到 GitHub 检查更新。</string>
+
+    <!-- Main Activity -->
+    <string name="media_projection_denied">媒体投影权限被拒绝。</string>
+    <string name="select_server_first">请先选择一个服务器。</string>
+    <string name="scanning">正在扫描…</string>
+    <string name="refresh">刷新</string>
+    <string name="stop">停止</string>
+    <string name="start">开始</string>
+    <string name="home">首页</string>
+    <string name="audio">音频</string>
+    <string name="devices">设备</string>
+    <string name="logs">日志</string>
+    <string name="status">状态</string>
+    <string name="disconnected">已断开连接</string>
+    <string name="connect">连接</string>
+    <string name="servers">服务器</string>
+    <string name="ready_to_cast">准备投放</string>
+    <string name="manual_entry">手动输入</string>
+    <string name="manual_entry_desc">输入服务器 IP 和端口</string>
+    <string name="ip_address">IP 地址</string>
+    <string name="port">端口</string>
+    <string name="add">添加</string>
+
+    <!-- Settings Activity -->
+    <string name="settings">设置</string>
+    <string name="general">常规</string>
+    <string name="extensions">扩展</string>
+    <string name="casting">投放</string>
+    <string name="about">关于</string>
+    <string name="version_format">版本 %1$s</string>
+    <string name="select_appearance">选择外观</string>
+    <string name="select_accent_color">选择强调色</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+    <string name="theme_follow_system">跟随系统</string>
+    <string name="accent_blue">蓝色</string>
+    <string name="accent_purple">紫色</string>
+    <string name="accent_green">绿色</string>
+    <string name="accent_orange">橙色</string>
+    <string name="accent_pink">粉色</string>
+    <string name="secret_logs_one_tap">再点一次进入秘密日志…</string>
+    <string name="secret_logs_multiple_taps">再点 %1$d 次进入秘密日志…</string>
+    <string name="server_cleared">已清除上次服务器连接</string>
+    <string name="appearance">外观</string>
+    <string name="accent_color">强调色</string>
+    <string name="language">语言</string>
+    <string name="select_language">选择语言</string>
+    <string name="language_default">系统默认</string>
+    <string name="enable_video">启用视频</string>
+    <string name="enable_video_desc">在音频之外同时投放屏幕视频</string>
+    <string name="plugins">插件</string>
+    <string name="manage_plugins_desc">管理基于脚本的扩展</string>
+    <string name="notification_access">通知访问权限</string>
+    <string name="notification_access_desc">媒体元数据所需</string>
+    <string name="check_for_updates">检查更新</string>
+    <string name="github_repo">GitHub 仓库</string>
+    <string name="github_repo_desc">查看源代码并报告问题</string>
+    <string name="reset_last_server">重置上次服务器</string>
+    <string name="reset_last_server_desc">清除保存的服务器连接详情</string>
+
+    <!-- Plugins Activity -->
+    <string name="plugin_folder_updated">插件文件夹已更新</string>
+    <string name="plugin_folder_title">插件文件夹</string>
+    <string name="plugin_folder_message">选择放置您的 .json 和 .js 插件文件的文件夹。</string>
+    <string name="select_folder">选择文件夹</string>
+    <string name="cancel">取消</string>
+    <string name="use_default">使用默认</string>
+    <string name="plugin_author_format">作者 %1$s • v%2$s</string>
+    <string name="close">关闭</string>
+    <string name="configure">配置</string>
+    <string name="plugin_details_format">%1$s\n\n版本：%2$s\n作者：%3$s</string>
+
+    <!-- AudioCastService -->
+    <string name="audio_video">音频和视频</string>
+    <string name="audio_only">仅音频</string>
+    <string name="casting_to">正在投放到 %1$s (%2$s)</string>
+    <string name="connecting_to">正在连接到 %1$s</string>
+    <string name="not_casting">未在投放</string>
+    <string name="unknown">未知</string>
+
+    <!-- Tile Service -->
+    <string name="tile_tap_to_cast">点击以投放</string>
+    <string name="tile_discovering">正在发现…</string>
+    <string name="tile_connecting">正在连接…</string>
+    <string name="tile_casting">正在投放…</string>
+    <string name="tile_error">发生错误</string>
+
+    <!-- Packet Log Activity -->
+    <string name="packet_logs">数据包日志</string>
+    <string name="search_logs">搜索日志…</string>
+    <string name="clear_logs">清除日志</string>
+</resources>

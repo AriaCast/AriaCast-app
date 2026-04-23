@@ -1,0 +1,102 @@
+<resources>
+    <string name="update_available_title">新しいアップデートがあります</string>
+    <string name="update_available_message">バージョン %1$s が利用可能です。ダウンロードしますか？\n\n%2$s</string>
+    <string name="download">ダウンロード</string>
+    <string name="later">後で</string>
+    <string name="up_to_date_title">最新の状態です</string>
+    <string name="up_to_date_message">すでに最新バージョンを使用しています。</string>
+    <string name="ok">OK</string>
+    <string name="update_failed_title">アップデートの確認に失敗しました</string>
+    <string name="update_failed_message">GitHub に接続してアップデートを確認できませんでした。 </string>
+
+    <!-- Main Activity -->
+    <string name="media_projection_denied">MediaProjection の権限が拒否されました。</string>
+    <string name="select_server_first">最初にサーバーを選択してください。</string>
+    <string name="scanning">スキャン中…</string>
+    <string name="refresh">更新</string>
+    <string name="stop">停止</string>
+    <string name="start">開始</string>
+    <string name="home">ホーム</string>
+    <string name="audio">オーディオ</string>
+    <string name="devices">デバイス</string>
+    <string name="logs">ログ</string>
+    <string name="status">ステータス</string>
+    <string name="disconnected">切断</string>
+    <string name="connect">接続</string>
+    <string name="servers">サーバー</string>
+    <string name="ready_to_cast">キャストの準備完了</string>
+    <string name="manual_entry">手動入力</string>
+    <string name="manual_entry_desc">サーバーの IP とポートを入力</string>
+    <string name="ip_address">IP アドレス</string>
+    <string name="port">ポート</string>
+    <string name="add">追加</string>
+
+    <!-- Settings Activity -->
+    <string name="settings">設定</string>
+    <string name="general">一般</string>
+    <string name="extensions">拡張機能</string>
+    <string name="casting">キャスト</string>
+    <string name="about">このアプリについて</string>
+    <string name="version_format">バージョン %1$s</string>
+    <string name="select_appearance">外観を選択</string>
+    <string name="select_accent_color">アクセントカラーを選択</string>
+    <string name="theme_light">ライト</string>
+    <string name="theme_dark">ダーク</string>
+    <string name="theme_follow_system">システムに従う</string>
+    <string name="accent_blue">ブルー</string>
+    <string name="accent_purple">パープル</string>
+    <string name="accent_green">グリーン</string>
+    <string name="accent_orange">オレンジ</string>
+    <string name="accent_pink">ピンク</string>
+    <string name="secret_logs_one_tap">あと 1 回タップしてシークレットログを表示…</string>
+    <string name="secret_logs_multiple_taps">あと %1$d 回タップしてシークレットログを表示…</string>
+    <string name="server_cleared">最後のサーバー接続がクリアされました</string>
+    <string name="appearance">外観</string>
+    <string name="accent_color">アクセントカラー</string>
+    <string name="language">言語</string>
+    <string name="select_language">言語を選択</string>
+    <string name="language_default">システムデフォルト</string>
+    <string name="enable_video">ビデオを有効にする</string>
+    <string name="enable_video_desc">オーディオと一緒に画面のビデオをキャストする</string>
+    <string name="plugins">プラグイン</string>
+    <string name="manage_plugins_desc">スクリプトベースの拡張機能を管理する</string>
+    <string name="notification_access">通知へのアクセス</string>
+    <string name="notification_access_desc">メディアメタデータに必要です</string>
+    <string name="check_for_updates">アップデートを確認</string>
+    <string name="github_repo">GitHub リポジトリ</string>
+    <string name="github_repo_desc">ソースコードの表示と問題の報告</string>
+    <string name="reset_last_server">最後のサーバーをリセット</string>
+    <string name="reset_last_server_desc">保存されたサーバー接続の詳細を消去</string>
+
+    <!-- Plugins Activity -->
+    <string name="plugin_folder_updated">プラグインフォルダが更新されました</string>
+    <string name="plugin_folder_title">プラグインフォルダ</string>
+    <string name="plugin_folder_message">.json と .js のプラグインファイルを配置するフォルダを選択してください。</string>
+    <string name="select_folder">フォルダを選択</string>
+    <string name="cancel">キャンセル</string>
+    <string name="use_default">デフォルトを使用</string>
+    <string name="plugin_author_format">作者: %1$s • v%2$s</string>
+    <string name="close">閉じる</string>
+    <string name="configure">設定</string>
+    <string name="plugin_details_format">%1$s\n\nバージョン: %2$s\n作者: %3$s</string>
+
+    <!-- AudioCastService -->
+    <string name="audio_video">オーディオとビデオ</string>
+    <string name="audio_only">オーディオのみ</string>
+    <string name="casting_to">%1$s (%2$s) にキャスト中</string>
+    <string name="connecting_to">%1$s に接続中</string>
+    <string name="not_casting">キャストしていません</string>
+    <string name="unknown">不明</string>
+
+    <!-- Tile Service -->
+    <string name="tile_tap_to_cast">タップしてキャスト</string>
+    <string name="tile_discovering">検出中…</string>
+    <string name="tile_connecting">接続中…</string>
+    <string name="tile_casting">キャスト中…</string>
+    <string name="tile_error">エラーが発生しました</string>
+
+    <!-- Packet Log Activity -->
+    <string name="packet_logs">パケットログ</string>
+    <string name="search_logs">ログを検索…</string>
+    <string name="clear_logs">ログを消去</string>
+</resources>

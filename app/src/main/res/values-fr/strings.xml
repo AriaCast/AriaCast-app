@@ -1,0 +1,102 @@
+<resources>
+    <string name="update_available_title">Nouvelle mise à jour disponible</string>
+    <string name="update_available_message">La version %1$s est disponible. Souhaitez-vous la télécharger ?\n\n%2$s</string>
+    <string name="download">Télécharger</string>
+    <string name="later">Plus tard</string>
+    <string name="up_to_date_title">À jour</string>
+    <string name="up_to_date_message">Vous utilisez déjà la dernière version.</string>
+    <string name="ok">OK</string>
+    <string name="update_failed_title">Échec de la vérification de la mise à jour</string>
+    <string name="update_failed_message">Impossible de se connecter à GitHub pour vérifier les mises à jour.</string>
+
+    <!-- Main Activity -->
+    <string name="media_projection_denied">Autorisation MediaProjection refusée.</string>
+    <string name="select_server_first">Veuillez d\'abord sélectionner un serveur.</string>
+    <string name="scanning">Analyse…</string>
+    <string name="refresh">Actualiser</string>
+    <string name="stop">Arrêter</string>
+    <string name="start">Démarrer</string>
+    <string name="home">Accueil</string>
+    <string name="audio">Audio</string>
+    <string name="devices">Appareils</string>
+    <string name="logs">Journaux</string>
+    <string name="status">État</string>
+    <string name="disconnected">DÉCONNECTÉ</string>
+    <string name="connect">Connecter</string>
+    <string name="servers">Serveurs</string>
+    <string name="ready_to_cast">Prêt à diffuser</string>
+    <string name="manual_entry">Saisie manuelle</string>
+    <string name="manual_entry_desc">Entrez l\'IP et le port du serveur</string>
+    <string name="ip_address">Adresse IP</string>
+    <string name="port">Port</string>
+    <string name="add">Ajouter</string>
+
+    <!-- Settings Activity -->
+    <string name="settings">Paramètres</string>
+    <string name="general">Général</string>
+    <string name="extensions">Extensions</string>
+    <string name="casting">Diffusion</string>
+    <string name="about">À propos</string>
+    <string name="version_format">Version %1$s</string>
+    <string name="select_appearance">Sélectionner l\'apparence</string>
+    <string name="select_accent_color">Sélectionner la couleur d\'accentuation</string>
+    <string name="theme_light">Clair</string>
+    <string name="theme_dark">Sombre</string>
+    <string name="theme_follow_system">Suivre le système</string>
+    <string name="accent_blue">Bleu</string>
+    <string name="accent_purple">Violet</string>
+    <string name="accent_green">Vert</string>
+    <string name="accent_orange">Orange</string>
+    <string name="accent_pink">Rose</string>
+    <string name="secret_logs_one_tap">Encore une pression pour accéder aux journaux secrets…</string>
+    <string name="secret_logs_multiple_taps">Encore %1$d pressions pour accéder aux journaux secrets…</string>
+    <string name="server_cleared">Dernière connexion au serveur effacée</string>
+    <string name="appearance">Apparence</string>
+    <string name="accent_color">Couleur d\'accentuation</string>
+    <string name="language">Langue</string>
+    <string name="select_language">Sélectionner la langue</string>
+    <string name="language_default">Par défaut du système</string>
+    <string name="enable_video">Activer la vidéo</string>
+    <string name="enable_video_desc">Diffuser la vidéo de l\'écran avec l\'audio</string>
+    <string name="plugins">Plugins</string>
+    <string name="manage_plugins_desc">Gérer les extensions basées sur des scripts</string>
+    <string name="notification_access">Accès aux notifications</string>
+    <string name="notification_access_desc">Requis pour les métadonnées multimédias</string>
+    <string name="check_for_updates">Vérifier les mises à jour</string>
+    <string name="github_repo">Dépôt GitHub</string>
+    <string name="github_repo_desc">Voir le code source et signaler des problèmes</string>
+    <string name="reset_last_server">Réinitialiser le dernier serveur</string>
+    <string name="reset_last_server_desc">Effacer les détails de connexion du dernier serveur enregistré</string>
+
+    <!-- Plugins Activity -->
+    <string name="plugin_folder_updated">Dossier des plugins mis à jour</string>
+    <string name="plugin_folder_title">Dossier des plugins</string>
+    <string name="plugin_folder_message">Sélectionnez un dossier pour vos fichiers plugin .json et .js.</string>
+    <string name="select_folder">Sélectionner un dossier</string>
+    <string name="cancel">Annuler</string>
+    <string name="use_default">Utiliser par défaut</string>
+    <string name="plugin_author_format">par %1$s • v%2$s</string>
+    <string name="close">Fermer</string>
+    <string name="configure">Configurer</string>
+    <string name="plugin_details_format">%1$s\n\nVersion : %2$s\nAuteur : %3$s</string>
+
+    <!-- AudioCastService -->
+    <string name="audio_video">Audio &amp; Vidéo</string>
+    <string name="audio_only">Audio uniquement</string>
+    <string name="casting_to">Diffusion vers %1$s (%2$s)</string>
+    <string name="connecting_to">Connexion à %1$s</string>
+    <string name="not_casting">Pas de diffusion</string>
+    <string name="unknown">Inconnu</string>
+
+    <!-- Tile Service -->
+    <string name="tile_tap_to_cast">Appuyer pour diffuser</string>
+    <string name="tile_discovering">Découverte…</string>
+    <string name="tile_connecting">Connexion…</string>
+    <string name="tile_casting">Diffusion…</string>
+    <string name="tile_error">Une erreur est survenue</string>
+
+    <!-- Packet Log Activity -->
+    <string name="packet_logs">Journaux de paquets</string>
+    <string name="search_logs">Rechercher dans les journaux…</string>
+    <string name="clear_logs">Effacer les journaux</string>
+</resources>
