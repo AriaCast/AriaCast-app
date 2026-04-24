@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="update_available_title">Nouvelle mise à jour disponible</string>
     <string name="update_available_message">La version %1$s est disponible. Souhaitez-vous la télécharger ?\n\n%2$s</string>
@@ -30,6 +31,13 @@
     <string name="ip_address">Adresse IP</string>
     <string name="port">Port</string>
     <string name="add">Ajouter</string>
+    <string name="synchronization">Synchronisation</string>
+    <string name="speaker_groups">Groupes d\'enceintes</string>
+    <string name="create">Créer</string>
+    <string name="offline_devices_error">Certains appareils de ce groupe sont hors ligne</string>
+    <string name="no_servers_found">Aucun serveur découvert</string>
+    <string name="grant_notification_permission">Accorder l\'autorisation de notification</string>
+    <string name="devices_count_format">%1$d appareils</string>
 
     <!-- Settings Activity -->
     <string name="settings">Paramètres</string>
@@ -58,6 +66,8 @@
     <string name="language_default">Par défaut du système</string>
     <string name="enable_video">Activer la vidéo</string>
     <string name="enable_video_desc">Diffuser la vidéo de l\'écran avec l\'audio</string>
+    <string name="multiroom">Support Multiroom</string>
+    <string name="multiroom_desc">Permet de créer des groupes d\'enceintes</string>
     <string name="plugins">Plugins</string>
     <string name="manage_plugins_desc">Gérer les extensions basées sur des scripts</string>
     <string name="notification_access">Accès aux notifications</string>
@@ -67,11 +77,13 @@
     <string name="github_repo_desc">Voir le code source et signaler des problèmes</string>
     <string name="reset_last_server">Réinitialiser le dernier serveur</string>
     <string name="reset_last_server_desc">Effacer les détails de connexion du dernier serveur enregistré</string>
+    <string name="plugin_folder">Dossier des plugins</string>
+    <string name="change_plugin_folder_desc">Changer ou effacer le dossier des plugins</string>
 
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Dossier des plugins mis à jour</string>
     <string name="plugin_folder_title">Dossier des plugins</string>
-    <string name="plugin_folder_message">Sélectionnez un dossier pour vos fichiers plugin .json et .js.</string>
+    <string name="plugin_folder_message">Pour utiliser les plugins, veuillez sélectionner un dossier où ils seront stockés et mis à jour depuis GitHub.</string>
     <string name="select_folder">Sélectionner un dossier</string>
     <string name="cancel">Annuler</string>
     <string name="use_default">Utiliser par défaut</string>
@@ -79,14 +91,20 @@
     <string name="close">Fermer</string>
     <string name="configure">Configurer</string>
     <string name="plugin_details_format">%1$s\n\nVersion : %2$s\nAuteur : %3$s</string>
+    <string name="syncing_plugins">Synchronisation des plugins depuis GitHub…</string>
+    <string name="plugins_synced">Plugins mis à jour</string>
+    <string name="sync_failed">Échec de la synchronisation des plugins</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">Audio &amp; Vidéo</string>
     <string name="audio_only">Audio uniquement</string>
     <string name="casting_to">Diffusion vers %1$s (%2$s)</string>
+    <string name="casting_to_multiple">Diffusion vers %1$d appareils</string>
     <string name="connecting_to">Connexion à %1$s</string>
     <string name="not_casting">Pas de diffusion</string>
     <string name="unknown">Inconnu</string>
+    <string name="multiroom_group">Groupe Multiroom</string>
+    <string name="connecting">Connexion en cours…</string>
 
     <!-- Tile Service -->
     <string name="tile_tap_to_cast">Appuyer pour diffuser</string>
@@ -99,4 +117,10 @@
     <string name="packet_logs">Journaux de paquets</string>
     <string name="search_logs">Rechercher dans les journaux…</string>
     <string name="clear_logs">Effacer les journaux</string>
+
+    <!-- Create Group Dialog -->
+    <string name="create_speaker_group">Créer un groupe d\'enceintes</string>
+    <string name="group_name">Nom du groupe</string>
+    <string name="select_devices">Sélectionner des appareils</string>
+    <string name="save">Enregistrer</string>
 </resources>

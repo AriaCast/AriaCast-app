@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="update_available_title">新しいアップデートがあります</string>
     <string name="update_available_message">バージョン %1$s が利用可能です。ダウンロードしますか？\n\n%2$s</string>
@@ -7,7 +8,7 @@
     <string name="up_to_date_message">すでに最新バージョンを使用しています。</string>
     <string name="ok">OK</string>
     <string name="update_failed_title">アップデートの確認に失敗しました</string>
-    <string name="update_failed_message">GitHub に接続してアップデートを確認できませんでした。 </string>
+    <string name="update_failed_message">GitHub に接続してアップデートを確認できませんでした。</string>
 
     <!-- Main Activity -->
     <string name="media_projection_denied">MediaProjection の権限が拒否されました。</string>
@@ -30,6 +31,13 @@
     <string name="ip_address">IP アドレス</string>
     <string name="port">ポート</string>
     <string name="add">追加</string>
+    <string name="synchronization">同期</string>
+    <string name="speaker_groups">スピーカーグループ</string>
+    <string name="create">作成</string>
+    <string name="offline_devices_error">このグループ内の一部のデバイスがオフラインです</string>
+    <string name="no_servers_found">サーバーが見つかりませんでした</string>
+    <string name="grant_notification_permission">通知権限を許可する</string>
+    <string name="devices_count_format">%1$d デバイス</string>
 
     <!-- Settings Activity -->
     <string name="settings">設定</string>
@@ -58,6 +66,8 @@
     <string name="language_default">システムデフォルト</string>
     <string name="enable_video">ビデオを有効にする</string>
     <string name="enable_video_desc">オーディオと一緒に画面のビデオをキャストする</string>
+    <string name="multiroom">マルチルーム対応</string>
+    <string name="multiroom_desc">スピーカーグループの作成を可能にします</string>
     <string name="plugins">プラグイン</string>
     <string name="manage_plugins_desc">スクリプトベースの拡張機能を管理する</string>
     <string name="notification_access">通知へのアクセス</string>
@@ -67,11 +77,13 @@
     <string name="github_repo_desc">ソースコードの表示と問題の報告</string>
     <string name="reset_last_server">最後のサーバーをリセット</string>
     <string name="reset_last_server_desc">保存されたサーバー接続の詳細を消去</string>
+    <string name="plugin_folder">プラグインフォルダ</string>
+    <string name="change_plugin_folder_desc">プラグインフォルダを変更またはクリアする</string>
 
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">プラグインフォルダが更新されました</string>
     <string name="plugin_folder_title">プラグインフォルダ</string>
-    <string name="plugin_folder_message">.json と .js のプラグインファイルを配置するフォルダを選択してください。</string>
+    <string name="plugin_folder_message">プラグインを使用するには、プラグインを保存し GitHub から更新するためのフォルダを選択してください。</string>
     <string name="select_folder">フォルダを選択</string>
     <string name="cancel">キャンセル</string>
     <string name="use_default">デフォルトを使用</string>
@@ -79,14 +91,20 @@
     <string name="close">閉じる</string>
     <string name="configure">設定</string>
     <string name="plugin_details_format">%1$s\n\nバージョン: %2$s\n作者: %3$s</string>
+    <string name="syncing_plugins">GitHub からプラグインを同期中…</string>
+    <string name="plugins_synced">プラグインが更新されました</string>
+    <string name="sync_failed">プラグインの同期に失敗しました</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">オーディオとビデオ</string>
     <string name="audio_only">オーディオのみ</string>
     <string name="casting_to">%1$s (%2$s) にキャスト中</string>
+    <string name="casting_to_multiple">%1$d 台のデバイスにキャスト中</string>
     <string name="connecting_to">%1$s に接続中</string>
     <string name="not_casting">キャストしていません</string>
     <string name="unknown">不明</string>
+    <string name="multiroom_group">マルチルームグループ</string>
+    <string name="connecting">接続中…</string>
 
     <!-- Tile Service -->
     <string name="tile_tap_to_cast">タップしてキャスト</string>
@@ -99,4 +117,10 @@
     <string name="packet_logs">パケットログ</string>
     <string name="search_logs">ログを検索…</string>
     <string name="clear_logs">ログを消去</string>
+
+    <!-- Create Group Dialog -->
+    <string name="create_speaker_group">スピーカーグループの作成</string>
+    <string name="group_name">グループ名</string>
+    <string name="select_devices">デバイスの選択</string>
+    <string name="save">保存</string>
 </resources>

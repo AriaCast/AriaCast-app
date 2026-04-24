@@ -20,6 +20,8 @@ import java.net.URL
 import okhttp3.*
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CountDownLatch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 
 class PluginManager(private val context: Context) {
 
@@ -27,235 +29,8 @@ class PluginManager(private val context: Context) {
     private var activeService: AudioCastService? = null
     private val runningPluginIds = mutableSetOf<String>()
     
-    private val internalPluginsDir: File
-        get() = File(context.filesDir, "plugins")
-
-    init {
-        if (!internalPluginsDir.exists()) {
-            internalPluginsDir.mkdirs()
-        }
-        installBuiltInPluginsInternal()
-    }
-
-    private fun installBuiltInPluginsInternal() {
-        // Manual Server Plugin
-        val manualJson = """
-            {
-              "id": "manual_server",
-              "name": "Manual Server Entry",
-              "description": "Manually add a server by IP and Port for cross-VLAN casting.",
-              "version": "1.0.0",
-              "author": "AriaCast Team",
-              "scriptPath": "manual_server.js"
-            }
-        """.trimIndent()
-
-        val manualScript = """
-            console.info("Manual Server Plugin Loaded");
-
-            function renderUI() {
-                ui.run(function() {
-                    ui.clear();
-                    
-                    var header = ui.inflate("item_plugin_header");
-                    var ht = ui.findView(header, "headerText");
-                    if (ht) ht.setText("Manual Server Entry");
-                    ui.add(header);
-
-                    var ipInput = ui.inflate("item_plugin_input");
-                    var ipEdit = ui.findView(ipInput, "editText");
-                    if (ipEdit) {
-                        ipEdit.setHint("IP Address (e.g. 192.168.1.50)");
-                        ipEdit.setText(storage.get("last_manual_ip") || "");
-                    }
-                    ui.add(ipInput);
-
-                    var portInput = ui.inflate("item_plugin_input");
-                    var portEdit = ui.findView(portInput, "editText");
-                    if (portEdit) {
-                        portEdit.setHint("Port (Default: 12889)");
-                        portEdit.setInputType(2); // TYPE_CLASS_NUMBER
-                        portEdit.setText(storage.get("last_manual_port") || "12889");
-                    }
-                    ui.add(portInput);
-
-                    var btn = ui.inflate("item_plugin_button");
-                    var bt = ui.findView(btn, "buttonText");
-                    if (bt) bt.setText("Add Server");
-                    btn.setOnClickListener(function() {
-                        var ip = ipEdit.getText().toString().trim();
-                        var portStr = portEdit.getText().toString().trim();
-                        var port = parseInt(portStr) || 12889;
-                        
-                        if (ip) {
-                            if (discovery) {
-                                var success = discovery.addManualServer(ip, port, "Manual: " + ip);
-                                if (success) {
-                                    storage.set("last_manual_ip", ip);
-                                    storage.set("last_manual_port", String(port));
-                                    android.widget.Toast.makeText(activity, "Server added to list", 0).show();
-                                } else {
-                                    android.widget.Toast.makeText(activity, "Invalid IP Address", 0).show();
-                                }
-                            }
-                        }
-                    });
-                    ui.add(btn);
-                });
-            }
-
-            renderUI();
-        """.trimIndent()
-
-        // MusicAssistant Plugin
-        val maJson = """
-            {
-              "id": "music_assistant",
-              "name": "MusicAssistant Control",
-              "description": "Native controls and output selection for MusicAssistant servers.",
-              "version": "1.9.7",
-              "author": "AriaCast Team",
-              "scriptPath": "music_assistant.js"
-            }
-        """.trimIndent()
-
-        val maScript = """
-            console.info("MA Plugin Loaded");
-            var currentHost = null;
-            var isPolling = false;
-
-            function startPolling(host) {
-                if (isPolling) return;
-                isPolling = true;
-                bg.run(function() {
-                    while(currentHost === host) {
-                        try { renderMAUI(host); } catch(e) {}
-                        java.lang.Thread.sleep(10000); 
-                    }
-                    isPolling = false;
-                });
-            }
-
-            events.onServiceConnected(function(s) {
-                if (s) storage.set("last_host", s.serverHost || "");
-            });
-
-            events.onStateChanged(function(state) {
-                if (!service) { ui.clear(); currentHost = null; return; }
-                var name = String(service.serverName || "");
-                var host = String(service.serverHost || "");
-                var isMA = name.toLowerCase().indexOf("musicassistant") !== -1 || name.toLowerCase().indexOf("manual") !== -1;
-
-                if (isMA && (state === "CONNECTING" || state === "CASTING")) {
-                    if (host !== currentHost) { currentHost = host; startPolling(host); }
-                    renderMAUI(host);
-                } else { ui.clear(); currentHost = null; }
-            });
-
-            function renderMAUI(host) {
-                if (host !== currentHost) return; 
-                var token = storage.get("auth_token");
-                var baseUrl = "http://" + host + ":8095";
-                var playersJson = null;
-                if (token) playersJson = ws.request("ws://" + host + ":8095/ws", "players/all", null, token);
-                if (!playersJson || String(playersJson).indexOf("Error") === 0) {
-                    var t = String(token || "").replace("Bearer ", "").replace(/"/g, "").trim();
-                    playersJson = http.post(baseUrl + "/api", JSON.stringify({ command: "players/all", args: {} }), t ? JSON.stringify({ "Authorization": "Bearer " + t }) : null);
-                }
-
-                ui.run(function() {
-                    if (host !== currentHost) return;
-                    ui.clear();
-                    var header = ui.inflate("item_plugin_header");
-                    var ht = ui.findView(header, "headerText");
-                    if (ht) ht.setText("Music Assistant Players");
-                    ui.add(header);
-
-                    if (playersJson && String(playersJson).indexOf("Error") !== 0) {
-                        try {
-                            var players = JSON.parse(playersJson);
-                            var list = Array.isArray(players) ? players : (players.results || []);
-                            list.forEach(function(p) {
-                                var itemView = ui.inflate("item_server");
-                                var nameTxt = ui.findView(itemView, "serverName");
-                                if (nameTxt) nameTxt.setText(p.name || p.display_name || "Unknown");
-                                itemView.setOnClickListener(function() {
-                                    bg.run(function() {
-                                        var t = String(storage.get("auth_token") || "").replace("Bearer ", "").replace(/"/g, "").trim();
-                                        http.post(baseUrl + "/api", JSON.stringify({ command: "players/cmd/select", args: { player_id: p.player_id || p.id } }), t ? JSON.stringify({ "Authorization": "Bearer " + t }) : null);
-                                    });
-                                });
-                                ui.add(itemView);
-                            });
-                        } catch(e) {}
-                    }
-                });
-            }
-        """.trimIndent()
-
-        // Advanced Visualizer Plugin
-        val vizJson = """
-            {
-              "id": "visualizer",
-              "name": "Live Waveform",
-              "description": "High-performance real-time audio waveform visualizer.",
-              "version": "1.1.2",
-              "author": "AriaCast Team",
-              "scriptPath": "visualizer.js"
-            }
-        """.trimIndent()
-
-        val vizScript = """
-            console.info("Advanced Visualizer Loaded");
-            var vizView = null;
-
-            events.onStateChanged(function(state) {
-                if (state === "CASTING") {
-                    ui.run(function() {
-                        ui.clear();
-                        var header = ui.inflate("item_plugin_header");
-                        var ht = ui.findView(header, "headerText");
-                        if (ht) ht.setText("Live Audio Waveform");
-                        ui.add(header);
-                        
-                        // Use the native VisualizerView for better performance
-                        vizView = new com.aria.ariacast.VisualizerView(activity);
-                        vizView.setLayoutParams(new android.widget.LinearLayout.LayoutParams(-1, 300));
-                        
-                        var typedValue = new android.util.TypedValue();
-                        activity.getTheme().resolveAttribute(com.google.android.material.R.attr.colorPrimary, typedValue, true);
-                        vizView.setAccentColor(typedValue.data);
-                        
-                        ui.add(vizView);
-                    });
-                } else {
-                    ui.clear();
-                    vizView = null;
-                }
-            });
-
-            events.onAudioBuffer(function(bytes) {
-                if (vizView) {
-                    vizView.updateVisualizer(bytes);
-                }
-            });
-        """.trimIndent()
-
-        try {
-            File(internalPluginsDir, "manual_server.json").writeText(manualJson)
-            File(internalPluginsDir, "manual_server.js").writeText(manualScript)
-            File(internalPluginsDir, "music_assistant.json").writeText(maJson)
-            File(internalPluginsDir, "music_assistant.js").writeText(maScript)
-            File(internalPluginsDir, "visualizer.json").writeText(vizJson)
-            File(internalPluginsDir, "visualizer.js").writeText(vizScript)
-        } catch (e: Exception) {
-            Log.e("PluginManager", "Failed to install built-in plugins", e)
-        }
-    }
-
     fun getPlugins(): List<Plugin> {
         val plugins = mutableListOf<Plugin>()
-        scanDirForPlugins(internalPluginsDir, plugins)
         val customPathUri = sharedPreferences.getString("plugin_folder_uri", null)
         if (!customPathUri.isNullOrEmpty()) {
             try {
@@ -264,22 +39,11 @@ class PluginManager(private val context: Context) {
                 if (documentDir != null && documentDir.exists()) {
                     scanDocumentDirForPlugins(documentDir, plugins)
                 }
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.e("PluginManager", "Error scanning plugins", e)
+            }
         }
         return plugins
-    }
-
-    private fun scanDirForPlugins(dir: File, plugins: MutableList<Plugin>) {
-        val files = dir.listFiles { _, name -> name.endsWith(".json") }
-        files?.forEach { file ->
-            try {
-                val plugin = Plugin.fromJson(file.readText())
-                if (plugins.none { it.id == plugin.id }) {
-                    plugin.isEnabled = sharedPreferences.getBoolean(plugin.id, false)
-                    plugins.add(plugin)
-                }
-            } catch (e: Exception) {}
-        }
     }
 
     private fun scanDocumentDirForPlugins(dir: DocumentFile, plugins: MutableList<Plugin>) {
@@ -299,7 +63,10 @@ class PluginManager(private val context: Context) {
     }
 
     fun setPluginEnabled(pluginId: String, enabled: Boolean) {
-        sharedPreferences.edit().putBoolean(pluginId, enabled).apply()
+        sharedPreferences.edit()
+            .putBoolean(pluginId, enabled)
+            .putLong("plugins_updated_at", System.currentTimeMillis())
+            .apply()
     }
 
     fun runEnabledPlugins(activity: MainActivity, service: AudioCastService?) {
@@ -319,22 +86,18 @@ class PluginManager(private val context: Context) {
 
     private fun runPlugin(plugin: Plugin, activity: android.app.Activity, initialService: AudioCastService?, isConfigOnly: Boolean = false) {
         var scriptContent: String? = null
-        val internalScriptFile = File(internalPluginsDir, plugin.scriptPath)
-        if (internalScriptFile.exists()) scriptContent = internalScriptFile.readText()
-        if (scriptContent == null) {
-            val customPathUri = sharedPreferences.getString("plugin_folder_uri", null)
-            if (!customPathUri.isNullOrEmpty()) {
-                try {
-                    val uri = Uri.parse(customPathUri)
-                    val documentDir = DocumentFile.fromTreeUri(context, uri)
-                    val scriptFile = documentDir?.findFile(plugin.scriptPath)
-                    if (scriptFile != null && scriptFile.exists()) {
-                        context.contentResolver.openInputStream(scriptFile.uri)?.use { inputStream ->
-                            scriptContent = inputStream.bufferedReader().readText()
-                        }
+        val customPathUri = sharedPreferences.getString("plugin_folder_uri", null)
+        if (!customPathUri.isNullOrEmpty()) {
+            try {
+                val uri = Uri.parse(customPathUri)
+                val documentDir = DocumentFile.fromTreeUri(context, uri)
+                val scriptFile = documentDir?.findFile(plugin.scriptPath)
+                if (scriptFile != null && scriptFile.exists()) {
+                    context.contentResolver.openInputStream(scriptFile.uri)?.use { inputStream ->
+                        scriptContent = inputStream.bufferedReader().readText()
                     }
-                } catch (e: Exception) {}
-            }
+                }
+            } catch (e: Exception) {}
         }
 
         if (scriptContent == null) {
@@ -577,5 +340,63 @@ class PluginManager(private val context: Context) {
             }
         }
         activity.pluginContainer.visibility = if (anyVisible) View.VISIBLE else View.GONE
+    }
+
+    suspend fun syncPluginsFromGitHub(): Boolean = withContext(Dispatchers.IO) {
+        val customPathUri = sharedPreferences.getString("plugin_folder_uri", null) ?: return@withContext false
+        val rootUri = Uri.parse(customPathUri)
+        val rootDir = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext false
+        
+        try {
+            val client = OkHttpClient()
+            val request = Request.Builder()
+                .url("https://api.github.com/repos/AriaCast/AriaCast-android-plugins/contents/")
+                .build()
+            
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext false
+                val body = response.body?.string() ?: return@withContext false
+                val jsonArray = JSONArray(body)
+                
+                for (i in 0 until jsonArray.length()) {
+                    val fileObj = jsonArray.getJSONObject(i)
+                    val fileName = fileObj.getString("name")
+                    val downloadUrl = fileObj.getString("download_url")
+                    val type = fileObj.getString("type")
+                    
+                    if (type == "file" && (fileName.endsWith(".json") || fileName.endsWith(".js"))) {
+                        downloadAndSaveFile(downloadUrl, fileName, rootDir)
+                    }
+                }
+            }
+            sharedPreferences.edit().putLong("plugins_updated_at", System.currentTimeMillis()).apply()
+            return@withContext true
+        } catch (e: Exception) {
+            Log.e("PluginManager", "Failed to sync plugins", e)
+            return@withContext false
+        }
+    }
+
+    private fun downloadAndSaveFile(url: String, fileName: String, destDir: DocumentFile) {
+        try {
+            val client = OkHttpClient()
+            val request = Request.Builder().url(url).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val content = response.body?.bytes() ?: return
+                    var file = destDir.findFile(fileName)
+                    if (file == null) {
+                        file = destDir.createFile(if (fileName.endsWith(".json")) "application/json" else "application/javascript", fileName)
+                    }
+                    file?.uri?.let { uri ->
+                        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                            outputStream.write(content)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("PluginManager", "Failed to download $fileName", e)
+        }
     }
 }

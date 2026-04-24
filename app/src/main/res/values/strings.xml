@@ -1,8 +1,8 @@
 <resources>
     <string name="app_name" translatable="false">AriaCast</string>
-    <string name="app_version" translatable="false">1.1.2</string>
+    <string name="app_version" translatable="false">1.1.3</string>
     <string name="tile_label" translatable="false">AriaCast</string>
-    <string name="ver" translatable="false">AriaCast 1.1.2</string>
+    <string name="ver" translatable="false">AriaCast 1.1.3</string>
 
     <!-- Update Manager -->
     <string name="update_available_title">New Update Available</string>
@@ -36,6 +36,13 @@
     <string name="ip_address">IP Address</string>
     <string name="port">Port</string>
     <string name="add">Add</string>
+    <string name="synchronization">Synchronization</string>
+    <string name="speaker_groups">Speaker Groups</string>
+    <string name="create">Create</string>
+    <string name="offline_devices_error">Some devices in this group are offline</string>
+    <string name="no_servers_found">No servers discovered</string>
+    <string name="grant_notification_permission">Grant Notification Permission</string>
+    <string name="devices_count_format">%1$d devices</string>
 
     <!-- Settings Activity -->
     <string name="settings">Settings</string>
@@ -64,6 +71,8 @@
     <string name="language_default">System Default</string>
     <string name="enable_video">Enable Video</string>
     <string name="enable_video_desc">Cast screen video alongside audio</string>
+    <string name="multiroom">Multiroom Support</string>
+    <string name="multiroom_desc">Allows creating speaker groups</string>
     <string name="plugins">Plugins</string>
     <string name="manage_plugins_desc">Manage script-based extensions</string>
     <string name="notification_access">Notification Access</string>
@@ -73,11 +82,13 @@
     <string name="github_repo_desc">View source code and report issues</string>
     <string name="reset_last_server">Reset Last Server</string>
     <string name="reset_last_server_desc">Clear saved server connection details</string>
+    <string name="plugin_folder">Plugin Folder</string>
+    <string name="change_plugin_folder_desc">Change or clear the folder for plugins</string>
 
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Plugin folder updated</string>
     <string name="plugin_folder_title">Plugin Folder</string>
-    <string name="plugin_folder_message">Select a folder where you will place your .json and .js plugin files.</string>
+    <string name="plugin_folder_message">To use plugins, please select a folder where they will be stored and updated from GitHub.</string>
     <string name="select_folder">Select Folder</string>
     <string name="cancel">Cancel</string>
     <string name="use_default">Use Default</string>
@@ -85,14 +96,20 @@
     <string name="close">Close</string>
     <string name="configure">Configure</string>
     <string name="plugin_details_format">%1$s\n\nVersion: %2$s\nAuthor: %3$s</string>
+    <string name="syncing_plugins">Syncing plugins from GitHub…</string>
+    <string name="plugins_synced">Plugins updated</string>
+    <string name="sync_failed">Failed to sync plugins</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">Audio &amp; Video</string>
     <string name="audio_only">Audio Only</string>
     <string name="casting_to">Casting to %1$s (%2$s)</string>
+    <string name="casting_to_multiple">Casting to %1$d devices</string>
     <string name="connecting_to">Connecting to %1$s</string>
     <string name="not_casting">Not Casting</string>
     <string name="unknown">Unknown</string>
+    <string name="multiroom_group">Multiroom Group</string>
+    <string name="connecting">Connecting…</string>
 
     <!-- Tile Service -->
     <string name="tile_tap_to_cast">Tap to cast</string>
@@ -105,4 +122,10 @@
     <string name="packet_logs">Packet Logs</string>
     <string name="search_logs">Search logs…</string>
     <string name="clear_logs">Clear Logs</string>
+
+    <!-- Create Group Dialog -->
+    <string name="create_speaker_group">Create Speaker Group</string>
+    <string name="group_name">Group Name</string>
+    <string name="select_devices">Select Devices</string>
+    <string name="save">Save</string>
 </resources>

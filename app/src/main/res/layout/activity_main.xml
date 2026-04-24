@@ -97,7 +97,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Synchronization"
+                    android:text="@string/synchronization"
                     android:textColor="?attr/colorPrimary"
                     android:textAppearance="?attr/textAppearanceTitleLarge"
                     android:textStyle="bold"
@@ -130,7 +130,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Speaker Groups"
+                        android:text="@string/speaker_groups"
                         android:textColor="?attr/colorPrimary"
                         android:textAppearance="?attr/textAppearanceTitleLarge"
                         android:textStyle="bold" />
@@ -140,7 +140,7 @@
                         style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Create"
+                        android:text="@string/create"
                         app:icon="@android:drawable/ic_menu_add" />
                 </LinearLayout>
 
@@ -196,7 +196,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="24dp"
-                android:text="Grant Notification Permission"
+                android:text="@string/grant_notification_permission"
                 android:visibility="gone"
                 app:icon="@android:drawable/ic_lock_idle_alarm" />
 

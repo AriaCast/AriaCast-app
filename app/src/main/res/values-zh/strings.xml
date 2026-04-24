@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="update_available_title">有新更新可用</string>
     <string name="update_available_message">版本 %1$s 已可用。是否要下载？\n\n%2$s</string>
@@ -30,6 +31,13 @@
     <string name="ip_address">IP 地址</string>
     <string name="port">端口</string>
     <string name="add">添加</string>
+    <string name="synchronization">同步</string>
+    <string name="speaker_groups">扬声器组</string>
+    <string name="create">创建</string>
+    <string name="offline_devices_error">此组中的某些设备已离线</string>
+    <string name="no_servers_found">未发现服务器</string>
+    <string name="grant_notification_permission">授予通知权限</string>
+    <string name="devices_count_format">%1$d 个设备</string>
 
     <!-- Settings Activity -->
     <string name="settings">设置</string>
@@ -58,6 +66,8 @@
     <string name="language_default">系统默认</string>
     <string name="enable_video">启用视频</string>
     <string name="enable_video_desc">在音频之外同时投放屏幕视频</string>
+    <string name="multiroom">多房间支持</string>
+    <string name="multiroom_desc">允许创建扬声器组</string>
     <string name="plugins">插件</string>
     <string name="manage_plugins_desc">管理基于脚本的扩展</string>
     <string name="notification_access">通知访问权限</string>
@@ -67,11 +77,13 @@
     <string name="github_repo_desc">查看源代码并报告问题</string>
     <string name="reset_last_server">重置上次服务器</string>
     <string name="reset_last_server_desc">清除保存的服务器连接详情</string>
+    <string name="plugin_folder">插件文件夹</string>
+    <string name="change_plugin_folder_desc">更改或清除插件文件夹</string>
 
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">插件文件夹已更新</string>
     <string name="plugin_folder_title">插件文件夹</string>
-    <string name="plugin_folder_message">选择放置您的 .json 和 .js 插件文件的文件夹。</string>
+    <string name="plugin_folder_message">要使用插件，请选择一个文件夹，插件将在此文件夹中存储并从 GitHub 更新。</string>
     <string name="select_folder">选择文件夹</string>
     <string name="cancel">取消</string>
     <string name="use_default">使用默认</string>
@@ -79,14 +91,20 @@
     <string name="close">关闭</string>
     <string name="configure">配置</string>
     <string name="plugin_details_format">%1$s\n\n版本：%2$s\n作者：%3$s</string>
+    <string name="syncing_plugins">正在从 GitHub 同步插件…</string>
+    <string name="plugins_synced">插件已更新</string>
+    <string name="sync_failed">插件同步失败</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">音频和视频</string>
     <string name="audio_only">仅音频</string>
     <string name="casting_to">正在投放到 %1$s (%2$s)</string>
+    <string name="casting_to_multiple">正在投放到 %1$d 个设备</string>
     <string name="connecting_to">正在连接到 %1$s</string>
     <string name="not_casting">未在投放</string>
     <string name="unknown">未知</string>
+    <string name="multiroom_group">多房间组</string>
+    <string name="connecting">正在连接…</string>
 
     <!-- Tile Service -->
     <string name="tile_tap_to_cast">点击以投放</string>
@@ -99,4 +117,10 @@
     <string name="packet_logs">数据包日志</string>
     <string name="search_logs">搜索日志…</string>
     <string name="clear_logs">清除日志</string>
+
+    <!-- Create Group Dialog -->
+    <string name="create_speaker_group">创建扬声器组</string>
+    <string name="group_name">组名</string>
+    <string name="select_devices">选择设备</string>
+    <string name="save">保存</string>
 </resources>

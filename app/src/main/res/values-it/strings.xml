@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="update_available_title">Nuovo Aggiornamento Disponibile</string>
-    <string name="update_available_message">La Versione %1$s è disponibile. Vuoi Scaricarla?</string>
+    <string name="update_available_message">La Versione %1$s è disponibile. Vuoi Scaricarla?\n\n%2$s</string>
     <string name="download">Scarica</string>
     <string name="later">Forse Dopo</string>
     <string name="up_to_date_title">Aggiornata</string>
@@ -29,6 +29,14 @@
     <string name="ip_address">Indirizzo IP</string>
     <string name="port">Porta</string>
     <string name="add">Aggiungi</string>
+    <string name="synchronization">Sincronizzazione</string>
+    <string name="speaker_groups">Gruppi di Altoparlanti</string>
+    <string name="create">Crea</string>
+    <string name="offline_devices_error">Alcuni dispositivi in questo gruppo sono offline</string>
+    <string name="no_servers_found">Nessun server trovato</string>
+    <string name="grant_notification_permission">Concedi permesso notifiche</string>
+    <string name="devices_count_format">%1$d dispositivi</string>
+
     <string name="settings">Impostazioni</string>
     <string name="general">Generali</string>
     <string name="extensions">Estensioni</string>
@@ -37,8 +45,8 @@
     <string name="version_format">Versione %1$s</string>
     <string name="select_appearance">Seleziona Tema</string>
     <string name="select_accent_color">Seleziona Colore di Accento</string>
-    <string name="theme_light">Light</string>
-    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Chiaro</string>
+    <string name="theme_dark">Scuro</string>
     <string name="theme_follow_system">Segui il Sistema</string>
     <string name="accent_blue">Blu</string>
     <string name="accent_purple">Viola</string>
@@ -55,37 +63,56 @@
     <string name="language_default">Predefinita di Sistema</string>
     <string name="enable_video">Abilita Video</string>
     <string name="enable_video_desc">Trasmetti lo schermo assieme all\'audio</string>
+    <string name="multiroom">Supporto Multiroom</string>
+    <string name="multiroom_desc">Permette di creare gruppi di altoparlanti</string>
     <string name="plugins">Plugins</string>
-    <string name="manage_plugins_desc">Gestisci le estensioni script-based</string>
+    <string name="manage_plugins_desc">Gestisci le estensioni tramite script</string>
     <string name="notification_access">Accesso Notifiche</string>
-    <string name="notification_access_desc">Richiesto per i metadati</string>
+    <string name="notification_access_desc">Richiesto per i metadati multimediali</string>
     <string name="check_for_updates">Controlla Aggiornamenti</string>
     <string name="github_repo">Repo GitHub</string>
-    <string name="github_repo_desc">Vedi il codice sorgente e riporta gli errori</string>
+    <string name="github_repo_desc">Vedi il codice sorgente e riporta problemi</string>
     <string name="reset_last_server">Resetta l\'ultimo server</string>
     <string name="reset_last_server_desc">Pulisci i dettagli del server salvato</string>
+    <string name="plugin_folder">Cartella Plugin</string>
+    <string name="change_plugin_folder_desc">Cambia o pulisci la cartella per i plugin</string>
+
     <string name="plugin_folder_updated">Cartella Plugin aggiornata</string>
     <string name="plugin_folder_title">Cartella Plugin</string>
-    <string name="plugin_folder_message">Seleziona una cartella dove metterai i fle dei tuoi plugins</string>
+    <string name="plugin_folder_message">Per usare i plugin, seleziona una cartella dove verranno salvati e aggiornati da GitHub.</string>
     <string name="select_folder">Seleziona Cartella</string>
-    <string name="cancel">Cancella</string>
-    <string name="use_default">Usa Default</string>
-    <string name="plugin_author_format">Da %1$s - v%2$s</string>
+    <string name="cancel">Annulla</string>
+    <string name="use_default">Usa Predefinita</string>
+    <string name="plugin_author_format">da %1$s • v%2$s</string>
     <string name="close">Chiudi</string>
     <string name="configure">Configura</string>
-    <string name="plugin_details_format">%1$s[...]</string>
+    <string name="plugin_details_format">%1$s\n\nVersione: %2$s\nAutore: %3$s</string>
+    <string name="syncing_plugins">Sincronizzazione plugin da GitHub…</string>
+    <string name="plugins_synced">Plugin aggiornati</string>
+    <string name="sync_failed">Sincronizzazione fallita</string>
+
     <string name="audio_video">Audio &amp; Video</string>
     <string name="audio_only">Solo Audio</string>
     <string name="casting_to">Trasmettendo a %1$s (%2$s)</string>
+    <string name="casting_to_multiple">Trasmettendo a %1$d dispositivi</string>
     <string name="connecting_to">Connettendo a %1$s</string>
     <string name="not_casting">Non stai Trasmettendo</string>
     <string name="unknown">Sconosciuto</string>
+    <string name="multiroom_group">Gruppo Multiroom</string>
+    <string name="connecting">Connessione in corso...</string>
+
     <string name="tile_tap_to_cast">Premi per Trasmettere</string>
     <string name="tile_discovering">Trovando...</string>
     <string name="tile_connecting">Connettendo...</string>
     <string name="tile_casting">Trasmettendo...</string>
-    <string name="tile_error">C\'è un\'errore</string>
+    <string name="tile_error">C\'è un errore</string>
+
     <string name="packet_logs">Log dei pacchetti</string>
     <string name="search_logs">Cerca Log</string>
     <string name="clear_logs">Pulisci i Log</string>
+
+    <string name="create_speaker_group">Crea Gruppo Altoparlanti</string>
+    <string name="group_name">Nome Gruppo</string>
+    <string name="select_devices">Seleziona Dispositivi</string>
+    <string name="save">Salva</string>
 </resources>

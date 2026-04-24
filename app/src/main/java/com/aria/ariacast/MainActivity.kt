@@ -78,6 +78,7 @@ class MainActivity : AppCompatActivity() {
 
     private var currentAccentColor: Int = R.color.accent_blue
     private var currentThemeMode: Int = ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM
+    private var lastPluginsUpdateTime: Long = 0
 
     private val _audioCastServiceFlow = MutableStateFlow<AudioCastService?>(null)
     val audioCastServiceFlow = _audioCastServiceFlow.asStateFlow()
@@ -155,6 +156,9 @@ class MainActivity : AppCompatActivity() {
         currentThemeMode = sharedPreferences.getInt(SettingsActivity.KEY_THEME, ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM)
         setTheme(ThemeUtils.getThemeForAccent(currentAccentColor))
         
+        val pluginPrefs = getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
+        lastPluginsUpdateTime = pluginPrefs.getLong("plugins_updated_at", 0)
+        
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -202,7 +206,7 @@ class MainActivity : AppCompatActivity() {
                 if (servers.size == group.hosts.size) {
                     castToServers(servers)
                 } else {
-                    Toast.makeText(this, "Some devices in this group are offline", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.offline_devices_error), Toast.LENGTH_SHORT).show()
                 }
             },
             onDeleteClick = { group ->
@@ -402,7 +406,7 @@ class MainActivity : AppCompatActivity() {
     private fun showCreateGroupDialog() {
         val servers = discoveryManager.servers.value
         if (servers.isEmpty()) {
-            Toast.makeText(this, "No servers discovered", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.no_servers_found), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -422,9 +426,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         MaterialAlertDialogBuilder(this)
-            .setTitle("Create Speaker Group")
+            .setTitle(R.string.create_speaker_group)
             .setView(dialogView)
-            .setPositiveButton("Save") { _, _ ->
+            .setPositiveButton(R.string.save) { _, _ ->
                 val name = nameInput.text.toString()
                 if (name.isNotEmpty() && selectedHosts.isNotEmpty()) {
                     val groups = getSavedGroups().toMutableList()
@@ -432,7 +436,7 @@ class MainActivity : AppCompatActivity() {
                     saveGroups(groups)
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -475,8 +479,13 @@ class MainActivity : AppCompatActivity() {
         
         val newAccent = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
         val newThemeMode = sharedPreferences.getInt(SettingsActivity.KEY_THEME, ThemeUtils.MODE_NIGHT_FOLLOW_SYSTEM)
-        if (newAccent != currentAccentColor || newThemeMode != currentThemeMode) {
+        
+        val pluginPrefs = getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
+        val currentPluginsUpdate = pluginPrefs.getLong("plugins_updated_at", 0)
+
+        if (newAccent != currentAccentColor || newThemeMode != currentThemeMode || currentPluginsUpdate != lastPluginsUpdateTime) {
             recreate()
+            return
         }
 
         pluginManager.runEnabledPlugins(this, audioCastService)
@@ -556,7 +565,7 @@ class GroupAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val group = groups[position]
         holder.groupName.text = group.name
-        holder.groupMembers.text = "${group.hosts.size} devices"
+        holder.groupMembers.text = holder.itemView.context.getString(R.string.devices_count_format, group.hosts.size)
         
         holder.itemView.setOnClickListener { 
             it.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)

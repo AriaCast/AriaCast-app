@@ -1,11 +1,9 @@
 package com.aria.ariacast
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.provider.DocumentsContract
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -13,13 +11,14 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.materialswitch.MaterialSwitch
-import java.io.File
+import kotlinx.coroutines.launch
 
 class PluginsActivity : AppCompatActivity() {
 
@@ -33,14 +32,13 @@ class PluginsActivity : AppCompatActivity() {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
             
-            // Store the URI string instead of a physical path to support Scoped Storage
             getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
                 .edit()
                 .putString("plugin_folder_uri", it.toString())
                 .apply()
             
-            pluginManager = PluginManager(this) // Re-init
-            refreshPlugins()
+            pluginManager = PluginManager(this)
+            syncAndRefresh()
             Toast.makeText(this, getString(R.string.plugin_folder_updated), Toast.LENGTH_SHORT).show()
         }
     }
@@ -61,26 +59,45 @@ class PluginsActivity : AppCompatActivity() {
         
         val recyclerView = findViewById<RecyclerView>(R.id.pluginsRecyclerView)
         recyclerView.layoutManager = LinearLayoutManager(this)
-        refreshPlugins()
+        
+        val pluginPrefs = getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
+        val folderUri = pluginPrefs.getString("plugin_folder_uri", null)
+        
+        if (folderUri == null) {
+            showFolderSelectionDialog()
+        } else {
+            syncAndRefresh()
+        }
 
         findViewById<FloatingActionButton>(R.id.addPluginFab).setOnClickListener {
-            MaterialAlertDialogBuilder(this)
-                .setTitle(getString(R.string.plugin_folder_title))
-                .setMessage(getString(R.string.plugin_folder_message))
-                .setPositiveButton(getString(R.string.select_folder)) { _, _ ->
-                    openDocumentTree.launch(null)
-                }
-                .setNegativeButton(getString(R.string.cancel), null)
-                .setNeutralButton(getString(R.string.use_default)) { _, _ ->
-                    getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
-                        .edit()
-                        .remove("plugin_folder_uri")
-                        .remove("plugin_folder")
-                        .apply()
-                    pluginManager = PluginManager(this)
-                    refreshPlugins()
-                }
-                .show()
+            syncAndRefresh()
+        }
+    }
+
+    private fun showFolderSelectionDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.plugin_folder_title))
+            .setMessage(getString(R.string.plugin_folder_message))
+            .setCancelable(false)
+            .setPositiveButton(getString(R.string.select_folder)) { _, _ ->
+                openDocumentTree.launch(null)
+            }
+            .setNegativeButton(getString(R.string.cancel)) { _, _ ->
+                finish()
+            }
+            .show()
+    }
+
+    private fun syncAndRefresh() {
+        lifecycleScope.launch {
+            Toast.makeText(this@PluginsActivity, getString(R.string.syncing_plugins), Toast.LENGTH_SHORT).show()
+            val success = pluginManager.syncPluginsFromGitHub()
+            if (success) {
+                Toast.makeText(this@PluginsActivity, getString(R.string.plugins_synced), Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@PluginsActivity, getString(R.string.sync_failed), Toast.LENGTH_SHORT).show()
+            }
+            refreshPlugins()
         }
     }
 

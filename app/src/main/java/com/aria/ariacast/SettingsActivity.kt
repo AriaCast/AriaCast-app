@@ -10,6 +10,7 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
@@ -31,6 +32,22 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var videoCastSwitch: MaterialSwitch
     private lateinit var multiroomSwitch: MaterialSwitch
     private lateinit var updateManager: UpdateManager
+
+    private val openDocumentTree = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        uri?.let {
+            contentResolver.takePersistableUriPermission(
+                it,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            
+            getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
+                .edit()
+                .putString("plugin_folder_uri", it.toString())
+                .apply()
+            
+            Toast.makeText(this, getString(R.string.plugin_folder_updated), Toast.LENGTH_SHORT).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
@@ -66,6 +83,10 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.pluginsLayout).setOnClickListener {
             startActivity(Intent(this, PluginsActivity::class.java))
+        }
+
+        findViewById<View>(R.id.pluginFolderLayout).setOnClickListener {
+            showPluginFolderDialog()
         }
 
         findViewById<View>(R.id.notificationAccessLayout).setOnClickListener {
@@ -108,6 +129,24 @@ class SettingsActivity : AppCompatActivity() {
         updateThemeStatusText()
         updateAccentStatus()
         updateLanguageStatusText()
+    }
+
+    private fun showPluginFolderDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.plugin_folder))
+            .setMessage(getString(R.string.change_plugin_folder_desc))
+            .setPositiveButton(getString(R.string.select_folder)) { _, _ ->
+                openDocumentTree.launch(null)
+            }
+            .setNeutralButton(getString(R.string.use_default)) { _, _ ->
+                getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
+                    .edit()
+                    .remove("plugin_folder_uri")
+                    .apply()
+                Toast.makeText(this, getString(R.string.plugin_folder_updated), Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
     }
 
     private fun openGitHub() {

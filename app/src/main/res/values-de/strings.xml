@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="update_available_title">Neues Update verfügbar</string>
     <string name="update_available_message">Version %1$s ist verfügbar. Möchten Sie diese herunterladen?\n\n%2$s</string>
@@ -30,6 +31,13 @@
     <string name="ip_address">IP-Adresse</string>
     <string name="port">Port</string>
     <string name="add">Hinzufügen</string>
+    <string name="synchronization">Synchronisierung</string>
+    <string name="speaker_groups">Lautsprechergruppen</string>
+    <string name="create">Erstellen</string>
+    <string name="offline_devices_error">Einige Geräte in dieser Gruppe sind offline</string>
+    <string name="no_servers_found">Keine Server gefunden</string>
+    <string name="grant_notification_permission">Benachrichtigungsberechtigung erteilen</string>
+    <string name="devices_count_format">%1$d Geräte</string>
 
     <!-- Settings Activity -->
     <string name="settings">Einstellungen</string>
@@ -58,6 +66,8 @@
     <string name="language_default">Systemstandard</string>
     <string name="enable_video">Video aktivieren</string>
     <string name="enable_video_desc">Bildschirmvideo zusammen mit Audio übertragen</string>
+    <string name="multiroom">Multiroom-Unterstützung</string>
+    <string name="multiroom_desc">Ermöglicht das Erstellen von Lautsprechergruppen</string>
     <string name="plugins">Plugins</string>
     <string name="manage_plugins_desc">Skriptbasierte Erweiterungen verwalten</string>
     <string name="notification_access">Benachrichtigungszugriff</string>
@@ -67,11 +77,13 @@
     <string name="github_repo_desc">Quellcode ansehen und Probleme melden</string>
     <string name="reset_last_server">Letzten Server zurücksetzen</string>
     <string name="reset_last_server_desc">Gespeicherte Serververbindungsdetails löschen</string>
+    <string name="plugin_folder">Plugin-Ordner</string>
+    <string name="change_plugin_folder_desc">Plugin-Ordner ändern oder löschen</string>
 
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Plugin-Ordner aktualisiert</string>
     <string name="plugin_folder_title">Plugin-Ordner</string>
-    <string name="plugin_folder_message">Wählen Sie einen Ordner für Ihre .json- und .js-Plugin-Dateien.</string>
+    <string name="plugin_folder_message">Um Plugins zu verwenden, wählen Sie bitte einen Ordner aus, in dem diese gespeichert und von GitHub aktualisiert werden.</string>
     <string name="select_folder">Ordner wählen</string>
     <string name="cancel">Abbrechen</string>
     <string name="use_default">Standard verwenden</string>
@@ -79,14 +91,20 @@
     <string name="close">Schließen</string>
     <string name="configure">Konfigurieren</string>
     <string name="plugin_details_format">%1$s\n\nVersion: %2$s\nAutor: %3$s</string>
+    <string name="syncing_plugins">Plugins werden von GitHub synchronisiert…</string>
+    <string name="plugins_synced">Plugins aktualisiert</string>
+    <string name="sync_failed">Plugin-Synchronisierung fehlgeschlagen</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">Audio &amp; Video</string>
     <string name="audio_only">Nur Audio</string>
     <string name="casting_to">Streaming auf %1$s (%2$s)</string>
+    <string name="casting_to_multiple">Streaming auf %1$d Geräte</string>
     <string name="connecting_to">Verbinden mit %1$s</string>
     <string name="not_casting">Nicht am Streamen</string>
     <string name="unknown">Unbekannt</string>
+    <string name="multiroom_group">Multiroom-Gruppe</string>
+    <string name="connecting">Verbindung wird hergestellt…</string>
 
     <!-- Tile Service -->
     <string name="tile_tap_to_cast">Tippen zum Streamen</string>
@@ -99,4 +117,10 @@
     <string name="packet_logs">Paketprotokolle</string>
     <string name="search_logs">Protokolle durchsuchen…</string>
     <string name="clear_logs">Protokolle löschen</string>
+
+    <!-- Create Group Dialog -->
+    <string name="create_speaker_group">Lautsprechergruppe erstellen</string>
+    <string name="group_name">Gruppenname</string>
+    <string name="select_devices">Geräte auswählen</string>
+    <string name="save">Speichern</string>
 </resources>

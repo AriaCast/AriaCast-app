@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="update_available_title">Nueva actualización disponible</string>
     <string name="update_available_message">La versión %1$s está disponible. ¿Desea descargarla?\n\n%2$s</string>
@@ -28,8 +29,15 @@
     <string name="manual_entry">Entrada manual</string>
     <string name="manual_entry_desc">Ingrese la IP y el puerto del servidor</string>
     <string name="ip_address">Dirección IP</string>
-    <string name="port">Port</string>
+    <string name="port">Puerto</string>
     <string name="add">Añadir</string>
+    <string name="synchronization">Sincronización</string>
+    <string name="speaker_groups">Grupos de altavoces</string>
+    <string name="create">Crear</string>
+    <string name="offline_devices_error">Algunos dispositivos de este grupo están desconectados</string>
+    <string name="no_servers_found">No se han descubierto servidores</string>
+    <string name="grant_notification_permission">Conceder permiso de notificación</string>
+    <string name="devices_count_format">%1$d dispositivos</string>
 
     <!-- Settings Activity -->
     <string name="settings">Ajustes</string>
@@ -58,6 +66,8 @@
     <string name="language_default">Predeterminado del sistema</string>
     <string name="enable_video">Activar vídeo</string>
     <string name="enable_video_desc">Transmitir vídeo de pantalla junto con audio</string>
+    <string name="multiroom">Soporte multiroom</string>
+    <string name="multiroom_desc">Permite crear grupos de altavoces</string>
     <string name="plugins">Plugins</string>
     <string name="manage_plugins_desc">Gestionar extensiones basadas en scripts</string>
     <string name="notification_access">Acceso a notificaciones</string>
@@ -67,11 +77,13 @@
     <string name="github_repo_desc">Ver código fuente e informar problemas</string>
     <string name="reset_last_server">Restablecer último servidor</string>
     <string name="reset_last_server_desc">Borrar detalles guardados de la conexión al servidor</string>
+    <string name="plugin_folder">Carpeta de plugins</string>
+    <string name="change_plugin_folder_desc">Cambiar o borrar la carpeta de plugins</string>
 
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Carpeta de plugins actualizada</string>
     <string name="plugin_folder_title">Carpeta de plugins</string>
-    <string name="plugin_folder_message">Seleccione una carpeta para sus archivos de plugin .json y .js.</string>
+    <string name="plugin_folder_message">Para usar plugins, seleccione una carpeta donde se guardarán y actualizarán desde GitHub.</string>
     <string name="select_folder">Seleccionar carpeta</string>
     <string name="cancel">Cancelar</string>
     <string name="use_default">Usar predeterminado</string>
@@ -79,14 +91,20 @@
     <string name="close">Cerrar</string>
     <string name="configure">Configurar</string>
     <string name="plugin_details_format">%1$s\n\nVersión: %2$s\nAutor: %3$s</string>
+    <string name="syncing_plugins">Sincronizando plugins desde GitHub…</string>
+    <string name="plugins_synced">Plugins actualizados</string>
+    <string name="sync_failed">Error al sincronizar plugins</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">Audio y vídeo</string>
     <string name="audio_only">Solo audio</string>
     <string name="casting_to">Transmitiendo a %1$s (%2$s)</string>
+    <string name="casting_to_multiple">Transmitiendo a %1$d dispositivos</string>
     <string name="connecting_to">Conectando a %1$s</string>
     <string name="not_casting">No transmitiendo</string>
     <string name="unknown">Desconocido</string>
+    <string name="multiroom_group">Grupo Multiroom</string>
+    <string name="connecting">Conectando…</string>
 
     <!-- Tile Service -->
     <string name="tile_tap_to_cast">Toca para transmitir</string>
@@ -99,4 +117,10 @@
     <string name="packet_logs">Registros de paquetes</string>
     <string name="search_logs">Buscar en registros…</string>
     <string name="clear_logs">Borrar registros</string>
+
+    <!-- Create Group Dialog -->
+    <string name="create_speaker_group">Crear grupo de altavoces</string>
+    <string name="group_name">Nombre del grupo</string>
+    <string name="select_devices">Seleccionar dispositivos</string>
+    <string name="save">Guardar</string>
 </resources>

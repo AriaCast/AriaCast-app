@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="update_available_title">Nieuwe update beschikbaar</string>
     <string name="update_available_message">Versie %1$s is beschikbaar. Wilt u deze downloaden?\n\n%2$s</string>
@@ -30,6 +31,13 @@
     <string name="ip_address">IP-adres</string>
     <string name="port">Poort</string>
     <string name="add">Toevoegen</string>
+    <string name="synchronization">Synchronisatie</string>
+    <string name="speaker_groups">Speakergroepen</string>
+    <string name="create">Maken</string>
+    <string name="offline_devices_error">Sommige apparaten in deze groep zijn offline</string>
+    <string name="no_servers_found">Geen servers gevonden</string>
+    <string name="grant_notification_permission">Meldingstoegang verlenen</string>
+    <string name="devices_count_format">%1$d apparaten</string>
 
     <!-- Settings Activity -->
     <string name="settings">Instellingen</string>
@@ -58,6 +66,8 @@
     <string name="language_default">Systeemstandaard</string>
     <string name="enable_video">Video inschakelen</string>
     <string name="enable_video_desc">Cast schermvideo samen met audio</string>
+    <string name="multiroom">Multiroom ondersteuning</string>
+    <string name="multiroom_desc">Maakt het mogelijk om speakergroepen aan te maken</string>
     <string name="plugins">Plugins</string>
     <string name="manage_plugins_desc">Beheer script-gebaseerde extensies</string>
     <string name="notification_access">Meldingstoegang</string>
@@ -67,11 +77,13 @@
     <string name="github_repo_desc">Bekijk broncode en meld problemen</string>
     <string name="reset_last_server">Laatste server resetten</string>
     <string name="reset_last_server_desc">Wis opgeslagen serververbindingsdetails</string>
+    <string name="plugin_folder">Plugin-map</string>
+    <string name="change_plugin_folder_desc">Plugin-map wijzigen of wissen</string>
 
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Plugin-map bijgewerkt</string>
     <string name="plugin_folder_title">Plugin-map</string>
-    <string name="plugin_folder_message">Selecteer een map voor uw .json- en .js-pluginbestanden.</string>
+    <string name="plugin_folder_message">Om plugins te gebruiken, selecteer een map waar ze worden opgeslagen en bijgewerkt vanaf GitHub.</string>
     <string name="select_folder">Map selecteren</string>
     <string name="cancel">Annuleren</string>
     <string name="use_default">Standaard gebruiken</string>
@@ -79,14 +91,20 @@
     <string name="close">Sluiten</string>
     <string name="configure">Configureren</string>
     <string name="plugin_details_format">%1$s\n\nVersie: %2$s\nAuteur: %3$s</string>
+    <string name="syncing_plugins">Plugins synchroniseren vanaf GitHub…</string>
+    <string name="plugins_synced">Plugins bijgewerkt</string>
+    <string name="sync_failed">Plugin-synchronisatie mislukt</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">Audio &amp; Video</string>
     <string name="audio_only">Alleen audio</string>
     <string name="casting_to">Casten naar %1$s (%2$s)</string>
+    <string name="casting_to_multiple">Casten naar %1$d apparaten</string>
     <string name="connecting_to">Verbinden met %1$s</string>
     <string name="not_casting">Niet aan het casten</string>
     <string name="unknown">Onbekend</string>
+    <string name="multiroom_group">Multiroom groep</string>
+    <string name="connecting">Verbinden…</string>
 
     <!-- Tile Service -->
     <string name="tile_tap_to_cast">Tik om te casten</string>
@@ -99,4 +117,10 @@
     <string name="packet_logs">Pakketlogs</string>
     <string name="search_logs">Logs doorzoeken…</string>
     <string name="clear_logs">Logs wissen</string>
+
+    <!-- Create Group Dialog -->
+    <string name="create_speaker_group">Speakergroep maken</string>
+    <string name="group_name">Groepsnaam</string>
+    <string name="select_devices">Apparaten selecteren</string>
+    <string name="save">Opslaan</string>
 </resources>
