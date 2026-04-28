@@ -67,7 +67,7 @@
     <string name="enable_video">Activer la vidéo</string>
     <string name="enable_video_desc">Diffuser la vidéo de l\'écran avec l\'audio</string>
     <string name="multiroom">Support Multiroom</string>
-    <string name="multiroom_desc">Permet de créer des groupes d\'enceintes</string>
+    <string name="multiroom_desc">Permette de créer des groupes d\'enceintes</string>
     <string name="plugins">Plugins</string>
     <string name="manage_plugins_desc">Gérer les extensions basées sur des scripts</string>
     <string name="notification_access">Accès aux notifications</string>
@@ -94,6 +94,10 @@
     <string name="syncing_plugins">Synchronisation des plugins depuis GitHub…</string>
     <string name="plugins_synced">Plugins mis à jour</string>
     <string name="sync_failed">Échec de la synchronisation des plugins</string>
+    <string name="plugin_consent_title">Plugins tiers</string>
+    <string name="plugin_consent_message">Les plugins peuvent exécuter des scripts personnalisés pour interagir avec les médias et les serveurs. Installez uniquement des plugins de sources fiables.\n\nSouhaitez-vous activer le système de plugins ?</string>
+    <string name="accept">Accepter</string>
+    <string name="decline">Refuser</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">Audio &amp; Vidéo</string>

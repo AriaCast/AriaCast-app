@@ -55,6 +55,39 @@ class PluginsActivity : AppCompatActivity() {
         setSupportActionBar(toolbar)
         toolbar.setNavigationOnClickListener { finish() }
 
+        val pluginPrefs = getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
+        val hasConsent = pluginPrefs.getBoolean("plugin_consent_given", false)
+
+        if (!hasConsent) {
+            showConsentDialog()
+        } else {
+            initializePlugins()
+        }
+
+        findViewById<FloatingActionButton>(R.id.addPluginFab).setOnClickListener {
+            syncAndRefresh()
+        }
+    }
+
+    private fun showConsentDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.plugin_consent_title))
+            .setMessage(getString(R.string.plugin_consent_message))
+            .setCancelable(false)
+            .setPositiveButton(getString(R.string.accept)) { _, _ ->
+                getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("plugin_consent_given", true)
+                    .apply()
+                initializePlugins()
+            }
+            .setNegativeButton(getString(R.string.decline)) { _, _ ->
+                finish()
+            }
+            .show()
+    }
+
+    private fun initializePlugins() {
         pluginManager = PluginManager(this)
         
         val recyclerView = findViewById<RecyclerView>(R.id.pluginsRecyclerView)
@@ -66,10 +99,6 @@ class PluginsActivity : AppCompatActivity() {
         if (folderUri == null) {
             showFolderSelectionDialog()
         } else {
-            syncAndRefresh()
-        }
-
-        findViewById<FloatingActionButton>(R.id.addPluginFab).setOnClickListener {
             syncAndRefresh()
         }
     }

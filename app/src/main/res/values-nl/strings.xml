@@ -94,6 +94,10 @@
     <string name="syncing_plugins">Plugins synchroniseren vanaf GitHub…</string>
     <string name="plugins_synced">Plugins bijgewerkt</string>
     <string name="sync_failed">Plugin-synchronisatie mislukt</string>
+    <string name="plugin_consent_title">Plugins van derden</string>
+    <string name="plugin_consent_message">Plugins kunnen aangepaste scripts uitvoeren om met media en servers te communiceren. Installeer alleen plugins van vertrouwde bronnen.\n\nWilt u het plugin-systeem inschakelen?</string>
+    <string name="accept">Accepteren</string>
+    <string name="decline">Weigeren</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">Audio &amp; Video</string>

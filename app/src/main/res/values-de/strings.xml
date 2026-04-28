@@ -94,6 +94,10 @@
     <string name="syncing_plugins">Plugins werden von GitHub synchronisiert…</string>
     <string name="plugins_synced">Plugins aktualisiert</string>
     <string name="sync_failed">Plugin-Synchronisierung fehlgeschlagen</string>
+    <string name="plugin_consent_title">Drittanbieter-Plugins</string>
+    <string name="plugin_consent_message">Plugins können benutzerdefinierte Skripte ausführen, um mit Medien und Servern zu interagieren. Installieren Sie Plugins nur aus vertrauenswürdigen Quellen.\n\nMöchten Sie das Plugin-System aktivieren?</string>
+    <string name="accept">Akzeptieren</string>
+    <string name="decline">Ablehnen</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">Audio &amp; Video</string>

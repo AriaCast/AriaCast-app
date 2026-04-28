@@ -32,7 +32,7 @@
     <string name="port">Puerto</string>
     <string name="add">Añadir</string>
     <string name="synchronization">Sincronización</string>
-    <string name="speaker_groups">Grupos de altavoces</string>
+    <string name="speaker_groups">Grupos de altovoces</string>
     <string name="create">Crear</string>
     <string name="offline_devices_error">Algunos dispositivos de este grupo están desconectados</string>
     <string name="no_servers_found">No se han descubierto servidores</string>
@@ -94,6 +94,10 @@
     <string name="syncing_plugins">Sincronizando plugins desde GitHub…</string>
     <string name="plugins_synced">Plugins actualizados</string>
     <string name="sync_failed">Error al sincronizar plugins</string>
+    <string name="plugin_consent_title">Plugins de terceros</string>
+    <string name="plugin_consent_message">Los plugins pueden ejecutar scripts personalizados para interactuar con los medios y los servidores. Instale solo plugins de fuentes confiables.\n\n¿Desea habilitar el sistema de plugins?</string>
+    <string name="accept">Aceptar</string>
+    <string name="decline">Rechazar</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">Audio y vídeo</string>

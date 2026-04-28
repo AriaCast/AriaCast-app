@@ -99,6 +99,10 @@
     <string name="syncing_plugins">Syncing plugins from GitHub…</string>
     <string name="plugins_synced">Plugins updated</string>
     <string name="sync_failed">Failed to sync plugins</string>
+    <string name="plugin_consent_title">Third-party Plugins</string>
+    <string name="plugin_consent_message">Plugins can execute custom scripts to interact with media and servers. Only install plugins from trusted sources.\n\nDo you want to enable the plugin system?</string>
+    <string name="accept">Accept</string>
+    <string name="decline">Decline</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">Audio &amp; Video</string>

@@ -94,6 +94,10 @@
     <string name="syncing_plugins">GitHub からプラグインを同期中…</string>
     <string name="plugins_synced">プラグインが更新されました</string>
     <string name="sync_failed">プラグインの同期に失敗しました</string>
+    <string name="plugin_consent_title">サードパーティ製プラグイン</string>
+    <string name="plugin_consent_message">プラグインはカスタムスクリプトを実行してメディアやサーバーを操作することができます。信頼できるソースからのプラグインのみをインストールしてください。\n\nプラグインシステムを有効にしますか？</string>
+    <string name="accept">承諾する</string>
+    <string name="decline">拒否する</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">オーディオとビデオ</string>

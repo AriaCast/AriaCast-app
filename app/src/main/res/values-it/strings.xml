@@ -90,6 +90,10 @@
     <string name="syncing_plugins">Sincronizzazione plugin da GitHub…</string>
     <string name="plugins_synced">Plugin aggiornati</string>
     <string name="sync_failed">Sincronizzazione fallita</string>
+    <string name="plugin_consent_title">Plugin di terze parti</string>
+    <string name="plugin_consent_message">I plugin possono eseguire script personalizzati per interagire con i media e i server. Installa solo plugin da fonti attendibili.\n\nVuoi abilitare il sistema dei plugin?</string>
+    <string name="accept">Accetta</string>
+    <string name="decline">Rifiuta</string>
 
     <string name="audio_video">Audio &amp; Video</string>
     <string name="audio_only">Solo Audio</string>

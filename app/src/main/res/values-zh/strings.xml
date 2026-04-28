@@ -94,6 +94,10 @@
     <string name="syncing_plugins">正在从 GitHub 同步插件…</string>
     <string name="plugins_synced">插件已更新</string>
     <string name="sync_failed">插件同步失败</string>
+    <string name="plugin_consent_title">第三方插件</string>
+    <string name="plugin_consent_message">插件可以执行自定义脚本来与媒体和服务器进行交互。请仅安装来自信任来源的插件。\n\n您要启用插件系统吗？</string>
+    <string name="accept">接受</string>
+    <string name="decline">拒绝</string>
 
     <!-- AudioCastService -->
     <string name="audio_video">音频和视频</string>
