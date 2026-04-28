@@ -1,6 +1,9 @@
 # AriaCast (Android Application)
-
 ![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/AirPlr/AriaCast-app/latest/total?style=for-the-badge)
+
+<img width="30%" height="auto" alt="Screenshot_20260425_220300_AriaCast" src="https://github.com/user-attachments/assets/12b44736-e1f7-47c8-b292-c6e9ae8be728" />
+<img width="30%" height="auto" alt="Screenshot_20260425_220307_AriaCast" src="https://github.com/user-attachments/assets/682ad335-4ffc-40b7-9f78-7894c13764dd" />
+<img width="30%" height="auto" alt="Screenshot_20260425_220321_AriaCast" src="https://github.com/user-attachments/assets/36e14a6d-5c71-4043-9a7b-0cea7949c95d" />
 
 
 **Capture and stream your Android device's internal audio to any receiver on your local network.**
@@ -10,14 +13,9 @@ AriaCast is a powerful Android application that allows you to broadcast audio fr
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/AirPlr)
 
+
+
 ## Features
-<p float="left">
-<img width="45%" alt="AriaCast Android App Screenshot" src="https://github.com/user-attachments/assets/425c09ff-312e-469f-aa5f-5be7e26330dc" />
-&nbsp;&nbsp;&nbsp;&nbsp;
-<img width="45%" alt="AriaCast Quick toggle Screenshot" src="https://github.com/user-attachments/assets/e30ae4bc-a950-44bf-942d-5ef667d6f878" />
-
-
-
 
 *   **System-Wide Audio Streaming**: Captures the internal audio output of your Android device using the `MediaProjection` API and streams it in real-time with low latency.
 *   **Real-Time Metadata**: Automatically detects currently playing media using the `NotificationListenerService`. Syncs rich metadata (Title, Artist, Album, Artwork) to the receiver instantly.
