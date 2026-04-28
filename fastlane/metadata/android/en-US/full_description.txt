@@ -1,0 +1,15 @@
+Capture and stream your Android device's internal audio to any receiver on your local network.
+
+AriaCast is a powerful Android application that allows you to broadcast audio from any application—such as Spotify, YouTube Music, or Pocket Casts—to a designated custom server. This effectively turns any computer or compatible device on your network into a high-fidelity networked speaker.
+
+Features:
+
+* System-Wide Audio Streaming: Captures the internal audio output of your Android device and streams it in real-time with low latency.
+* Real-Time Metadata: Automatically detects currently playing media. Syncs rich metadata (Title, Artist, Album, Artwork) to the receiver instantly.
+* Auto-Discovery: Automatically finds available AriaCast servers running on your local network.
+* Remote Control: Adjust the receiver's volume directly from the app.
+* Quick Settings Tile: Start and stop casting instantly from your notification shade.
+* Efficient Networking: Uses binary WebSockets for audio and control commands to ensure minimal overhead.
+* Plugin System: Extends the app's functionality with script-based plugins for specific servers.
+
+Note: Root access may be required to capture DRM-protected content from some applications.

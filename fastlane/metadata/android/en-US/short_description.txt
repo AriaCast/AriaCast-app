@@ -1,0 +1,1 @@
+Stream your Android device's internal audio to local network receivers.

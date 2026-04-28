@@ -1,0 +1,6 @@
+- Initial F-Droid release
+- System-wide audio streaming
+- Real-time metadata sync
+- Server auto-discovery
+- Remote volume control
+- Plugin system support
