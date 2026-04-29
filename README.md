@@ -15,7 +15,7 @@ AriaCast is a powerful Android application that allows you to broadcast audio fr
 
 ---
 # HELP US TRANSLATE ARIACAST
-### Click on the graph to open weblate
+### (Click on the graph to open weblate)
 <a href="https://hosted.weblate.org/engage/ariacast/"><img src="https://hosted.weblate.org/widget/ariacast/ariacast-app/multi-auto.svg" alt="Stato traduzione"></a>
 
 ---
