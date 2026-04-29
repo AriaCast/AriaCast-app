@@ -13,11 +13,12 @@ AriaCast is a powerful Android application that allows you to broadcast audio fr
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/AirPlr)
 
-
+---
 # HELP US TRANSLATE ARIACAST
 ### Click on the graph to open weblate
 <a href="https://hosted.weblate.org/engage/ariacast/"><img src="https://hosted.weblate.org/widget/ariacast/ariacast-app/multi-auto.svg" alt="Stato traduzione"></a>
 
+---
 ## Features
 
 *   **System-Wide Audio Streaming**: Captures the internal audio output of your Android device using the `MediaProjection` API and streams it in real-time with low latency.
