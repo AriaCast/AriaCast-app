@@ -8,5 +8,6 @@ data class Server(
     val codecs: List<String>,
     val sampleRate: Int,
     val channels: Int,
-    val platform: String? = null // Specific to NSD
+    val platform: String? = null,
+    val extra: String? = null // For DLNA control URL or other data
 )

@@ -66,7 +66,8 @@ data class CastDestination(
     val host: String,
     val port: Int,
     val platform: String? = null,
-    var delayMs: Int = 0
+    var delayMs: Int = 0,
+    val extra: String? = null
 )
 
 class AudioCastService : Service() {
@@ -248,7 +249,8 @@ class AudioCastService : Service() {
                             name = obj.getString("name"),
                             host = obj.getString("host"),
                             port = obj.getInt("port"),
-                            platform = obj.optString("platform", null)
+                            platform = obj.optString("platform", null),
+                            extra = obj.optString("extra", null)
                         ))
                     }
                 } else {
@@ -256,8 +258,11 @@ class AudioCastService : Service() {
                     val port = intent.getIntExtra(EXTRA_SERVER_PORT, 0)
                     val name = intent.getStringExtra(EXTRA_SERVER_NAME)
                     val platform = intent.getStringExtra(EXTRA_SERVER_PLATFORM)
+                    val extra = intent.getStringExtra(EXTRA_SERVER_EXTRA)
                     if (host != null && port != 0 && name != null) {
-                        destinations.add(CastDestination(name, host, port, platform))
+                        destinations.add(CastDestination(name, host, port, platform, extra = extra))
+                    } else if (platform == "DLNA" && host != null && name != null) {
+                        destinations.add(CastDestination(name, host, 0, platform, extra = extra))
                     }
                 }
 
@@ -347,6 +352,10 @@ class AudioCastService : Service() {
 
         val videoEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_VIDEO_ENABLED, false)
 
+        if (destinations.any { it.platform == "DLNA" || it.platform == "Google Cast" || it.platform == "AirPlay" }) {
+            startDlnaHttpServer()
+        }
+
         sessionScope.launch {
             launch { 
                 audioRecord?.startRecording()
@@ -363,17 +372,206 @@ class AudioCastService : Service() {
             }
 
             destinations.forEach { dest ->
-                launch { startControlSession(dest) }
-                if (videoEnabled && destinations.size == 1) { 
-                    launch { startVideoSession(dest) }
+                when (dest.platform) {
+                    "DLNA" -> launch { startDlnaSession(dest) }
+                    "Google Cast" -> launch { startGoogleCastSession(dest) }
+                    "AirPlay" -> launch { startAirPlaySession(dest) }
+                    else -> {
+                        launch { startControlSession(dest) }
+                        if (videoEnabled && destinations.size == 1) { 
+                            launch { startVideoSession(dest) }
+                        }
+                        launch { startAudioSession(dest) }
+                        launch { startStatsSession(dest) }
+                    }
                 }
-                launch { startAudioSession(dest) }
-                launch { startStatsSession(dest) }
             }
         }
         
         sessionScope.startMetadataRefreshLoop()
         _metadata.value?.let { sendMetadata(it) }
+    }
+
+    private var dlnaHttpServerJob: Job? = null
+    private fun startDlnaHttpServer() {
+        dlnaHttpServerJob?.cancel()
+        dlnaHttpServerJob = scope.launch(Dispatchers.IO) {
+            try {
+                val serverSocket = ServerSocket(STREAM_PORT)
+                while (isActive) {
+                    val client = serverSocket.accept()
+                    launch {
+                        try {
+                            client.setTcpNoDelay(true)
+                            val output = client.getOutputStream()
+                            
+                            // Send WAV Header for a "limitless" stream
+                            output.write("HTTP/1.1 200 OK\r\n".toByteArray())
+                            output.write("Content-Type: audio/x-wav\r\n".toByteArray())
+                            output.write("Connection: keep-alive\r\n\r\n".toByteArray())
+                            
+                            // WAV Header (PCM 16-bit, 48kHz, Stereo)
+                            val header = ByteBuffer.allocate(44).apply {
+                                order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                                put("RIFF".toByteArray())
+                                putInt(Int.MAX_VALUE) // Size
+                                put("WAVE".toByteArray())
+                                put("fmt ".toByteArray())
+                                putInt(16) // Subchunk1Size
+                                putShort(1) // AudioFormat (PCM)
+                                putShort(2) // NumChannels
+                                putInt(SAMPLE_RATE)
+                                putInt(SAMPLE_RATE * 2 * 2) // ByteRate
+                                putShort(4) // BlockAlign
+                                putShort(16) // BitsPerSample
+                                put("data".toByteArray())
+                                putInt(Int.MAX_VALUE) // Data size
+                            }
+                            output.write(header.array())
+
+                            audioBufferFlow.collect { buffer ->
+                                output.write(buffer)
+                                output.flush()
+                            }
+                        } catch (e: Exception) {
+                        } finally {
+                            client.close()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "DLNA HTTP Server error: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun startDlnaSession(dest: CastDestination) {
+        val controlUrl = dest.extra ?: return
+        val myIp = getLocalIpAddress() ?: return
+        val streamUrl = "http://$myIp:$STREAM_PORT/stream.wav"
+
+        try {
+            // 1. SetAVTransportURI
+            val setUriBody = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+                    <s:Body>
+                        <u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+                            <InstanceID>0</InstanceID>
+                            <CurrentURI>$streamUrl</CurrentURI>
+                            <CurrentURIMetaData></CurrentURIMetaData>
+                        </u:SetAVTransportURI>
+                    </s:Body>
+                </s:Envelope>
+            """.trimIndent()
+
+            client.post(controlUrl) {
+                header("SOAPACTION", "\"urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI\"")
+                contentType(ContentType.Text.Xml)
+                setBody(setUriBody)
+            }
+
+            // 2. Play
+            val playBody = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+                    <s:Body>
+                        <u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+                            <InstanceID>0</InstanceID>
+                            <Speed>1</Speed>
+                        </u:Play>
+                    </s:Body>
+                </s:Envelope>
+            """.trimIndent()
+
+            client.post(controlUrl) {
+                header("SOAPACTION", "\"urn:schemas-upnp-org:service:AVTransport:1#Play\"")
+                contentType(ContentType.Text.Xml)
+                setBody(playBody)
+            }
+
+            _state.value = CastState.CASTING
+            updateNotification()
+        } catch (e: Exception) {
+            Log.e(TAG, "DLNA session failed for ${dest.name}: ${e.message}")
+        }
+    }
+
+    private suspend fun startGoogleCastSession(dest: CastDestination) {
+        val myIp = getLocalIpAddress() ?: return
+        val streamUrl = "http://$myIp:$STREAM_PORT/stream.wav"
+        
+        try {
+            // Google Cast v2 uses a JSON protocol over TLS on port 8009, 
+            // but many modern receivers also support a simple REST-like launch.
+            // For a robust GMS-free implementation, we'd use a library, 
+            // but we can try the Default Media Receiver launch via HTTP.
+            
+            val launchUrl = "http://${dest.host}:8008/apps/DefaultMediaPlayer"
+            client.post(launchUrl) {
+                setBody("url=$streamUrl")
+                contentType(ContentType.Application.FormUrlEncoded)
+            }
+            
+            _state.value = CastState.CASTING
+            updateNotification()
+        } catch (e: Exception) {
+            Log.e(TAG, "Google Cast session failed for ${dest.name}: ${e.message}")
+        }
+    }
+
+    private suspend fun startAirPlaySession(dest: CastDestination) {
+        val myIp = getLocalIpAddress() ?: return
+        val streamUrl = "http://$myIp:$STREAM_PORT/stream.wav"
+
+        try {
+            // AirPlay 1 (RAOP) RTSP Handshake
+            val rtspUrl = "rtsp://${dest.host}:5000/"
+            
+            // 1. ANNOUNCE
+            val sdp = """
+                v=0
+                o=- 0 0 IN IP4 $myIp
+                s=AriaCast
+                c=IN IP4 ${dest.host}
+                t=0 0
+                m=audio 0 RTP/AVP 96
+                a=rtpmap:96 L16/48000/2
+            """.trimIndent().replace("\n", "\r\n")
+
+            client.request(rtspUrl) {
+                method = HttpMethod("ANNOUNCE")
+                header("Content-Type", "application/sdp")
+                setBody(sdp)
+            }
+
+            // 2. SETUP
+            client.request(rtspUrl) {
+                method = HttpMethod("SETUP")
+                header("Transport", "RTP/AVP/TCP;unicast;interleaved=0-1")
+            }
+
+            // 3. RECORD
+            client.request(rtspUrl) {
+                method = HttpMethod("RECORD")
+                header("Range", "npt=0-")
+            }
+
+            // Note: For a real RAOP sender, we would now stream PCM over the RTSP socket.
+            // However, many AirPlay devices also support simple HTTP play for media.
+            // We use a "bridge" approach where we tell the device to pull our stream.
+            val airplayPlayUrl = "http://${dest.host}:7000/play"
+            val body = "Content-Location: $streamUrl\nStart-Position: 0\n"
+            client.post(airplayPlayUrl) {
+                header("Content-Type", "text/parameters")
+                setBody(body)
+            }
+
+            _state.value = CastState.CASTING
+            updateNotification()
+        } catch (e: Exception) {
+            Log.e(TAG, "AirPlay session failed for ${dest.name}: ${e.message}")
+        }
     }
 
     private suspend fun startAudioSession(dest: CastDestination) {
@@ -678,6 +876,8 @@ class AudioCastService : Service() {
         audioRecord?.release()
         audioRecord = null
         releaseVideoCodec()
+        dlnaHttpServerJob?.cancel()
+        dlnaHttpServerJob = null
         controlSessions.clear()
         _activeDestinations.value = emptyList()
         sessionJob?.cancel()
@@ -739,6 +939,7 @@ class AudioCastService : Service() {
         const val EXTRA_SERVER_PORT = "com.aria.ariacast.EXTRA_SERVER_PORT"
         const val EXTRA_SERVER_NAME = "com.aria.ariacast.EXTRA_SERVER_NAME"
         const val EXTRA_SERVER_PLATFORM = "com.aria.ariacast.EXTRA_SERVER_PLATFORM"
+        const val EXTRA_SERVER_EXTRA = "com.aria.ariacast.EXTRA_SERVER_EXTRA"
         const val EXTRA_SERVERS_JSON = "com.aria.ariacast.EXTRA_SERVERS_JSON"
 
         const val PREFS_NAME = "AriaCastPrefs"
@@ -758,5 +959,6 @@ class AudioCastService : Service() {
         private const val RECONNECT_INITIAL_BACKOFF = 1000L
         private const val STATS_TIMEOUT = 10000L 
         private const val ARTWORK_PORT = 8090
+        private const val STREAM_PORT = 8091
     }
 }

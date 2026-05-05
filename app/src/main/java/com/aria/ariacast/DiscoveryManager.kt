@@ -76,7 +76,7 @@ class DiscoveryManager(private val context: Context) {
             }
 
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                val name = serviceInfo.serviceName ?: return
+                var name = serviceInfo.serviceName ?: return
                 val hostAddress = serviceInfo.host?.hostAddress ?: return
                 
                 if (hostAddress == "127.0.0.1" || hostAddress == "::1" || hostAddress.contains("localhost")) {
@@ -85,16 +85,32 @@ class DiscoveryManager(private val context: Context) {
                 }
 
                 val port = serviceInfo.port
+                var platform = serviceInfo.attributes["platform"]?.toString(Charsets.UTF_8)
+                
+                // Handle AirPlay (RAOP) discovery
+                if (serviceInfo.serviceType.contains("_raop")) {
+                    platform = "AirPlay"
+                    // RAOP names often look like "MACADDRESS@Name", we want just the name
+                    if (name.contains("@")) {
+                        name = name.substringAfter("@")
+                    }
+                }
+                
+                // Handle Google Cast discovery
+                if (serviceInfo.serviceType.contains("_googlecast")) {
+                    platform = "Google Cast"
+                    name = serviceInfo.attributes["fn"]?.toString(Charsets.UTF_8) ?: name
+                }
 
                 val server = Server(
                     name = name,
                     host = hostAddress,
                     port = port,
-                    version = serviceInfo.attributes["version"]?.toString(Charsets.UTF_8) ?: "",
-                    codecs = serviceInfo.attributes["codecs"]?.toString(Charsets.UTF_8)?.split(",") ?: emptyList(),
-                    sampleRate = serviceInfo.attributes["samplerate"]?.toString(Charsets.UTF_8)?.toIntOrNull() ?: 0,
-                    channels = serviceInfo.attributes["channels"]?.toString(Charsets.UTF_8)?.toIntOrNull() ?: 0,
-                    platform = serviceInfo.attributes["platform"]?.toString(Charsets.UTF_8)
+                    version = serviceInfo.attributes["version"]?.toString(Charsets.UTF_8) ?: "1.0",
+                    codecs = serviceInfo.attributes["codecs"]?.toString(Charsets.UTF_8)?.split(",") ?: listOf("pcm"),
+                    sampleRate = serviceInfo.attributes["samplerate"]?.toString(Charsets.UTF_8)?.toIntOrNull() ?: 48000,
+                    channels = serviceInfo.attributes["channels"]?.toString(Charsets.UTF_8)?.toIntOrNull() ?: 2,
+                    platform = platform
                 )
                 synchronized(discoveredServers) {
                     if (!discoveredServers.containsKey(name)) {
@@ -148,13 +164,152 @@ class DiscoveryManager(private val context: Context) {
         }
         _state.value = DiscoveryState.SCANNING
         
+        val sharedPreferences = context.getSharedPreferences("AriaCastPrefs", Context.MODE_PRIVATE)
+
         try {
             nsdManager.discoverServices("_audiocast._tcp", NsdManager.PROTOCOL_DNS_SD, nsdListener)
         } catch (e: Exception) {
-            Log.e(TAG, "NSD discovery could not be started", e)
+            Log.e(TAG, "NSD discovery could not be started for AriaCast", e)
+        }
+
+        if (sharedPreferences.getBoolean("airplay_enabled", false)) {
+            try {
+                nsdManager.discoverServices("_raop._tcp", NsdManager.PROTOCOL_DNS_SD, nsdListener)
+            } catch (e: Exception) {
+                Log.e(TAG, "NSD discovery could not be started for RAOP", e)
+            }
+        }
+
+        if (sharedPreferences.getBoolean("google_cast_enabled", false)) {
+            try {
+                nsdManager.discoverServices("_googlecast._tcp", NsdManager.PROTOCOL_DNS_SD, nsdListener)
+            } catch (e: Exception) {
+                Log.e(TAG, "NSD discovery could not be started for Google Cast", e)
+            }
         }
         
         startUdpDiscoveryWithRetries()
+        
+        if (sharedPreferences.getBoolean("dlna_enabled", false)) {
+            startSsdpDiscovery()
+        }
+    }
+
+    private fun startSsdpDiscovery() {
+        scope.launch {
+            performSsdpDiscovery()
+        }
+    }
+
+    private suspend fun performSsdpDiscovery() = withContext(Dispatchers.IO) {
+        try {
+            val ssdpAddress = InetAddress.getByName("239.255.255.250")
+            val ssdpPort = 1900
+            val query = """
+                M-SEARCH * HTTP/1.1
+                HOST: 239.255.255.250:1900
+                MAN: "ssdp:discover"
+                MX: 3
+                ST: urn:schemas-upnp-org:device:MediaRenderer:1
+                
+            """.trimIndent().replace("\n", "\r\n") + "\r\n"
+
+            DatagramSocket().use { socket ->
+                socket.soTimeout = 3000
+                val packet = DatagramPacket(query.toByteArray(), query.length, ssdpAddress, ssdpPort)
+                socket.send(packet)
+
+                val buffer = ByteArray(2048)
+                while (true) {
+                    val responsePacket = DatagramPacket(buffer, buffer.size)
+                    try {
+                        socket.receive(responsePacket)
+                        val response = String(responsePacket.data, 0, responsePacket.length)
+                        parseSsdpResponse(response, responsePacket.address.hostAddress)
+                    } catch (e: Exception) {
+                        break
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "SSDP discovery error: ${e.message}")
+        }
+    }
+
+    private fun parseSsdpResponse(response: String, hostAddress: String?) {
+        val lines = response.split("\r\n")
+        var location: String? = null
+        for (line in lines) {
+            if (line.startsWith("LOCATION:", ignoreCase = true)) {
+                location = line.substring(9).trim()
+                break
+            }
+        }
+
+        if (location != null && hostAddress != null) {
+            scope.launch {
+                resolveDlnaDevice(location, hostAddress)
+            }
+        }
+    }
+
+    private suspend fun resolveDlnaDevice(location: String, hostAddress: String) = withContext(Dispatchers.IO) {
+        try {
+            // Simple XML parsing to get friendlyName
+            val connection = java.net.URL(location).openConnection() as java.net.HttpURLConnection
+            connection.connectTimeout = 2000
+            connection.readTimeout = 2000
+            val xml = connection.inputStream.bufferedReader().use { it.readText() }
+            
+            val friendlyName = xml.substringAfter("<friendlyName>", "").substringBefore("</friendlyName>")
+            
+            // Find AVTransport control URL
+            var controlUrl = ""
+            if (xml.contains("urn:schemas-upnp-org:service:AVTransport:1")) {
+                val serviceBlock = xml.substringAfter("urn:schemas-upnp-org:service:AVTransport:1")
+                controlUrl = serviceBlock.substringAfter("<controlURL>", "").substringBefore("</controlURL>")
+                
+                if (controlUrl.isNotEmpty() && !controlUrl.startsWith("http")) {
+                    val baseUrl = if (xml.contains("<URLBase>")) {
+                        xml.substringAfter("<URLBase>", "").substringBefore("</URLBase>")
+                    } else {
+                        val uri = java.net.URI(location)
+                        "${uri.scheme}://${uri.host}:${uri.port}"
+                    }
+                    controlUrl = if (baseUrl.endsWith("/") && controlUrl.startsWith("/")) {
+                        baseUrl + controlUrl.substring(1)
+                    } else if (!baseUrl.endsWith("/") && !controlUrl.startsWith("/")) {
+                        "$baseUrl/$controlUrl"
+                    } else {
+                        baseUrl + controlUrl
+                    }
+                }
+            }
+
+            if (friendlyName.isNotEmpty()) {
+                val server = Server(
+                    name = friendlyName,
+                    host = hostAddress,
+                    port = 0, 
+                    version = "1.0",
+                    codecs = listOf("pcm"),
+                    sampleRate = 48000,
+                    channels = 2,
+                    platform = "DLNA",
+                    extra = controlUrl
+                )
+                
+                synchronized(discoveredServers) {
+                    if (!discoveredServers.containsKey(server.name)) {
+                        discoveredServers[server.name] = server
+                        _servers.value = discoveredServers.values.toList()
+                        _state.value = DiscoveryState.FOUND
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to resolve DLNA device at $location: ${e.message}")
+        }
     }
 
     fun stopDiscovery() {

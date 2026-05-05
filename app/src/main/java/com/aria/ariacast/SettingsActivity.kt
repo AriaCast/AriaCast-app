@@ -85,6 +85,10 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, PluginsActivity::class.java))
         }
 
+        findViewById<View>(R.id.protocolsLayout).setOnClickListener {
+            startActivity(Intent(this, ProtocolsActivity::class.java))
+        }
+
         findViewById<View>(R.id.pluginFolderLayout).setOnClickListener {
             showPluginFolderDialog()
         }

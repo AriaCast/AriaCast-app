@@ -125,6 +125,7 @@ class MainActivity : AppCompatActivity() {
                         putExtra(AudioCastService.EXTRA_SERVER_PORT, server.port)
                         putExtra(AudioCastService.EXTRA_SERVER_NAME, server.name)
                         putExtra(AudioCastService.EXTRA_SERVER_PLATFORM, server.platform)
+                        putExtra("com.aria.ariacast.EXTRA_SERVER_EXTRA", server.extra)
                     } else {
                         val array = JSONArray()
                         selectedServers.forEach { s ->
@@ -133,6 +134,7 @@ class MainActivity : AppCompatActivity() {
                                 put("host", s.host)
                                 put("port", s.port)
                                 put("platform", s.platform)
+                                put("extra", s.extra)
                             })
                         }
                         putExtra(AudioCastService.EXTRA_SERVERS_JSON, array.toString())
