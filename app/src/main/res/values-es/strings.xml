@@ -80,6 +80,18 @@
     <string name="plugin_folder">Carpeta de plugins</string>
     <string name="change_plugin_folder_desc">Cambiar o borrar la carpeta de plugins</string>
 
+    <!-- Protocols Activity -->
+    <string name="protocols">Protocolos</string>
+    <string name="protocols_desc">Gestionar protocolos de transmisión compatibles</string>
+    <string name="ariacast_protocol">AriaCast</string>
+    <string name="ariacast_protocol_desc">Protocolo de transmisión nativo de alta fidelidad</string>
+    <string name="dlna_protocol">DLNA / UPnP</string>
+    <string name="dlna_protocol_desc">Compatible con la mayoría de Smart TV y reproductores multimedia</string>
+    <string name="google_cast_protocol">Google Cast</string>
+    <string name="google_cast_protocol_desc">Transmitir a dispositivos Chromecast y Nest</string>
+    <string name="airplay_protocol">AirPlay 1</string>
+    <string name="airplay_protocol_desc">Transmitir a altavoces AirPlay compatibles</string>
+
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Carpeta de plugins actualizada</string>
     <string name="plugin_folder_title">Carpeta de plugins</string>

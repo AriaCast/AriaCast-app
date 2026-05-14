@@ -1,0 +1,413 @@
+package com.aria.ariacast
+
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
+import android.app.Activity
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.content.res.ColorStateList
+import android.media.projection.MediaProjectionManager
+import android.os.Bundle
+import android.os.IBinder
+import android.provider.Settings
+import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuItem
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.Toolbar
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.aria.ariacast.api.AriaPlugin
+import com.aria.ariacast.api.IAriaPlugin
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.button.MaterialButtonToggleGroup
+import com.google.android.material.card.MaterialCardView
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var mediaProjectionManager: MediaProjectionManager
+    private var audioCastService: AudioCastService? = null
+    private var isBound = false
+    private var selectedServer: Server? = null
+
+    private lateinit var stateTextView: TextView
+    private lateinit var castButton: MaterialButton
+    private lateinit var discoveryButton: MaterialButton
+    private lateinit var serverRecyclerView: RecyclerView
+    private lateinit var permissionButton: MaterialButton
+    private lateinit var statusCard: MaterialCardView
+    private lateinit var modeToggleGroup: MaterialButtonToggleGroup
+    private lateinit var videoControlsLayout: View
+    private lateinit var videoPreviewCard: MaterialCardView
+    private lateinit var videoSurface: SurfaceView
+    private lateinit var pluginSettingsButton: MaterialButton
+
+    private lateinit var discoveryManager: DiscoveryManager
+    private lateinit var serverListAdapter: ServerAdapter
+    private lateinit var sharedPreferences: SharedPreferences
+    private lateinit var pluginManager: PluginManager
+    private var videoReceiver: VideoReceiver? = null
+
+    private var currentCardAnimator: ValueAnimator? = null
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(className: ComponentName, service: IBinder) {
+            val binder = service as AudioCastService.AudioCastBinder
+            audioCastService = binder.getService()
+            isBound = true
+            lifecycleScope.launch {
+                audioCastService?.state?.collectLatest { state ->
+                    updateUi(state)
+                }
+            }
+        }
+
+        override fun onServiceDisconnected(arg0: ComponentName) {
+            audioCastService = null
+            isBound = false
+        }
+    }
+
+    private val startMediaProjection = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (it.resultCode == Activity.RESULT_OK && it.data != null) {
+            selectedServer?.let { server ->
+                val isVideo = modeToggleGroup.checkedButtonId == R.id.videoModeButton
+                val serviceIntent = Intent(this, AudioCastService::class.java).apply {
+                    action = AudioCastService.ACTION_START
+                    putExtra(AudioCastService.EXTRA_MEDIA_PROJECTION_TOKEN, it.data)
+                    putExtra(AudioCastService.EXTRA_SERVER_HOST, server.host)
+                    putExtra(AudioCastService.EXTRA_SERVER_PORT, server.port)
+                    putExtra(AudioCastService.EXTRA_SERVER_NAME, server.name)
+                    putExtra(AudioCastService.EXTRA_SERVER_PLATFORM, server.platform)
+                    putExtra("extra_is_video", isVideo)
+                }
+                ContextCompat.startForegroundService(this, serviceIntent)
+                
+                if (isVideo) {
+                    startVideoSession(server.host)
+                }
+            }
+        } else {
+            Toast.makeText(this, "MediaProjection permission denied.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        sharedPreferences = getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
+        val accentColor = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
+        setTheme(ThemeUtils.getThemeForAccent(accentColor))
+        
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        val toolbar = findViewById<Toolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
+
+        mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        discoveryManager = DiscoveryManager(this)
+        pluginManager = PluginManager(this)
+
+        stateTextView = findViewById(R.id.stateTextView)
+        castButton = findViewById(R.id.castButton)
+        discoveryButton = findViewById(R.id.discoveryButton)
+        serverRecyclerView = findViewById(R.id.serverRecyclerView)
+        permissionButton = findViewById(R.id.permissionButton)
+        statusCard = findViewById(R.id.statusCard)
+        modeToggleGroup = findViewById(R.id.modeToggleGroup)
+        videoControlsLayout = findViewById(R.id.videoControlsLayout)
+        videoPreviewCard = findViewById(R.id.videoPreviewCard)
+        videoSurface = findViewById(R.id.videoSurface)
+        pluginSettingsButton = findViewById(R.id.pluginSettingsButton)
+
+        serverListAdapter = ServerAdapter { server ->
+            selectedServer = server
+            startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
+        }
+
+        serverRecyclerView.apply {
+            adapter = serverListAdapter
+            layoutManager = LinearLayoutManager(this@MainActivity)
+        }
+
+        castButton.setOnClickListener {
+            if (audioCastService?.state?.value == CastState.CASTING) {
+                val serviceIntent = Intent(this, AudioCastService::class.java).apply {
+                    action = AudioCastService.ACTION_STOP
+                }
+                startService(serviceIntent)
+                stopVideoSession()
+            } else {
+                if (selectedServer != null) {
+                    startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
+                } else {
+                    Toast.makeText(this, "Please select a server first.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        discoveryButton.setOnClickListener {
+            discoveryManager.startDiscovery()
+            serverRecyclerView.scheduleLayoutAnimation()
+        }
+        
+        permissionButton.setOnClickListener {
+            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+            startActivity(intent)
+        }
+
+        pluginSettingsButton.setOnClickListener {
+            val videoPlugin = pluginManager.getEnabledPlugins().find { it.hasVideo }
+            videoPlugin?.let {
+                pluginManager.bindToPlugin(it.packageName, it.className) { service ->
+                    val plugin = IAriaPlugin.Stub.asInterface(service)
+                    try {
+                        // The getSettingsIntent is not in IAriaPlugin, but plugins usually handle it via their own activities.
+                        // However, we can try to start it if we knew the action. 
+                        // For now, let's keep it simple as the user is interested in streaming.
+                        Toast.makeText(this, "Plugin settings not available via AIDL yet", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error accessing plugin", e)
+                    }
+                }
+            }
+        }
+
+        videoSurface.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                videoReceiver = VideoReceiver(holder.surface)
+            }
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) {}
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                videoReceiver?.stop()
+                videoReceiver = null
+            }
+        })
+
+        lifecycleScope.launch {
+            discoveryManager.servers.collectLatest { servers ->
+                serverListAdapter.submitList(servers)
+
+                val lastHost = sharedPreferences.getString(AudioCastService.KEY_LAST_SERVER_HOST, null)
+                if (lastHost != null) {
+                    val lastServer = servers.find { it.host == lastHost }
+                    if (lastServer != null) {
+                        selectedServer = lastServer
+                        val index = servers.indexOf(lastServer)
+                        serverListAdapter.setSelectedItem(index)
+                    }
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            discoveryManager.state.collectLatest {
+                discoveryButton.text = when (it) {
+                    DiscoveryState.SCANNING -> "Scanning..."
+                    else -> "Refresh"
+                }
+            }
+        }
+        
+        checkNotificationListenerPermission()
+    }
+
+    private fun startVideoSession(host: String) {
+        val videoPlugin = pluginManager.getEnabledPlugins().find { it.hasVideo }
+        videoPlugin?.let { info ->
+            pluginManager.bindToPlugin(info.packageName, info.className) { service ->
+                val plugin = IAriaPlugin.Stub.asInterface(service)
+                try {
+                    plugin.onSessionStarted(host, 12890)
+                    lifecycleScope.launch {
+                        videoReceiver?.start(12890)
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error starting video session", e)
+                }
+            }
+            videoPreviewCard.visibility = View.VISIBLE
+        }
+    }
+
+    private fun stopVideoSession() {
+        pluginManager.unbind()
+        videoReceiver?.stop()
+        videoPreviewCard.visibility = View.GONE
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_settings -> {
+                startActivity(Intent(this, SettingsActivity::class.java))
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Intent(this, AudioCastService::class.java).also { intent ->
+            bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        }
+        discoveryManager.startDiscovery()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (isBound) {
+            unbindService(connection)
+            isBound = false
+        }
+        discoveryManager.stopDiscovery()
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        checkNotificationListenerPermission()
+        updatePluginUi()
+    }
+
+    private fun checkNotificationListenerPermission() {
+        if (!MediaNotificationListener.isEnabled(this)) {
+            permissionButton.visibility = View.VISIBLE
+        } else {
+            permissionButton.visibility = View.GONE
+        }
+    }
+
+    private fun updatePluginUi() {
+        val enabledPlugins = pluginManager.getEnabledPlugins()
+        val videoSupported = enabledPlugins.any { it.hasVideo }
+        videoControlsLayout.visibility = if (videoSupported) View.VISIBLE else View.GONE
+    }
+
+    private fun updateUi(state: CastState) {
+        val oldStateText = stateTextView.text.toString()
+        if (oldStateText != state.name) {
+            stateTextView.animate().alpha(0f).setDuration(150).withEndAction {
+                stateTextView.text = state.name
+                stateTextView.animate().alpha(1f).setDuration(150).start()
+            }.start()
+        }
+        
+        castButton.isEnabled = state == CastState.OFF && selectedServer != null || state == CastState.CASTING
+        modeToggleGroup.isEnabled = state == CastState.OFF
+        
+        val accentColor = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
+        val activeColor = ContextCompat.getColor(this, accentColor)
+        val idleColor = ContextCompat.getColor(this, R.color.light_grey)
+        val surfaceColor = ContextCompat.getColor(this, R.color.surface)
+
+        if (state == CastState.CASTING) {
+            castButton.text = "Stop"
+            castButton.setIconResource(android.R.drawable.ic_media_pause)
+            animateCardColors(idleColor, activeColor, surfaceColor, ColorUtils.setAlphaComponent(activeColor, 40))
+        } else {
+            castButton.text = "Start"
+            castButton.setIconResource(android.R.drawable.ic_media_play)
+            animateCardColors(activeColor, idleColor, ColorUtils.setAlphaComponent(activeColor, 40), surfaceColor)
+        }
+    }
+
+    private fun animateCardColors(fromStroke: Int, toStroke: Int, fromBg: Int, toBg: Int) {
+        currentCardAnimator?.cancel()
+        
+        currentCardAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 400
+            val argbEvaluator = ArgbEvaluator()
+            addUpdateListener { animator ->
+                val fraction = animator.animatedValue as Float
+                val strokeColor = argbEvaluator.evaluate(fraction, fromStroke, toStroke) as Int
+                val bgColor = argbEvaluator.evaluate(fraction, fromBg, toBg) as Int
+                
+                statusCard.setStrokeColor(ColorStateList.valueOf(strokeColor))
+                statusCard.setCardBackgroundColor(ColorStateList.valueOf(bgColor))
+            }
+            start()
+        }
+    }
+}
+
+class ServerAdapter(private val onServerClick: (Server) -> Unit) : RecyclerView.Adapter<ServerAdapter.ViewHolder>() {
+
+    private var servers = emptyList<Server>()
+    private var selectedItem = -1
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_server, parent, false)
+        return ViewHolder(view)
+    }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        val server = servers[position]
+        holder.serverName.text = server.name
+        holder.serverHost.text = server.host
+        
+        val context = holder.itemView.context
+        val sharedPrefs = context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
+        val accentColor = sharedPrefs.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
+        val colorRes = ContextCompat.getColor(context, accentColor)
+
+        if (selectedItem == position) {
+            holder.cardView.setStrokeWidth(4)
+            holder.cardView.setStrokeColor(ColorStateList.valueOf(colorRes))
+            holder.icon.imageTintList = ColorStateList.valueOf(colorRes)
+            holder.cardView.animate().scaleX(1.02f).scaleY(1.02f).setDuration(200).start()
+        } else {
+            holder.cardView.setStrokeWidth(0)
+            holder.icon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.light_grey))
+            holder.cardView.animate().scaleX(1.0f).scaleY(1.0f).setDuration(200).start()
+        }
+
+        holder.itemView.setOnClickListener { 
+            onServerClick(server)
+            setSelectedItem(position)
+        }
+    }
+
+    override fun getItemCount(): Int = servers.size
+
+    fun submitList(newServers: List<Server>) {
+        servers = newServers
+        notifyDataSetChanged()
+    }
+
+    fun setSelectedItem(position: Int) {
+        val previousItem = selectedItem
+        selectedItem = position
+        if (previousItem != -1) {
+            notifyItemChanged(previousItem)
+        }
+        notifyItemChanged(selectedItem)
+    }
+
+    class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val cardView: MaterialCardView = view as MaterialCardView
+        val serverName: TextView = view.findViewById(R.id.serverName)
+        val serverHost: TextView = view.findViewById(R.id.serverHost)
+        val icon: ImageView = view.findViewById(R.id.serverIcon)
+    }
+}

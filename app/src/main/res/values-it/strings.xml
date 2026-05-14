@@ -77,6 +77,18 @@
     <string name="plugin_folder">Cartella Plugin</string>
     <string name="change_plugin_folder_desc">Cambia o pulisci la cartella per i plugin</string>
 
+    <!-- Protocols Activity -->
+    <string name="protocols">Protocolli</string>
+    <string name="protocols_desc">Gestisci i protocolli di streaming supportati</string>
+    <string name="ariacast_protocol">AriaCast</string>
+    <string name="ariacast_protocol_desc">Protocollo di trasmissione nativo ad alta fedeltà</string>
+    <string name="dlna_protocol">DLNA / UPnP</string>
+    <string name="dlna_protocol_desc">Compatibile con la maggior parte delle Smart TV e dei media player</string>
+    <string name="google_cast_protocol">Google Cast</string>
+    <string name="google_cast_protocol_desc">Trasmetti a dispositivi Chromecast e Nest</string>
+    <string name="airplay_protocol">AirPlay 1</string>
+    <string name="airplay_protocol_desc">Trasmetti ad altoparlanti AirPlay compatibili</string>
+
     <string name="plugin_folder_updated">Cartella Plugin aggiornata</string>
     <string name="plugin_folder_title">Cartella Plugin</string>
     <string name="plugin_folder_message">Per usare i plugin, seleziona una cartella dove verranno salvati e aggiornati da GitHub.</string>

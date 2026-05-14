@@ -8,6 +8,7 @@ import android.util.Log
 import android.util.Patterns
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,9 +40,12 @@ class DiscoveryManager(private val context: Context) {
     
     private val discoveredServers = mutableMapOf<String, Server>()
     private val resolveQueue = ConcurrentLinkedQueue<NsdServiceInfo>()
-    private var isResolving = false
+    private var activeResolves = 0
+    private val MAX_CONCURRENT_RESOLVES = 3
+    private var discoveryJob: Job? = null
+    private val activeListeners = mutableListOf<NsdManager.DiscoveryListener>()
 
-    private val nsdListener = object : NsdManager.DiscoveryListener {
+    private fun createNsdListener() = object : NsdManager.DiscoveryListener {
         override fun onDiscoveryStarted(serviceType: String) {
             if (_state.value != DiscoveryState.FOUND) {
                 _state.value = DiscoveryState.SCANNING
@@ -85,19 +89,19 @@ class DiscoveryManager(private val context: Context) {
     }
 
     private fun processResolveQueue() {
-        if (isResolving || resolveQueue.isEmpty()) return
+        if (activeResolves >= MAX_CONCURRENT_RESOLVES || resolveQueue.isEmpty()) return
         
-        isResolving = true
         val serviceInfo = resolveQueue.poll() ?: return
+        activeResolves++
         
         try {
             nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                 override fun onResolveFailed(si: NsdServiceInfo, errorCode: Int) {
                     Log.e(TAG, "Resolve failed: $errorCode for ${si.serviceName}")
-                    isResolving = false
+                    activeResolves--
                     if (errorCode == NsdManager.FAILURE_ALREADY_ACTIVE) {
                         scope.launch {
-                            delay(500)
+                            delay(1000)
                             resolveQueue.add(si)
                             processResolveQueue()
                         }
@@ -107,19 +111,20 @@ class DiscoveryManager(private val context: Context) {
                 }
 
                 override fun onServiceResolved(si: NsdServiceInfo) {
-                    isResolving = false
+                    activeResolves--
                     handleResolvedService(si)
                     processResolveQueue()
                 }
             })
         } catch (e: Exception) {
-            isResolving = false
+            activeResolves--
             processResolveQueue()
         }
     }
 
     private fun handleResolvedService(serviceInfo: NsdServiceInfo) {
-        var name = serviceInfo.serviceName ?: return
+        val originalName = serviceInfo.serviceName ?: return
+        var name = originalName
         val hostAddress = serviceInfo.host?.hostAddress ?: return
         
         if (hostAddress == "127.0.0.1" || hostAddress == "::1" || hostAddress.contains("localhost")) return
@@ -127,34 +132,52 @@ class DiscoveryManager(private val context: Context) {
         val port = serviceInfo.port
         val attr = serviceInfo.attributes
         
-        var platform = attr["platform"]?.toString(Charsets.UTF_8)
-        var model = attr["model"]?.toString(Charsets.UTF_8) ?: attr["am"]?.toString(Charsets.UTF_8)
-        var deviceId = attr["deviceid"]?.toString(Charsets.UTF_8)
-        val features = attr["features"]?.toString(Charsets.UTF_8)
-        val pk = attr["pk"]?.toString(Charsets.UTF_8)
+        fun attrString(key: String): String? {
+            val bytes = attr[key] ?: return null
+            val s = String(bytes, Charsets.UTF_8).trim()
+            return if (s.isEmpty()) null else s
+        }
+
+        var platform = attrString("platform")
+        var model = attrString("model") ?: attrString("am")
+        var deviceId = attrString("deviceid")
+        val features = attrString("features")
+        val pk = attrString("pk")
         
-        val sampleRate = attr["sr"]?.toString(Charsets.UTF_8)?.toIntOrNull() ?: 
-                         attr["samplerate"]?.toString(Charsets.UTF_8)?.toIntOrNull() ?: 48000
-        val channels = attr["ch"]?.toString(Charsets.UTF_8)?.toIntOrNull() ?:
-                       attr["channels"]?.toString(Charsets.UTF_8)?.toIntOrNull() ?: 2
+        val sampleRate = attrString("sr")?.toIntOrNull() ?: 
+                         attrString("samplerate")?.toIntOrNull() ?: 48000
+        val channels = attrString("ch")?.toIntOrNull() ?:
+                       attrString("channels")?.toIntOrNull() ?: 2
         
+        val extraParts = mutableListOf<String>()
+
         if (serviceInfo.serviceType.contains("_raop")) {
             platform = "AirPlay"
             if (name.contains("@")) {
-                if (deviceId == null) deviceId = name.substringBefore("@")
-                name = name.substringAfter("@")
+                val cleaned = name.substringAfter("@")
+                if (cleaned.isNotEmpty()) {
+                    name = cleaned
+                }
+                if (deviceId == null) deviceId = originalName.substringBefore("@")
             }
         } else if (serviceInfo.serviceType.contains("_airplay")) {
             platform = "AirPlay"
         } else if (serviceInfo.serviceType.contains("_googlecast")) {
             platform = "Google Cast"
-            name = attr["fn"]?.toString(Charsets.UTF_8) ?: name
-            model = attr["md"]?.toString(Charsets.UTF_8)
+            name = attrString("fn") ?: name
+            model = attrString("md")
+            attrString("st")?.let { extraParts.add("st=$it") }
+            attrString("ca")?.let { extraParts.add("ca=$it") }
+            attrString("ve")?.let { extraParts.add("ve=$it") }
         } else if (serviceInfo.serviceType.contains("_audiocast")) {
             platform = "AriaCast"
         }
 
-        val extraParts = mutableListOf<String>()
+        // Ensure name is never empty
+        if (name.trim().isEmpty()) {
+            name = originalName
+        }
+
         if (model != null) extraParts.add("model=$model")
         if (deviceId != null) extraParts.add("id=$deviceId")
         if (features != null) extraParts.add("features=$features")
@@ -164,8 +187,8 @@ class DiscoveryManager(private val context: Context) {
             name = name,
             host = hostAddress,
             port = port,
-            version = attr["version"]?.toString(Charsets.UTF_8) ?: attr["srcvers"]?.toString(Charsets.UTF_8) ?: "1.0",
-            codecs = attr["codecs"]?.toString(Charsets.UTF_8)?.split(",") ?: listOf("pcm"),
+            version = attrString("version") ?: attrString("srcvers") ?: "1.0",
+            codecs = attrString("codecs")?.split(",") ?: listOf("pcm"),
             sampleRate = sampleRate,
             channels = channels,
             platform = platform,
@@ -192,7 +215,9 @@ class DiscoveryManager(private val context: Context) {
                 discoveredServers[name] = server
             }
             _servers.value = discoveredServers.values.toList()
-            _state.value = DiscoveryState.FOUND
+            if (_state.value != DiscoveryState.SCANNING) {
+                _state.value = DiscoveryState.FOUND
+            }
         }
     }
 
@@ -217,7 +242,6 @@ class DiscoveryManager(private val context: Context) {
         _state.value = DiscoveryState.SCANNING
         
         val prefs = context.getSharedPreferences("AriaCastPrefs", Context.MODE_PRIVATE)
-
         val services = mutableListOf("_audiocast._tcp")
         if (prefs.getBoolean("airplay_enabled", false)) {
             services.add("_raop._tcp")
@@ -227,23 +251,45 @@ class DiscoveryManager(private val context: Context) {
             services.add("_googlecast._tcp")
         }
 
-        services.forEach { type ->
-            try {
-                nsdManager.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, nsdListener)
-            } catch (e: Exception) {
-                Log.e(TAG, "Discovery failed for $type: ${e.message}")
+        discoveryJob = scope.launch {
+            // Initial burst
+            launch {
+                services.forEach { type ->
+                    try {
+                        val listener = createNsdListener()
+                        synchronized(activeListeners) { activeListeners.add(listener) }
+                        nsdManager.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, listener)
+                    } catch (e: Exception) { Log.e(TAG, "Discovery failed for $type: ${e.message}") }
+                }
+            }
+
+            launch { startUdpDiscoveryLoop() }
+            if (prefs.getBoolean("dlna_enabled", false)) {
+                launch { startSsdpDiscoveryLoop() }
+            }
+
+            // Keep "SCANNING" state for at least 15 seconds
+            delay(15000)
+            if (_state.value == DiscoveryState.SCANNING) {
+                _state.value = if (discoveredServers.isEmpty()) DiscoveryState.NONE else DiscoveryState.FOUND
             }
         }
-        
-        startUdpDiscoveryWithRetries()
-        if (prefs.getBoolean("dlna_enabled", false)) startSsdpDiscovery()
     }
 
     fun stopDiscovery() {
-        try { nsdManager.stopServiceDiscovery(nsdListener) } catch (e: Exception) {}
+        discoveryJob?.cancel()
+        discoveryJob = null
+        
+        synchronized(activeListeners) {
+            activeListeners.forEach { listener ->
+                try { nsdManager.stopServiceDiscovery(listener) } catch (e: Exception) {}
+            }
+            activeListeners.clear()
+        }
+
         try { if (multicastLock?.isHeld == true) multicastLock?.release() } catch (e: Exception) {}
         resolveQueue.clear()
-        isResolving = false
+        activeResolves = 0
     }
 
     fun removeServer(name: String) {
@@ -253,30 +299,40 @@ class DiscoveryManager(private val context: Context) {
         }
     }
 
-    private fun startSsdpDiscovery() {
-        scope.launch {
-            try {
-                val ssdpAddress = InetAddress.getByName("239.255.255.250")
-                val query = "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 3\r\nST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n"
+    private suspend fun startSsdpDiscoveryLoop() = withContext(Dispatchers.IO) {
+        val ssdpAddress = InetAddress.getByName("239.255.255.250")
+        val searchTargets = listOf(
+            "urn:schemas-upnp-org:device:MediaRenderer:1",
+            "ssdp:all",
+            "upnp:rootdevice"
+        )
 
-                DatagramSocket().use { socket ->
-                    socket.soTimeout = 3000
-                    val packet = DatagramPacket(query.toByteArray(), query.length, ssdpAddress, 1900)
-                    socket.send(packet)
+        while (isActive) {
+            searchTargets.forEach { st ->
+                try {
+                    val query = "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 3\r\nST: $st\r\n\r\n"
+                    DatagramSocket().use { socket ->
+                        socket.soTimeout = 4000
+                        val packet = DatagramPacket(query.toByteArray(), query.length, ssdpAddress, 1900)
+                        socket.send(packet)
 
-                    val buffer = ByteArray(2048)
-                    while (isActive) {
-                        val responsePacket = DatagramPacket(buffer, buffer.size)
-                        try {
-                            socket.receive(responsePacket)
-                            val response = String(responsePacket.data, 0, responsePacket.length)
-                            val host = responsePacket.address.hostAddress ?: continue
-                            val location = response.split("\r\n").find { it.startsWith("LOCATION:", true) }?.substring(9)?.trim() ?: continue
-                            launch { resolveDlnaDevice(location, host) }
-                        } catch (e: Exception) { break }
+                        val buffer = ByteArray(2048)
+                        val endTime = System.currentTimeMillis() + 4000
+                        while (System.currentTimeMillis() < endTime && isActive) {
+                            val responsePacket = DatagramPacket(buffer, buffer.size)
+                            try {
+                                socket.receive(responsePacket)
+                                val response = String(responsePacket.data, 0, responsePacket.length)
+                                val host = responsePacket.address.hostAddress ?: continue
+                                val location = response.split("\r\n").find { it.startsWith("LOCATION:", true) }?.substring(9)?.trim() ?: continue
+                                launch { resolveDlnaDevice(location, host) }
+                            } catch (e: Exception) { break }
+                        }
                     }
-                }
-            } catch (e: Exception) {}
+                } catch (e: Exception) { Log.e(TAG, "SSDP error for $st: ${e.message}") }
+                delay(1000)
+            }
+            delay(5000) // Repeat full cycle
         }
     }
 
@@ -288,57 +344,79 @@ class DiscoveryManager(private val context: Context) {
             val friendlyName = xml.substringAfter("<friendlyName>", "").substringBefore("</friendlyName>")
             
             if (friendlyName.isNotEmpty()) {
-                var controlUrl = ""
+                var avTransportUrl = ""
                 if (xml.contains("urn:schemas-upnp-org:service:AVTransport:1")) {
-                    controlUrl = xml.substringAfter("urn:schemas-upnp-org:service:AVTransport:1").substringAfter("<controlURL>", "").substringBefore("</controlURL>")
-                    if (controlUrl.isNotEmpty() && !controlUrl.startsWith("http")) {
+                    avTransportUrl = xml.substringAfter("urn:schemas-upnp-org:service:AVTransport:1").substringAfter("<controlURL>", "").substringBefore("</controlURL>")
+                    if (avTransportUrl.isNotEmpty() && !avTransportUrl.startsWith("http")) {
                         val uri = java.net.URI(location)
-                        controlUrl = "${uri.scheme}://${uri.host}:${uri.port}${if(controlUrl.startsWith("/")) "" else "/"}$controlUrl"
+                        avTransportUrl = "${uri.scheme}://${uri.host}:${uri.port}${if(avTransportUrl.startsWith("/")) "" else "/"}$avTransportUrl"
+                    }
+                }
+
+                var renderingControlUrl = ""
+                if (xml.contains("urn:schemas-upnp-org:service:RenderingControl:1")) {
+                    renderingControlUrl = xml.substringAfter("urn:schemas-upnp-org:service:RenderingControl:1").substringAfter("<controlURL>", "").substringBefore("</controlURL>")
+                    if (renderingControlUrl.isNotEmpty() && !renderingControlUrl.startsWith("http")) {
+                        val uri = java.net.URI(location)
+                        renderingControlUrl = "${uri.scheme}://${uri.host}:${uri.port}${if(renderingControlUrl.startsWith("/")) "" else "/"}$renderingControlUrl"
                     }
                 }
                 
-                val server = Server(name = friendlyName, host = hostAddress, port = 0, version = "1.0", codecs = listOf("pcm"), sampleRate = 48000, channels = 2, platform = "DLNA", extra = controlUrl)
+                val extraParts = mutableListOf<String>()
+                if (avTransportUrl.isNotEmpty()) extraParts.add("av_control=$avTransportUrl")
+                if (renderingControlUrl.isNotEmpty()) extraParts.add("rc_control=$renderingControlUrl")
+
+                val server = Server(
+                    name = friendlyName,
+                    host = hostAddress,
+                    port = 0,
+                    version = "1.0",
+                    codecs = listOf("pcm"),
+                    sampleRate = 48000,
+                    channels = 2,
+                    platform = "DLNA",
+                    extra = if (extraParts.isEmpty()) null else extraParts.joinToString(";")
+                )
                 synchronized(discoveredServers) {
                     discoveredServers[friendlyName] = server
                     _servers.value = discoveredServers.values.toList()
-                    _state.value = DiscoveryState.FOUND
+                    if (_state.value != DiscoveryState.SCANNING) {
+                        _state.value = DiscoveryState.FOUND
+                    }
                 }
             }
         } catch (e: Exception) {}
     }
 
-    private fun startUdpDiscoveryWithRetries() {
-        scope.launch {
-            repeat(3) {
-                performUdpDiscovery()
-                delay(3000)
-            }
+    private suspend fun startUdpDiscoveryLoop() = withContext(Dispatchers.IO) {
+        while (isActive) {
+            try {
+                DatagramSocket().use { socket ->
+                    socket.broadcast = true
+                    socket.soTimeout = 3000
+                    val packet = DatagramPacket("DISCOVER_AUDIOCAST".toByteArray(), 18, InetAddress.getByName("255.255.255.255"), 12888)
+                    socket.send(packet)
+                    val buffer = ByteArray(1024)
+                    val endTime = System.currentTimeMillis() + 3000
+                    while (System.currentTimeMillis() < endTime && isActive) {
+                        val resp = DatagramPacket(buffer, buffer.size)
+                        try {
+                            socket.receive(resp)
+                            val json = JSONObject(String(resp.data, 0, resp.length))
+                            val server = Server(name = json.optString("server_name"), host = resp.address.hostAddress ?: "", port = json.optInt("port"), version = "1.0", codecs = listOf("pcm"), sampleRate = 48000, channels = 2, platform = "AriaCast")
+                            synchronized(discoveredServers) {
+                                discoveredServers[server.name] = server
+                                _servers.value = discoveredServers.values.toList()
+                                if (_state.value != DiscoveryState.SCANNING) {
+                                    _state.value = DiscoveryState.FOUND
+                                }
+                            }
+                        } catch (e: Exception) { break }
+                    }
+                }
+            } catch (e: Exception) {}
+            delay(5000)
         }
-    }
-
-    private suspend fun performUdpDiscovery() = withContext(Dispatchers.IO) {
-        try {
-            DatagramSocket().use { socket ->
-                socket.broadcast = true
-                socket.soTimeout = 2000
-                val packet = DatagramPacket("DISCOVER_AUDIOCAST".toByteArray(), 18, InetAddress.getByName("255.255.255.255"), 12888)
-                socket.send(packet)
-                val buffer = ByteArray(1024)
-                while (isActive) {
-                    val resp = DatagramPacket(buffer, buffer.size)
-                    try {
-                        socket.receive(resp)
-                        val json = JSONObject(String(resp.data, 0, resp.length))
-                        val server = Server(name = json.optString("server_name"), host = resp.address.hostAddress ?: "", port = json.optInt("port"), version = "1.0", codecs = listOf("pcm"), sampleRate = 48000, channels = 2, platform = "AriaCast")
-                        synchronized(discoveredServers) {
-                            discoveredServers[server.name] = server
-                            _servers.value = discoveredServers.values.toList()
-                            _state.value = DiscoveryState.FOUND
-                        }
-                    } catch (e: Exception) { break }
-                }
-            }
-        } catch (e: Exception) {}
     }
 
     companion object { private const val TAG = "DiscoveryManager" }

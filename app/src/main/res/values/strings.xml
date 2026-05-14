@@ -94,8 +94,8 @@
     <string name="dlna_protocol_desc">Compatible with most Smart TVs and media players</string>
     <string name="google_cast_protocol">Google Cast</string>
     <string name="google_cast_protocol_desc">Stream to Chromecast and Nest devices</string>
-    <string name="airplay_protocol">AirPlay</string>
-    <string name="airplay_protocol_desc">Stream to Apple TV and compatible speakers</string>
+    <string name="airplay_protocol">AirPlay 1</string>
+    <string name="airplay_protocol_desc">Stream to compatible AirPlay speakers</string>
 
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Plugin folder updated</string>
