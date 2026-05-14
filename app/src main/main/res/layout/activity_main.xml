@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/windowBackground"
+    tools:context=".MainActivity">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@android:color/transparent"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:title="AriaCast"
+            app:titleCentered="true"
+            app:titleTextAppearance="@style/TextAppearance.Material3.TitleLarge" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:animateLayoutChanges="true"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/statusCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardCornerRadius="24dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
+
+                <androidx.constraintlayout.widget.ConstraintLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:animateLayoutChanges="true"
+                    android:padding="20dp">
+
+                    <TextView
+                        android:id="@+id/stateLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Status"
+                        android:textAppearance="?attr/textAppearanceLabelLarge"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent" />
+
+                    <TextView
+                        android:id="@+id/stateTextView"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="OFF"
+                        android:textAppearance="?attr/textAppearanceHeadlineMedium"
+                        android:textStyle="bold"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toBottomOf="@id/stateLabel" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/castButton"
+                        style="@style/Widget.Material3.Button"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Start Casting"
+                        app:cornerRadius="20dp"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintTop_toTopOf="parent" />
+
+                    <LinearLayout
+                        android:id="@+id/videoControlsLayout"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:visibility="gone"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toBottomOf="@id/stateTextView"
+                        tools:visibility="visible">
+
+                        <com.google.android.material.button.MaterialButtonToggleGroup
+                            android:id="@+id/modeToggleGroup"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            app:checkedButton="@+id/audioModeButton"
+                            app:singleSelection="true">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/audioModeButton"
+                                style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Audio"
+                                app:icon="@android:drawable/ic_lock_silent_mode" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/videoModeButton"
+                                style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Video"
+                                app:icon="@android:drawable/presence_video_online" />
+
+                        </com.google.android.material.button.MaterialButtonToggleGroup>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/pluginSettingsButton"
+                            style="@style/Widget.Material3.Button.TextButton.Icon"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            app:icon="@android:drawable/ic_menu_preferences"
+                            app:iconTint="?attr/colorOutline" />
+                    </LinearLayout>
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/videoPreviewCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="200dp"
+                        android:layout_marginTop="16dp"
+                        android:visibility="gone"
+                        app:cardCornerRadius="12dp"
+                        app:cardElevation="0dp"
+                        app:layout_constraintTop_toBottomOf="@id/videoControlsLayout"
+                        app:strokeColor="?attr/colorOutlineVariant"
+                        app:strokeWidth="1dp"
+                        tools:visibility="visible">
+
+                        <SurfaceView
+                            android:id="@+id/videoSurface"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent" />
+                    </com.google.android.material.card.MaterialCardView>
+
+                </androidx.constraintlayout.widget.ConstraintLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/permissionButton"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:text="Grant Notification Access"
+                android:visibility="gone"
+                app:icon="@android:drawable/ic_dialog_alert"
+                tools:visibility="visible" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginBottom="16dp"
+                android:background="?attr/colorOutlineVariant" />
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Available Servers"
+                    android:textAppearance="?attr/textAppearanceTitleMedium"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/discoveryButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Refresh"
+                    app:icon="@android:drawable/ic_menu_rotate"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
+
+            </androidx.constraintlayout.widget.ConstraintLayout>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/serverRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipToPadding="false"
+                android:layoutAnimation="@anim/layout_animation_fall_down"
+                android:nestedScrollingEnabled="false"
+                android:paddingBottom="16dp"
+                tools:listitem="@layout/item_server" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
