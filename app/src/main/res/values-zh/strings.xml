@@ -80,6 +80,18 @@
     <string name="plugin_folder">插件文件夹</string>
     <string name="change_plugin_folder_desc">更改或清除插件文件夹</string>
 
+    <!-- Protocols Activity -->
+    <string name="protocols">协议</string>
+    <string name="protocols_desc">管理支持的流媒体协议</string>
+    <string name="ariacast_protocol">AriaCast</string>
+    <string name="ariacast_protocol_desc">原生高保真投放协议</string>
+    <string name="dlna_protocol">DLNA / UPnP</string>
+    <string name="dlna_protocol_desc">兼容大多数智能电视和媒体播放器</string>
+    <string name="google_cast_protocol">Google Cast</string>
+    <string name="google_cast_protocol_desc">投放到 Chromecast 和 Nest 设备</string>
+    <string name="airplay_protocol">AirPlay 1</string>
+    <string name="airplay_protocol_desc">投放到兼容的 AirPlay 扬声器</string>
+
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">插件文件夹已更新</string>
     <string name="plugin_folder_title">插件文件夹</string>

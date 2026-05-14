@@ -80,6 +80,18 @@
     <string name="plugin_folder">プラグインフォルダ</string>
     <string name="change_plugin_folder_desc">プラグインフォルダを変更またはクリアする</string>
 
+    <!-- Protocols Activity -->
+    <string name="protocols">プロトコル</string>
+    <string name="protocols_desc">サポートされているストリーミングプロトコルの管理</string>
+    <string name="ariacast_protocol">AriaCast</string>
+    <string name="ariacast_protocol_desc">ネイティブな高忠実度キャスティングプロトコル</string>
+    <string name="dlna_protocol">DLNA / UPnP</string>
+    <string name="dlna_protocol_desc">ほとんどのスマートTVやメディアプレーヤーと互換性があります</string>
+    <string name="google_cast_protocol">Google Cast</string>
+    <string name="google_cast_protocol_desc">ChromecastやNestデバイスへのストリーミング</string>
+    <string name="airplay_protocol">AirPlay 1</string>
+    <string name="airplay_protocol_desc">互換性のあるAirPlayスピーカーへのストリーミング</string>
+
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">プラグインフォルダが更新されました</string>
     <string name="plugin_folder_title">プラグインフォルダ</string>

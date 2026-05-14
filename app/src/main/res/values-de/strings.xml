@@ -80,6 +80,18 @@
     <string name="plugin_folder">Plugin-Ordner</string>
     <string name="change_plugin_folder_desc">Plugin-Ordner ändern oder löschen</string>
 
+    <!-- Protocols Activity -->
+    <string name="protocols">Protokolle</string>
+    <string name="protocols_desc">Unterstützte Streaming-Protokolle verwalten</string>
+    <string name="ariacast_protocol">AriaCast</string>
+    <string name="ariacast_protocol_desc">Natives High-Fidelity-Streaming-Protokoll</string>
+    <string name="dlna_protocol">DLNA / UPnP</string>
+    <string name="dlna_protocol_desc">Kompatibel mit den meisten Smart-TVs und Media-Playern</string>
+    <string name="google_cast_protocol">Google Cast</string>
+    <string name="google_cast_protocol_desc">Streamen auf Chromecast- und Nest-Geräte</string>
+    <string name="airplay_protocol">AirPlay 1</string>
+    <string name="airplay_protocol_desc">Streamen auf kompatible AirPlay-Lautsprecher</string>
+
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Plugin-Ordner aktualisiert</string>
     <string name="plugin_folder_title">Plugin-Ordner</string>

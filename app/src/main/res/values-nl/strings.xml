@@ -80,6 +80,18 @@
     <string name="plugin_folder">Plugin-map</string>
     <string name="change_plugin_folder_desc">Plugin-map wijzigen of wissen</string>
 
+    <!-- Protocols Activity -->
+    <string name="protocols">Protocollen</string>
+    <string name="protocols_desc">Beheer ondersteunde streamingprotocollen</string>
+    <string name="ariacast_protocol">AriaCast</string>
+    <string name="ariacast_protocol_desc">Eigen high-fidelity streamingprotocol</string>
+    <string name="dlna_protocol">DLNA / UPnP</string>
+    <string name="dlna_protocol_desc">Compatibel met de meeste smart-tv\'s en mediaspelers</string>
+    <string name="google_cast_protocol">Google Cast</string>
+    <string name="google_cast_protocol_desc">Streamen naar Chromecast- en Nest-apparaten</string>
+    <string name="airplay_protocol">AirPlay 1</string>
+    <string name="airplay_protocol_desc">Streamen naar compatibele AirPlay-speakers</string>
+
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Plugin-map bijgewerkt</string>
     <string name="plugin_folder_title">Plugin-map</string>
