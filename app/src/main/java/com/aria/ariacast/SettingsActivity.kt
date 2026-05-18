@@ -89,6 +89,10 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, ProtocolsActivity::class.java))
         }
 
+        findViewById<View>(R.id.airplayPinsLayout).setOnClickListener {
+            startActivity(Intent(this, AirPlayPinsActivity::class.java))
+        }
+
         findViewById<View>(R.id.pluginFolderLayout).setOnClickListener {
             showPluginFolderDialog()
         }

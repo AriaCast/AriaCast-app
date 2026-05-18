@@ -161,7 +161,7 @@ class DiscoveryManager(private val context: Context) {
                 if (deviceId == null) deviceId = originalName.substringBefore("@")
             }
         } else if (serviceInfo.serviceType.contains("_airplay")) {
-            platform = "AirPlay"
+            platform = "AirPlay2"
         } else if (serviceInfo.serviceType.contains("_googlecast")) {
             platform = "Google Cast"
             name = attrString("fn") ?: name
@@ -198,7 +198,7 @@ class DiscoveryManager(private val context: Context) {
         synchronized(discoveredServers) {
             val existing = discoveredServers[name]
             if (existing != null && existing.platform == platform) {
-                if (platform == "AirPlay") {
+                if (platform == "AirPlay" || platform == "AirPlay2") {
                     val isRaop = serviceInfo.serviceType.contains("_raop")
                     discoveredServers[name] = if (isRaop) {
                         server.copy(extra = mergeExtras(existing.extra, server.extra))

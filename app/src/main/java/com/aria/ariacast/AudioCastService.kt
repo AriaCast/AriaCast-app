@@ -64,6 +64,8 @@ import java.nio.ByteOrder
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.pow
+import com.aria.ariacast.airplay2.AirPlay2Client
+import com.aria.ariacast.airplay2.NeedsPinException
 import com.aria.ariacast.raop.RaopClient
 
 data class CastDestination(
@@ -82,6 +84,7 @@ class AudioCastService : Service() {
     private var sessionJob: Job? = null
 
     private lateinit var mediaProjectionManager: MediaProjectionManager
+    private var mediaProjectionToken: Intent? = null
     private var mediaProjection: MediaProjection? = null
     private var audioRecord: AudioRecord? = null
     private var virtualDisplay: VirtualDisplay? = null
@@ -93,9 +96,13 @@ class AudioCastService : Service() {
     
     private val _activeDestinations = MutableStateFlow<List<CastDestination>>(emptyList())
     val activeDestinations: StateFlow<List<CastDestination>> = _activeDestinations.asStateFlow()
+
+    private val _pairingPinRequest = MutableStateFlow<String?>(null)
+    val pairingPinRequest: StateFlow<String?> = _pairingPinRequest.asStateFlow()
     
     private val controlSessions = mutableMapOf<String, DefaultClientWebSocketSession>()
     private val raopClients = mutableMapOf<String, RaopClient>()
+    private val airPlay2Clients = mutableMapOf<String, AirPlay2Client>()
     
     private val dacpId by lazy { 
         sharedPreferences.getString("dacp_id", null) ?: run {
@@ -302,6 +309,7 @@ class AudioCastService : Service() {
                 }
 
                 if (mediaProjectionToken != null && destinations.isNotEmpty()) {
+                    this.mediaProjectionToken = mediaProjectionToken
                     startCasting(mediaProjectionToken, destinations)
                 }
                 return START_STICKY
@@ -438,6 +446,7 @@ class AudioCastService : Service() {
                     "DLNA" -> launch { startDlnaSession(dest) }
                     "Google Cast" -> launch { startGoogleCastSession(dest) }
                     "AirPlay" -> launch { startAirPlaySession(dest) }
+                    "AirPlay2" -> launch { startAirPlay2Session(dest) }
                     else -> {
                         launch { startControlSession(dest) }
                         if (videoEnabled && destinations.size == 1) { 
@@ -668,6 +677,76 @@ class AudioCastService : Service() {
         }
     }
 
+    private fun parsePkFromExtra(extra: String?): ByteArray? {
+        if (extra == null) return null
+        val parts = extra.split(";")
+        for (part in parts) {
+            val trimmed = part.trim()
+            if (trimmed.startsWith("pk=")) {
+                val b64 = trimmed.substring(3)
+                return try {
+                    android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to decode pk from extra", e)
+                    null
+                }
+            }
+        }
+        return null
+    }
+
+    private suspend fun startAirPlay2Session(dest: CastDestination) {
+        val targetPort = if (dest.port > 0) dest.port else 7000
+        val savedPin = sharedPreferences.getString("airplay2_pin_${dest.host}", null)
+        try {
+            val ap2 = AirPlay2Client(
+                host = dest.host,
+                port = targetPort,
+                deviceId = airplayDeviceId,
+                dacpId = dacpId,
+                activeRemote = activeRemote,
+                sampleRate = currentSampleRate,
+                channels = 2,
+                frameSize = RAOP_FRAME_SAMPLES,
+                password = savedPin,
+                txtPk = parsePkFromExtra(dest.extra)
+            )
+            if (!ap2.connect()) {
+                _state.value = CastState.ERROR
+                return
+            }
+            airPlay2Clients[dest.host] = ap2
+            _state.value = CastState.CASTING
+            updateNotification()
+
+            audioBufferFlow.collect { buffer ->
+                ap2.sendAudioFrame(buffer)
+            }
+        } catch (e: NeedsPinException) {
+            Log.i(TAG, "AirPlay 2 needs PIN for ${dest.host}")
+            _pairingPinRequest.value = dest.host
+            _state.value = CastState.OFF
+        } catch (e: Exception) {
+            Log.e(TAG, "AirPlay 2 session failed for ${dest.name}: ${e.message}")
+            _state.value = CastState.ERROR
+        }
+    }
+
+    fun submitPairingPin(host: String, pin: String) {
+        sharedPreferences.edit().putString("airplay2_pin_$host", pin).apply()
+        _pairingPinRequest.value = null
+        
+        val currentDestinations = _activeDestinations.value
+        val token = mediaProjectionToken
+        if (token != null && currentDestinations.isNotEmpty()) {
+            startCasting(token, currentDestinations)
+        }
+    }
+
+    fun resetPairingPinRequest() {
+        _pairingPinRequest.value = null
+    }
+
     private suspend fun startAudioSession(dest: CastDestination) {
         var sentFramesCount = 0L
         var reconnectAttempts = 0
@@ -818,6 +897,12 @@ class AudioCastService : Service() {
                             client.setVolumeDb(db)
                         } catch (e: Exception) {}
                     }
+                    airPlay2Clients.forEach { (_, client) ->
+                        try {
+                            val db = if (direction == "up") -0.0 else -30.0
+                            client.setVolume(db)
+                        } catch (e: Exception) {}
+                    }
                 }
             }
 
@@ -878,6 +963,8 @@ class AudioCastService : Service() {
                     }
                 } else if (dest.platform == "AirPlay") {
                     raopClients[dest.host]?.sendMetadata(finalMetadata.title, finalMetadata.artist, finalMetadata.album)
+                } else if (dest.platform == "AirPlay2") {
+                    // AirPlay 2 metadata TBD
                 }
             } catch (e: Exception) {}
         }
@@ -994,6 +1081,8 @@ class AudioCastService : Service() {
         controlSessions.clear()
         raopClients.values.forEach { try { it.close() } catch (e: Exception) {} }
         raopClients.clear()
+        airPlay2Clients.values.forEach { try { it.close() } catch (e: Exception) {} }
+        airPlay2Clients.clear()
         _activeDestinations.value = emptyList()
         sessionJob?.cancel()
         sessionJob = null

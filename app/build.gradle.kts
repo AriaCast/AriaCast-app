@@ -89,6 +89,9 @@ dependencies {
 // Scripting engine
     implementation("org.mozilla:rhino:1.7.15")
 
+    // Bouncy Castle for AirPlay 2 crypto (Curve25519, SRP6a, Ed25519, HKDF)
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

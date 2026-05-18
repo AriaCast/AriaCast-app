@@ -301,6 +301,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
+        lifecycleScope.launch {
+            audioCastServiceFlow.collectLatest { s ->
+                s?.pairingPinRequest?.collectLatest { host ->
+                    if (host != null) {
+                        showPairingPinDialog(host)
+                    }
+                }
+            }
+        }
+        
         checkNotificationListenerPermission()
         pluginManager.runEnabledPlugins(this, audioCastService)
         lifecycleScope.launch {
@@ -477,6 +487,16 @@ class MainActivity : AppCompatActivity() {
     
     override fun onResume() {
         super.onResume()
+        lifecycleScope.launch {
+            audioCastServiceFlow.collectLatest { s ->
+                s?.pairingPinRequest?.collectLatest { host ->
+                    if (host != null) {
+                        showPairingPinDialog(host)
+                    }
+                }
+            }
+        }
+
         checkNotificationListenerPermission()
         
         val newAccent = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
@@ -504,6 +524,40 @@ class MainActivity : AppCompatActivity() {
         } else {
             permissionButton.visibility = View.GONE
         }
+    }
+
+    private fun showPairingPinDialog(host: String) {
+        val input = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(android.text.InputFilter.LengthFilter(6))
+            hint = "0000"
+        }
+        
+        val container = android.widget.FrameLayout(this).apply {
+            val params = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+            params.setMargins(64, 32, 64, 32)
+            layoutParams = params
+            addView(input)
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.airplay_pin_title)
+            .setMessage(getString(R.string.airplay_pin_message, host))
+            .setView(container)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val pin = input.text.toString()
+                if (pin.isNotEmpty()) {
+                    audioCastService?.submitPairingPin(host, pin)
+                }
+            }
+            .setNegativeButton(R.string.cancel) { _, _ ->
+                // Reset PIN request if canceled so it can be triggered again
+                audioCastService?.resetPairingPinRequest()
+            }
+            .show()
     }
 
     private fun updateUi(state: CastState) {
@@ -609,7 +663,7 @@ class ServerAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val server = servers[position]
         holder.serverName.text = server.name
-        holder.serverHost.text = server.host
+        holder.serverHost.text = if (server.platform != null) "${server.host} • ${server.platform}" else server.host
         
         val context = holder.itemView.context
         val sharedPrefs = context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)

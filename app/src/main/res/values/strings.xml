@@ -96,6 +96,8 @@
     <string name="google_cast_protocol_desc">Stream to Chromecast and Nest devices</string>
     <string name="airplay_protocol">AirPlay 1</string>
     <string name="airplay_protocol_desc">Stream to compatible AirPlay speakers</string>
+    <string name="airplay2_protocol">AirPlay 2</string>
+    <string name="airplay2_protocol_desc">Stream to Macs, Apple TVs and HomePods</string>
 
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Plugin folder updated</string>
@@ -144,4 +146,13 @@
     <string name="group_name">Group Name</string>
     <string name="select_devices">Select Devices</string>
     <string name="save">Save</string>
+
+    <!-- AirPlay 2 Pairing -->
+    <string name="airplay_pin_title">Enter AirPlay PIN</string>
+    <string name="airplay_pin_message">Enter the code shown on the device screen (%1$s)</string>
+    <string name="manage_airplay_pins">Manage AirPlay PINs</string>
+    <string name="manage_airplay_pins_desc">Manage saved AirPlay PINs for paired devices</string>
+    <string name="no_pins_saved">No PINs saved</string>
+    <string name="edit_pin">Edit PIN</string>
+    <string name="delete_pin">Delete PIN</string>
 </resources>

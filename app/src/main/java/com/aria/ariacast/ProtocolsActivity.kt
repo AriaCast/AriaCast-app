@@ -23,6 +23,7 @@ class ProtocolsActivity : AppCompatActivity() {
         val dlnaSwitch = findViewById<MaterialSwitch>(R.id.dlnaSwitch)
         val googleCastSwitch = findViewById<MaterialSwitch>(R.id.googleCastSwitch)
         val airPlaySwitch = findViewById<MaterialSwitch>(R.id.airPlaySwitch)
+        val airPlay2Switch = findViewById<MaterialSwitch>(R.id.airPlay2Switch)
 
         dlnaSwitch.isChecked = sharedPreferences.getBoolean(KEY_DLNA_ENABLED, false)
         dlnaSwitch.setOnCheckedChangeListener { _, isChecked ->
@@ -38,11 +39,17 @@ class ProtocolsActivity : AppCompatActivity() {
         airPlaySwitch.setOnCheckedChangeListener { _, isChecked ->
             sharedPreferences.edit().putBoolean(KEY_AIRPLAY_ENABLED, isChecked).apply()
         }
+
+        airPlay2Switch.isChecked = sharedPreferences.getBoolean(KEY_AIRPLAY2_ENABLED, false)
+        airPlay2Switch.setOnCheckedChangeListener { _, isChecked ->
+            sharedPreferences.edit().putBoolean(KEY_AIRPLAY2_ENABLED, isChecked).apply()
+        }
     }
 
     companion object {
         const val KEY_DLNA_ENABLED = "dlna_enabled"
         const val KEY_GOOGLE_CAST_ENABLED = "google_cast_enabled"
         const val KEY_AIRPLAY_ENABLED = "airplay_enabled"
+        const val KEY_AIRPLAY2_ENABLED = "airplay2_enabled"
     }
 }

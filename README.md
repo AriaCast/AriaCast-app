@@ -25,7 +25,6 @@ AriaCast is a powerful Android application that allows you to broadcast audio fr
 *   **Multi-Protocol Support**: Stream to AriaCast servers, DLNA/UPnP devices, and more.
 *   **Real-Time Metadata**: Automatically detects currently playing media using the `NotificationListenerService`. Syncs rich metadata (Title, Artist, Album, Artwork) to the receiver instantly.
 *   **Auto-Discovery**: Automatically finds available receivers running on your local network.
-*   **Remote Control**: Adjust the receiver's volume directly from the app.
 *   **Quick Settings Tile**: Start and stop casting instantly from your notification shade without opening the app.
 *   **Efficient Networking**: Uses optimized protocols (including binary WebSockets for the native server) to ensure minimal overhead.
 
@@ -36,7 +35,8 @@ AriaCast is evolving into a versatile streaming hub, supporting multiple protoco
 *   **AriaCast (Native)**: Our high-fidelity, low-latency protocol using binary WebSockets. Ideal for the AriaCast Server and Music Assistant.
 *   **DLNA / UPnP**: Broad compatibility with Smart TVs, AV receivers, and media players.
 *   **Google Cast** (Coming Soon 🚧): Support for Chromecast, Nest speakers, and Android TV.
-*   **AirPlay 1** (Coming Soon 🚧): Support for compatible AirPlay speakers and receivers.
+*   **AirPlay 1**: Support for compatible AirPlay speakers and receivers.
+*   **AirPlay 2**: Enhanced multi-room streaming to Macs, Apple TVs, and HomePods. Includes support for PIN-protected pairing.
 
 ## How It Works
 
@@ -52,7 +52,7 @@ AriaCast uses a robust foreground service to manage the capture and streaming li
 ### Prerequisites
 
 *   An Android device running **Android 12 (API 31)** or higher.
-*   A compatible receiver on the same local network (AriaCast Server, DLNA device, etc.).
+*   A compatible receiver on the same local network (AriaCast Server, DLNA, AirPlay, etc.).
 
 ### Installation & Permissions
 
