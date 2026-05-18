@@ -1,8 +1,8 @@
 <resources>
     <string name="app_name" translatable="false">AriaCast</string>
-    <string name="app_version" translatable="false">1.1.4</string>
+    <string name="app_version" translatable="false">1.1.5</string>
     <string name="tile_label" translatable="false">AriaCast</string>
-    <string name="ver" translatable="false">AriaCast 1.1.4</string>
+    <string name="ver" translatable="false">AriaCast 1.1.5</string>
 
     <!-- Update Manager -->
     <string name="update_available_title">New Update Available</string>
