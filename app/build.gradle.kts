@@ -58,6 +58,14 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
+    }
+
+    ndkVersion = "28.2.13676358"
 }
 
 dependencies {
@@ -78,7 +86,7 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("androidx.media:media:1.7.0")
     
-    // Scripting engine
+// Scripting engine
     implementation("org.mozilla:rhino:1.7.15")
 
     testImplementation(libs.junit)

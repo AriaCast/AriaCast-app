@@ -38,7 +38,6 @@ import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.client.request.*
-import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.websocket.*
@@ -55,9 +54,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
-import java.io.OutputStream
 import java.net.InetAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
@@ -68,6 +64,7 @@ import java.nio.ByteOrder
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.pow
+import com.aria.ariacast.raop.RaopClient
 
 data class CastDestination(
     val name: String,
@@ -98,12 +95,7 @@ class AudioCastService : Service() {
     val activeDestinations: StateFlow<List<CastDestination>> = _activeDestinations.asStateFlow()
     
     private val controlSessions = mutableMapOf<String, DefaultClientWebSocketSession>()
-    private val raopSockets = mutableMapOf<String, Socket>()
-    private val raopCSeqs = mutableMapOf<String, Int>()
-    private val raopSessions = mutableMapOf<String, String?>()
-    private val airplaySessionIds = mutableMapOf<String, String>()
-    private val lastSentMetadata = mutableMapOf<String, String>()
-    private val unsupportedSetProperty = mutableSetOf<String>()
+    private val raopClients = mutableMapOf<String, RaopClient>()
     
     private val dacpId by lazy { 
         sharedPreferences.getString("dacp_id", null) ?: run {
@@ -136,6 +128,10 @@ class AudioCastService : Service() {
     private var lastBitrateTime = 0L
     private var lastSentFramesForBitrate = 0L
     private var currentBitrateString = "0 kbps"
+
+    private var currentSampleRate = SAMPLE_RATE
+    private var currentFrameSizeBytes = FRAME_SIZE
+    private var currentFrameDurationMs = 20.0
 
     private val client by lazy {
         HttpClient(OkHttp) {
@@ -235,27 +231,20 @@ class AudioCastService : Service() {
     }
 
     private fun startArtworkServer() {
-        artworkServerJob?.cancel()
-        try { artworkServerSocket?.close() } catch (e: Exception) {}
-        artworkServerJob = scope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.IO) {
             try {
-                val serverSocket = ServerSocket()
-                serverSocket.reuseAddress = true
-                serverSocket.bind(java.net.InetSocketAddress(ARTWORK_PORT))
-                artworkServerSocket = serverSocket
+                val serverSocket = ServerSocket(ARTWORK_PORT)
                 while (isActive) {
                     val clientSocket = try { serverSocket.accept() } catch (e: Exception) { null } ?: continue
                     launch {
                         try {
-                            val request = clientSocket.getInputStream().bufferedReader().readLine()
-                            Log.d(TAG, "Artwork request: $request")
+                            clientSocket.getInputStream().bufferedReader().readLine()
                             val output = clientSocket.getOutputStream()
                             val bytes = currentArtworkBytes
                             if (bytes != null) {
                                 output.write("HTTP/1.1 200 OK\r\n".toByteArray())
                                 output.write("Content-Type: image/jpeg\r\n".toByteArray())
                                 output.write("Content-Length: ${bytes.size}\r\n".toByteArray())
-                                output.write("Cache-Control: no-cache\r\n".toByteArray())
                                 output.write("Connection: close\r\n\r\n".toByteArray())
                                 output.write(bytes)
                             } else {
@@ -278,8 +267,6 @@ class AudioCastService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                cleanupSession()
-                
                 val mediaProjectionToken = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(EXTRA_MEDIA_PROJECTION_TOKEN, Intent::class.java)
                 } else {
@@ -336,6 +323,29 @@ class AudioCastService : Service() {
         sessionJob = SupervisorJob()
         val sessionScope = CoroutineScope(Dispatchers.IO + sessionJob!!)
 
+        val hasAirPlay = destinations.any { it.platform == "AirPlay" }
+        val hasNonAirPlay = destinations.any { it.platform != "AirPlay" }
+        if (hasAirPlay && hasNonAirPlay) {
+            Log.e(TAG, "AirPlay cannot be mixed with other targets")
+            _state.value = CastState.ERROR
+            return
+        }
+
+        if (hasAirPlay && destinations.size > 1) {
+            Log.e(TAG, "AirPlay multi-room is not supported")
+            _state.value = CastState.ERROR
+            return
+        }
+
+        if (hasAirPlay) {
+            currentSampleRate = RAOP_SAMPLE_RATE
+            currentFrameSizeBytes = RAOP_FRAME_BYTES
+        } else {
+            currentSampleRate = SAMPLE_RATE
+            currentFrameSizeBytes = FRAME_SIZE
+        }
+        currentFrameDurationMs = (currentFrameSizeBytes / 4.0) / currentSampleRate * 1000.0
+
         originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
 
@@ -364,78 +374,54 @@ class AudioCastService : Service() {
             }
         }
 
-        // Use a small delay and multiple attempts for AudioRecord/MediaProjection initialization
-        // This helps if the system hasn't fully released resources from a previous session
-        sessionScope.launch {
-            var attempt = 0
-            var initialized = false
+        mediaProjection = mediaProjectionManager.getMediaProjection(Activity.RESULT_OK, mediaProjectionToken)
+        mediaProjection?.registerCallback(mediaProjectionCallback, null)
+
+        val config = AudioPlaybackCaptureConfiguration.Builder(mediaProjection!!)
+            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+            .build()
+
+        try {
+            val minBufSize = AudioRecord.getMinBufferSize(currentSampleRate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+            val bufferSize = (currentFrameSizeBytes * 4).coerceAtLeast(minBufSize) 
             
-            while (attempt < 3 && !initialized && isActive) {
-                if (attempt > 0) delay(400)
-                attempt++
-                
-                try {
-                    val projection = mediaProjectionManager.getMediaProjection(Activity.RESULT_OK, mediaProjectionToken)
-                    if (projection == null) {
-                        Log.e(TAG, "MediaProjection is null, attempt $attempt")
-                        continue
-                    }
-                    mediaProjection = projection
-                    projection.registerCallback(mediaProjectionCallback, null)
-
-                    val config = AudioPlaybackCaptureConfiguration.Builder(projection)
-                        .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+            audioRecord = AudioRecord.Builder()
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(currentSampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
                         .build()
+                )
+                .setAudioPlaybackCaptureConfig(config)
+                .setBufferSizeInBytes(bufferSize)
+                .build()
 
-                    val minBufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
-                    val bufferSize = (FRAME_SIZE * 4).coerceAtLeast(minBufSize) 
-                    
-                    val recorder = AudioRecord.Builder()
-                        .setAudioFormat(
-                            AudioFormat.Builder()
-                                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                                .setSampleRate(SAMPLE_RATE)
-                                .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
-                                .build()
-                        )
-                        .setAudioPlaybackCaptureConfig(config)
-                        .setBufferSizeInBytes(bufferSize)
-                        .build()
-
-                    if (recorder.state == AudioRecord.STATE_INITIALIZED) {
-                        audioRecord = recorder
-                        initialized = true
-                    } else {
-                        Log.e(TAG, "AudioRecord not initialized, attempt $attempt")
-                        recorder.release()
-                        projection.stop()
-                        mediaProjection = null
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Initialization attempt $attempt failed: ${e.message}")
-                }
-            }
-
-            if (!initialized) {
-                Log.e(TAG, "Failed to initialize audio capture after $attempt attempts")
+            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                Log.e(TAG, "AudioRecord could not be initialized.")
                 _state.value = CastState.ERROR
-                return@launch
+                return
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "AudioRecord creation failed", e)
+            _state.value = CastState.ERROR
+            return
+        }
 
-            val videoEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_VIDEO_ENABLED, false)
+        val videoEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_VIDEO_ENABLED, false)
 
-            if (destinations.any { it.platform == "DLNA" || it.platform == "Google Cast" || it.platform == "AirPlay" }) {
-                startDlnaHttpServer()
-                startArtworkServer()
-            }
+        if (destinations.any { it.platform == "DLNA" || it.platform == "Google Cast" }) {
+            startDlnaHttpServer()
+        }
 
+        sessionScope.launch {
             launch { 
                 try {
                     audioRecord?.startRecording()
-                    val audioBuffer = ByteBuffer.allocate(FRAME_SIZE)
+                    val audioBuffer = ByteBuffer.allocate(currentFrameSizeBytes)
                     while (isActive) {
-                        val readResult = audioRecord?.read(audioBuffer.array(), 0, FRAME_SIZE) ?: 0
-                        if (readResult == FRAME_SIZE) {
+                        val readResult = audioRecord?.read(audioBuffer.array(), 0, currentFrameSizeBytes) ?: 0
+                        if (readResult == currentFrameSizeBytes) {
                             _audioBufferFlow.emit(audioBuffer.array().copyOf())
                         } else if (readResult < 0) {
                             Log.e(TAG, "AudioRecord read error: $readResult")
@@ -462,26 +448,18 @@ class AudioCastService : Service() {
                     }
                 }
             }
-            
-            startMetadataRefreshLoop()
-            _metadata.value?.let { sendMetadata(it) }
         }
+        
+        sessionScope.startMetadataRefreshLoop()
+        _metadata.value?.let { sendMetadata(it) }
     }
 
     private var dlnaHttpServerJob: Job? = null
-    private var artworkServerJob: Job? = null
-    private var streamServerSocket: ServerSocket? = null
-    private var artworkServerSocket: ServerSocket? = null
-
     private fun startDlnaHttpServer() {
         dlnaHttpServerJob?.cancel()
-        try { streamServerSocket?.close() } catch (e: Exception) {}
         dlnaHttpServerJob = scope.launch(Dispatchers.IO) {
             try {
-                val serverSocket = ServerSocket()
-                serverSocket.reuseAddress = true
-                serverSocket.bind(java.net.InetSocketAddress(STREAM_PORT))
-                streamServerSocket = serverSocket
+                val serverSocket = ServerSocket(STREAM_PORT)
                 Log.i(TAG, "Stream server started on port $STREAM_PORT")
                 while (isActive) {
                     val clientSocket = try { serverSocket.accept() } catch (e: Exception) { null } ?: continue
@@ -493,61 +471,45 @@ class AudioCastService : Service() {
                             val output = clientSocket.getOutputStream()
                             
                             val requestLine = input.readLine() ?: return@launch
-                            Log.d(TAG, "Stream request: $requestLine")
+                            val isHead = requestLine.startsWith("HEAD")
                             
-                            val headers = mutableMapOf<String, String>()
+                            // Basic header parsing to consume the request
                             var line: String?
                             while (input.readLine().also { line = it } != null && line!!.isNotEmpty()) {
-                                Log.d(TAG, "  Header: $line")
-                                val parts = line!!.split(": ", limit = 2)
-                                if (parts.size == 2) {
-                                    headers[parts[0].lowercase()] = parts[1]
-                                }
+                                // consume headers
                             }
 
-                            val ua = headers["user-agent"] ?: ""
-                            val isApple = ua.contains("Apple", ignoreCase = true) || 
-                                           ua.contains("Darwin", ignoreCase = true) ||
-                                           ua.contains("libmpv", ignoreCase = true)
-                            
-                            val contentType = if (isApple) "audio/x-wav" else "audio/wav"
+                            val responseHeaders = "HTTP/1.1 200 OK\r\n" +
+                                    "Content-Type: audio/x-wav\r\n" +
+                                    "Server: AriaCast/1.0\r\n" +
+                                    "Connection: close\r\n" +
+                                    "Accept-Ranges: bytes\r\n" +
+                                    "transferMode.dlna.org: Streaming\r\n" +
+                                    "contentFeatures.dlna.org: DLNA.ORG_PN=LPCM;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000\r\n" +
+                                    "ICY-NAME: AriaCast Stream\r\n" +
+                                    "\r\n"
+                            output.write(responseHeaders.toByteArray())
 
-                            val responseHeaders = StringBuilder()
-                            responseHeaders.append("HTTP/1.1 200 OK\r\n")
-                            responseHeaders.append("Content-Type: $contentType\r\n")
-                            responseHeaders.append("Server: AirTunes/220.68\r\n")
-                            responseHeaders.append("Connection: close\r\n")
-                            responseHeaders.append("Cache-Control: no-cache, no-store, must-revalidate\r\n")
-                            responseHeaders.append("Pragma: no-cache\r\n")
-                            responseHeaders.append("Expires: 0\r\n")
-                            responseHeaders.append("ICY-NAME: AriaCast Stream\r\n")
-                            responseHeaders.append("ICY-METADATA: 0\r\n")
-                            responseHeaders.append("Access-Control-Allow-Origin: *\r\n")
-                            responseHeaders.append("\r\n")
-                            
-                            output.write(responseHeaders.toString().toByteArray())
-
-                            if (requestLine.startsWith("HEAD")) {
+                            if (isHead) {
                                 output.flush()
                                 return@launch
                             }
 
-                            // Send WAV header once at the start of the 200 OK response
                             val header = ByteBuffer.allocate(44).apply {
-                                order(ByteOrder.LITTLE_ENDIAN)
+                                order(java.nio.ByteOrder.LITTLE_ENDIAN)
                                 put("RIFF".toByteArray())
                                 putInt(-1) 
                                 put("WAVE".toByteArray())
                                 put("fmt ".toByteArray())
                                 putInt(16)
-                                putShort(1.toShort())
-                                putShort(2.toShort()) 
-                                putInt(SAMPLE_RATE)
-                                putInt(SAMPLE_RATE * 4) 
-                                putShort(4.toShort()) 
-                                putShort(16.toShort()) 
+                                putShort(1) 
+                                putShort(2) 
+                                putInt(currentSampleRate)
+                                putInt(currentSampleRate * 4) 
+                                putShort(4) 
+                                putShort(16) 
                                 put("data".toByteArray())
-                                putInt(-1)
+                                putInt(-1) 
                             }
                             output.write(header.array())
 
@@ -575,42 +537,74 @@ class AudioCastService : Service() {
     }
 
     private suspend fun startDlnaSession(dest: CastDestination) {
-        val (controlUrl, _) = getDlnaControlUrls(dest.extra)
-        if (controlUrl == null) return
+        val controlUrl = dest.extra ?: return
         val myIp = getLocalIpAddress() ?: return
         val streamUrl = "http://$myIp:$STREAM_PORT/stream.wav"
 
         try {
             try {
-                val stopBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+                val stopBody = """
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
                         <s:Body>
                             <u:Stop xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
                                 <InstanceID>0</InstanceID>
                             </u:Stop>
                         </s:Body>
-                    </s:Envelope>""".trimIndent()
+                    </s:Envelope>
+                """.trimIndent()
                 client.post(controlUrl) {
-                    header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#Stop\"")
-                    contentType(ContentType.parse("text/xml; charset=utf-8"))
+                    header("SOAPACTION", "\"urn:schemas-upnp-org:service:AVTransport:1#Stop\"")
+                    contentType(ContentType.Text.Xml)
                     setBody(stopBody)
                 }
             } catch (e: Exception) {}
 
-            val metadataXml = createDidlMetadata(streamUrl, _metadata.value)
+            val metadata = """
+                <DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">
+                    <item id="0" parentID="-1" restricted="1">
+                        <dc:title>AriaCast Live Stream</dc:title>
+                        <upnp:artist>AriaCast</upnp:artist>
+                        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+                        <res protocolInfo="http-get:*:audio/wav:*">${streamUrl.replace("&", "&amp;")}</res>
+                    </item>
+                </DIDL-Lite>
+            """.trimIndent().replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
-            val setUriBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><CurrentURI>${escapeXml(streamUrl)}</CurrentURI><CurrentURIMetaData>${escapeXml(metadataXml)}</CurrentURIMetaData></u:SetAVTransportURI></s:Body></s:Envelope>"""
+            val setUriBody = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+                    <s:Body>
+                        <u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+                            <InstanceID>0</InstanceID>
+                            <CurrentURI>$streamUrl</CurrentURI>
+                            <CurrentURIMetaData>$metadata</CurrentURIMetaData>
+                        </u:SetAVTransportURI>
+                    </s:Body>
+                </s:Envelope>
+            """.trimIndent()
 
             client.post(controlUrl) {
-                header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI\"")
-                contentType(ContentType.parse("text/xml; charset=utf-8"))
+                header("SOAPACTION", "\"urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI\"")
+                contentType(ContentType.Text.Xml)
                 setBody(setUriBody)
             }
 
-            val playBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><Speed>1</Speed></u:Play></s:Body></s:Envelope>"""
+            val playBody = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+                    <s:Body>
+                        <u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+                            <InstanceID>0</InstanceID>
+                            <Speed>1</Speed>
+                        </u:Play>
+                    </s:Body>
+                </s:Envelope>
+            """.trimIndent()
 
             client.post(controlUrl) {
-                header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#Play\"")
-                contentType(ContentType.parse("text/xml; charset=utf-8"))
+                header("SOAPACTION", "\"urn:schemas-upnp-org:service:AVTransport:1#Play\"")
+                contentType(ContentType.Text.Xml)
                 setBody(playBody)
             }
 
@@ -627,353 +621,51 @@ class AudioCastService : Service() {
         val streamUrl = "http://$myIp:$STREAM_PORT/stream.wav"
         
         try {
-            _state.value = CastState.CONNECTING
-            
-            // Log available apps to help debugging 404s
-            try {
-                val appsResponse = client.get("http://${dest.host}:8008/apps")
-                Log.d(TAG, "Apps list on ${dest.name}: ${appsResponse.bodyAsText()}")
-            } catch (e: Exception) {
-                Log.d(TAG, "Could not fetch apps list: ${e.message}")
-            }
-
-            // Try common App IDs/Names for DIAL
-            val appIds = listOf("DefaultMediaPlayer", "YouTube", "ChromeCast", "CC1AD845")
-            var launched = false
+            val launchUrl = "http://${dest.host}:8008/apps/DefaultMediaPlayer"
             val encodedUrl = URLEncoder.encode(streamUrl, "UTF-8")
-
-            for (appId in appIds) {
-                try {
-                    val launchUrl = "http://${dest.host}:8008/apps/$appId"
-                    
-                    // Try both 'url' and 'v' parameters
-                    val payloads = listOf("url=$encodedUrl", "v=$encodedUrl")
-                    
-                    for (payload in payloads) {
-                        val response = client.post(launchUrl) {
-                            setBody(payload)
-                            contentType(ContentType.Application.FormUrlEncoded)
-                            timeout { requestTimeoutMillis = 5000 }
-                        }
-                        
-                        if (response.status.value in 200..299 || response.status.value == 201) {
-                            launched = true
-                            Log.d(TAG, "Successfully launched Google Cast app: $appId with payload: $payload")
-                            break
-                        }
-                    }
-                    if (launched) break
-                } catch (e: Exception) {
-                    Log.d(TAG, "Failed to launch $appId: ${e.message}")
-                }
+            
+            client.post(launchUrl) {
+                setBody("url=$encodedUrl")
+                contentType(ContentType.Application.FormUrlEncoded)
             }
             
-            // Special fallback for own-tone style mirroring if standard fails
-            if (!launched) {
-                try {
-                    val mirroringUrl = "http://${dest.host}:8008/apps/0F5096C8"
-                    val resp = client.post(mirroringUrl) {
-                        setBody("url=$encodedUrl")
-                        contentType(ContentType.Application.FormUrlEncoded)
-                    }
-                    if (resp.status.value in 200..299) launched = true
-                } catch (e: Exception) {}
-            }
-            
-            if (launched) {
-                _state.value = CastState.CASTING
-                updateNotification()
-            } else {
-                Log.e(TAG, "Google Cast launch failed for all attempted apps on ${dest.name}")
-                _state.value = CastState.ERROR
-            }
+            _state.value = CastState.CASTING
+            updateNotification()
         } catch (e: Exception) {
             Log.e(TAG, "Google Cast session failed for ${dest.name}: ${e.message}")
-            _state.value = CastState.ERROR
         }
     }
 
     private suspend fun startAirPlaySession(dest: CastDestination) {
-        val myIp = getLocalIpAddress() ?: return
+        val targetPort = if (dest.port > 0) dest.port else 5000
+
         try {
-            _state.value = CastState.CONNECTING
-            
-            // For audio-only casting, RAOP (RTSP) is much more reliable and standard.
-            // We force RAOP handshake here.
-            performRaopHandshake(dest, myIp)
-            
+            val raop = RaopClient(
+                host = dest.host,
+                port = targetPort,
+                deviceId = airplayDeviceId,
+                dacpId = dacpId,
+                activeRemote = activeRemote,
+                sampleRate = currentSampleRate,
+                channels = 2,
+                frameSize = RAOP_FRAME_SAMPLES,
+                sharedSecret = null
+            )
+            if (!raop.connect()) {
+                _state.value = CastState.ERROR
+                return
+            }
+            raopClients[dest.host] = raop
+            _state.value = CastState.CASTING
+            updateNotification()
+
+            audioBufferFlow.collect { buffer ->
+                raop.sendAudioFrame(buffer)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "AirPlay session failed for ${dest.name}: ${e.message}")
             _state.value = CastState.ERROR
         }
-    }
-
-    private suspend fun performRaopHandshake(dest: CastDestination, myIp: String) = withContext(Dispatchers.IO) {
-        try {
-            val targetPort = if (dest.port > 0) {
-                if (dest.port == 7000) 5000 else dest.port
-            } else 5000
-            
-            val socket = Socket()
-            try {
-                socket.connect(java.net.InetSocketAddress(dest.host, targetPort), 5000)
-            } catch (e: Exception) {
-                if (targetPort == 5000 && (dest.port == 7000 || dest.port == 0)) {
-                    socket.connect(java.net.InetSocketAddress(dest.host, 7000), 5000)
-                } else throw e
-            }
-            
-            socket.soTimeout = 10000
-            socket.tcpNoDelay = true
-            raopSockets[dest.host] = socket
-            
-            val input = socket.getInputStream()
-            val output = socket.getOutputStream()
-            var cseq = 0
-            raopCSeqs[dest.host] = cseq
-
-            val userAgent = "AirPlay/550.10"
-            val sessionGuid = UUID.randomUUID().toString()
-            val rtpSessionId = (10000000..99999999).random() // Unique SSRC/Session ID for RTP
-            
-            val sdp = "v=0\r\n" +
-                    "o=iTunes $rtpSessionId 0 IN IP4 $myIp\r\n" +
-                    "s=iTunes\r\n" +
-                    "c=IN IP4 ${dest.host}\r\n" +
-                    "t=0 0\r\n" +
-                    "m=audio 0 RTP/AVP 96\r\n" +
-                    "a=rtpmap:96 L16/44100/2\r\n" +
-                    "a=fmtp:96 352 0 16 40 10 14 2 255 0 0 44100\r\n" +
-                    "a=control:rtp\r\n"
-            
-            val commonHeaders = mutableMapOf(
-                "User-Agent" to userAgent,
-                "X-Apple-Session-ID" to sessionGuid,
-                "X-Apple-Device-ID" to "0x${airplayDeviceId.replace(":", "")}",
-                "Client-Instance" to dacpId.ifEmpty { "0000000000000000" }
-            )
-            if (dacpId.isNotEmpty()) commonHeaders["DACP-ID"] = dacpId
-            if (activeRemote.isNotEmpty()) commonHeaders["Active-Remote"] = activeRemote
-
-            // 1. ANNOUNCE
-            sendRtspRequest(output, "ANNOUNCE", dest.host, targetPort, cseq++, commonHeaders + mapOf(
-                "Content-Type" to "application/sdp",
-                "Content-Length" to sdp.length.toString()
-            ), sdp)
-            readRtspResponse(input)
-
-            // 2. SETUP
-            sendRtspRequest(output, "SETUP", dest.host, targetPort, cseq++, commonHeaders + mapOf(
-                "Transport" to "RTP/AVP/TCP;unicast;interleaved=0-1;mode=record"
-            ))
-            val setupResp = readRtspResponse(input)
-            val session = setupResp.find { it.startsWith("Session:", true) }?.substringAfter(":")?.substringBefore(";")?.trim()
-            raopSessions[dest.host] = session
-
-            // 3. RECORD
-            sendRtspRequest(output, "RECORD", dest.host, targetPort, cseq++, commonHeaders + mapOf(
-                "Session" to (session ?: ""),
-                "Range" to "npt=0-",
-                "RTP-Info" to "seq=0;rtptime=$LATENCY"
-            ))
-            readRtspResponse(input)
-            
-            raopCSeqs[dest.host] = cseq
-
-            _state.value = CastState.CASTING
-            updateNotification()
-
-            // Initial metadata
-            _metadata.value?.let { updateRaopMetadata(dest.host, it) }
-
-            var sequence = 0
-            var timestamp = LATENCY
-            
-            // Interleaved receiver loop (Timing replies)
-            val receiverJob = launch {
-                try {
-                    while (isActive) {
-                        val dollar = input.read()
-                        if (dollar == -1) break
-                        if (dollar == 0x24) { // '$'
-                            val channel = input.read()
-                            val length = (input.read() shl 8) or input.read()
-                            val data = ByteArray(length)
-                            var read = 0
-                            while (read < length) {
-                                val r = input.read(data, read, length - read)
-                                if (r == -1) break
-                                read += r
-                            }
-                            
-                            // Check for Timing request (0x53) on Channel 1 (RTCP)
-                            if (channel == 1 && data.size >= 32) {
-                                val type = data[1].toInt() and 0x7F
-                                if (type == 0x53) {
-                                    // Extract sendtime (T1) from the end of request (offset 24-31)
-                                    val reqSendSec = ByteBuffer.wrap(data, 24, 4).int
-                                    val reqSendFrac = ByteBuffer.wrap(data, 28, 4).int
-                                    
-                                    val now = System.currentTimeMillis()
-                                    val ntpSec = (now / 1000) + 0x83AA7E80
-                                    val ntpFrac = ((now % 1000) * 0x100000000L / 1000).toInt()
-                                    
-                                    val reply = ByteBuffer.allocate(32).apply {
-                                        put(0x80.toByte())
-                                        put(0xD3.toByte()) // Timing reply
-                                        putShort(7.toShort())
-                                        putInt(0) // padding
-                                        putInt(reqSendSec) // reftime (T1)
-                                        putInt(reqSendFrac)
-                                        putInt(ntpSec.toInt()) // recvtime (T2)
-                                        putInt(ntpFrac)
-                                        putInt(ntpSec.toInt()) // sendtime (T3)
-                                        putInt(ntpFrac)
-                                    }.array()
-                                    
-                                    synchronized(output) {
-                                        output.write(0x24)
-                                        output.write(0x01)
-                                        output.write((reply.size shr 8) and 0xFF)
-                                        output.write(reply.size and 0xFF)
-                                        output.write(reply)
-                                        output.flush()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.d(TAG, "RAOP receiver loop ended: ${e.message}")
-                }
-            }
-
-            // Sync task
-            val syncJob = launch {
-                var isFirstSync = true
-                while (isActive) {
-                    val now = System.currentTimeMillis()
-                    val ntpSec = (now / 1000) + 0x83AA7E80
-                    val ntpFrac = ((now % 1000) * 0x100000000L / 1000).toInt()
-                    
-                    val syncPacket = ByteBuffer.allocate(20).apply {
-                        put((if (isFirstSync) 0x90 else 0x80).toByte())
-                        put(0xD4.toByte()) // Sync
-                        putShort(7.toShort())
-                        putInt(timestamp - LATENCY) // now_without_latency
-                        putInt(ntpSec.toInt())
-                        putInt(ntpFrac)
-                        putInt(timestamp) // now
-                    }.array()
-                    
-                    try {
-                        synchronized(output) {
-                            output.write(0x24) // '$'
-                            output.write(0x01) // channel 1
-                            output.write((syncPacket.size shr 8) and 0xFF)
-                            output.write(syncPacket.size and 0xFF)
-                            output.write(syncPacket)
-                            output.flush()
-                        }
-                    } catch (e: Exception) { break }
-                    isFirstSync = false
-                    delay(1000)
-                }
-            }
-
-            try {
-                var isFirstPacket = true
-                audioBufferFlow.collect { buffer ->
-                    for (offset in 0 until buffer.size step 1408) {
-                        val size = minOf(1408, buffer.size - offset)
-                        val chunk = buffer.copyOfRange(offset, offset + size)
-                        
-                        val bigEndianBuffer = ByteArray(chunk.size)
-                        for (i in 0 until chunk.size step 2) {
-                            if (i + 1 < chunk.size) {
-                                bigEndianBuffer[i] = chunk[i+1]
-                                bigEndianBuffer[i+1] = chunk[i]
-                            }
-                        }
-
-                        val rtpHeader = ByteBuffer.allocate(12).apply {
-                            put(0x80.toByte())
-                            put((if (isFirstPacket) 0xE0 else 0x60).toByte())
-                            putShort(sequence++.toShort())
-                            putInt(timestamp)
-                            putInt(rtpSessionId) // SSRC MUST match SDP o= line
-                        }
-                        timestamp += chunk.size / 4
-                        isFirstPacket = false
-
-                        val payload = rtpHeader.array() + bigEndianBuffer
-                        
-                        try {
-                            synchronized(output) {
-                                output.write(0x24) // '$'
-                                output.write(0x00) // channel 0
-                                output.write((payload.size shr 8) and 0xFF)
-                                output.write(payload.size and 0xFF)
-                                output.write(payload)
-                                output.flush()
-                            }
-                        } catch (e: Exception) {
-                            throw CancellationException("RAOP stream closed")
-                        }
-                    }
-                }
-            } finally {
-                syncJob.cancel()
-                receiverJob.cancel()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "RAOP failed for ${dest.host}: ${e.message}")
-            raopSockets.remove(dest.host)?.close()
-            raopSessions.remove(dest.host)
-            raopCSeqs.remove(dest.host)
-        }
-    }
-
-    private fun sendRtspRequest(output: OutputStream, method: String, host: String, port: Int, cseq: Int, headers: Map<String, String>, body: String? = null) {
-        val request = StringBuilder()
-        request.append("$method rtsp://$host:$port/AriaCast RTSP/1.0\r\n")
-        request.append("CSeq: $cseq\r\n")
-        headers.forEach { (k, v) -> request.append("$k: $v\r\n") }
-        request.append("\r\n")
-        if (body != null) request.append(body)
-        output.write(request.toString().toByteArray())
-        output.flush()
-    }
-
-    private fun readLineManual(input: InputStream): String? {
-        val sb = StringBuilder()
-        while (true) {
-            val b = input.read()
-            if (b == -1) return if (sb.isEmpty()) null else sb.toString()
-            val c = b.toChar()
-            if (c == '\n') break
-            if (c != '\r') sb.append(c)
-        }
-        return sb.toString()
-    }
-
-    private fun readRtspResponse(input: InputStream): List<String> {
-        val lines = mutableListOf<String>()
-        var line: String?
-        try {
-            while (readLineManual(input).also { line = it } != null && line!!.isNotEmpty()) {
-                lines.add(line!!)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error reading RTSP response: ${e.message}")
-        }
-        if (lines.isNotEmpty()) {
-            val status = lines[0]
-            if (!status.contains("200 OK") && !status.contains("100 Continue")) {
-                Log.w(TAG, "RTSP Non-OK Response: $status")
-            }
-        }
-        return lines
     }
 
     private suspend fun startAudioSession(dest: CastDestination) {
@@ -1002,7 +694,7 @@ class AudioCastService : Service() {
                         delayQueue.add(buffer)
                         
                         val currentDelay = _activeDestinations.value.find { it.host == dest.host }?.delayMs ?: 0
-                        val requiredFrames = currentDelay / 20 
+                        val requiredFrames = (currentDelay / currentFrameDurationMs).toInt()
                         
                         var sendCount = 0
                         while (delayQueue.size > requiredFrames && sendCount < 2) {
@@ -1017,7 +709,7 @@ class AudioCastService : Service() {
                         val now = System.currentTimeMillis()
                         if (now - lastBitrateTime >= 1000) {
                             val delta = sentFramesCount - lastSentFramesForBitrate
-                            val bps = delta * FRAME_SIZE * 8
+                            val bps = delta * currentFrameSizeBytes * 8
                             currentBitrateString = "${bps / 1000} kbps"
                             lastBitrateTime = now
                             lastSentFramesForBitrate = sentFramesCount
@@ -1120,59 +812,14 @@ class AudioCastService : Service() {
                 } catch (e: Exception) {}
             }
             
-            raopSockets.forEach { (host, socket) ->
-                try {
-                    val output = socket.getOutputStream()
-                    val cseq = raopCSeqs[host] ?: 1
-                    val session = raopSessions[host] ?: ""
-                    
-                    val volStr = "volume: ${if(direction == "up") -10.0 else -30.0}\r\n"
-                    sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
-                        "Session" to session,
-                        "Content-Type" to "text/parameters",
-                        "Content-Length" to volStr.length.toString()
-                    ), volStr)
-                    raopCSeqs[host] = cseq + 1
-                } catch (e: Exception) {}
-            }
-
-            _activeDestinations.value.forEach { dest ->
-                try {
-                    when (dest.platform) {
-                        "DLNA" -> {
-                            val (_, rcUrl) = getDlnaControlUrls(dest.extra)
-                            if (rcUrl != null) adjustDlnaVolume(rcUrl, direction)
-                        }
-                        "Google Cast" -> {
-                            // DIAL protocol used for Google Cast here does not support volume control.
-                            // This would require implementing the full CastV2 protocol (port 8009).
-                        }
+                    raopClients.forEach { (_, client) ->
+                        try {
+                            val db = if (direction == "up") -10.0f else -30.0f
+                            client.setVolumeDb(db)
+                        } catch (e: Exception) {}
                     }
-                } catch (e: Exception) {}
+                }
             }
-        }
-    }
-
-    private suspend fun adjustDlnaVolume(rcUrl: String, direction: String) {
-        try {
-            val getVolBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:GetVolume xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1"><InstanceID>0</InstanceID><Channel>Master</Channel></u:GetVolume></s:Body></s:Envelope>"""
-            val resp = client.post(rcUrl) {
-                header("SoapAction", "\"urn:schemas-upnp-org:service:RenderingControl:1#GetVolume\"")
-                contentType(ContentType.parse("text/xml; charset=utf-8"))
-                setBody(getVolBody)
-            }
-            val volText = resp.bodyAsText()
-            val currentVol = volText.substringAfter("<CurrentVolume>", "").substringBefore("</CurrentVolume>").toIntOrNull() ?: 50
-            val newVol = if (direction == "up") (currentVol + 5).coerceAtMost(100) else (currentVol - 5).coerceAtLeast(0)
-            
-            val setVolBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:SetVolume xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1"><InstanceID>0</InstanceID><Channel>Master</Channel><DesiredVolume>$newVol</DesiredVolume></u:SetVolume></s:Body></s:Envelope>"""
-            client.post(rcUrl) {
-                header("SoapAction", "\"urn:schemas-upnp-org:service:RenderingControl:1#SetVolume\"")
-                contentType(ContentType.parse("text/xml; charset=utf-8"))
-                setBody(setVolBody)
-            }
-        } catch (e: Exception) {}
-    }
 
     fun setDelay(host: String, delayMs: Int) {
         val current = _activeDestinations.value.toMutableList()
@@ -1215,8 +862,6 @@ class AudioCastService : Service() {
             }
         }
         
-        val metadataKey = "${finalMetadata.title}-${finalMetadata.artist}"
-
         destinations.forEach { dest ->
             try {
                 if (dest.platform != "DLNA" && dest.platform != "Google Cast" && dest.platform != "AirPlay") {
@@ -1232,153 +877,10 @@ class AudioCastService : Service() {
                         timeout { requestTimeoutMillis = 5000 }
                     }
                 } else if (dest.platform == "AirPlay") {
-                    updateRaopMetadata(dest.host, finalMetadata)
-                    if (dest.port != 5000) updateAirPlay2Metadata(dest.host, finalMetadata)
-                } else if (dest.platform == "DLNA") {
-                    if (lastSentMetadata[dest.host] != metadataKey) {
-                        updateDlnaMetadata(dest, finalMetadata)
-                        lastSentMetadata[dest.host] = metadataKey
-                    }
+                    raopClients[dest.host]?.sendMetadata(finalMetadata.title, finalMetadata.artist, finalMetadata.album)
                 }
             } catch (e: Exception) {}
         }
-    }
-
-    private suspend fun updateDlnaMetadata(dest: CastDestination, metadata: TrackMetadata) {
-        val (avUrl, _) = getDlnaControlUrls(dest.extra)
-        if (avUrl == null) return
-
-        val myIp = getLocalIpAddress() ?: return
-        val streamUrl = "http://$myIp:$STREAM_PORT/stream.wav"
-        val metadataXml = createDidlMetadata(streamUrl, metadata)
-
-        try {
-            val body = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><CurrentURI>${escapeXml(streamUrl)}</CurrentURI><CurrentURIMetaData>${escapeXml(metadataXml)}</CurrentURIMetaData></u:SetAVTransportURI></s:Body></s:Envelope>"""
-            client.post(avUrl) {
-                header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI\"")
-                contentType(ContentType.parse("text/xml; charset=utf-8"))
-                setBody(body)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to update DLNA metadata: ${e.message}")
-        }
-    }
-
-    private fun getDlnaControlUrls(extra: String?): Pair<String?, String?> {
-        if (extra == null) return null to null
-        if (extra.startsWith("http")) return extra to null
-        
-        val parts = extra.split(";")
-        val av = parts.find { it.startsWith("av_control=") }?.substringAfter("=")
-        val rc = parts.find { it.startsWith("rc_control=") }?.substringAfter("=")
-        return av to rc
-    }
-
-    private fun updateRaopMetadata(host: String, metadata: TrackMetadata) {
-        val socket = raopSockets[host] ?: return
-        val output = socket.getOutputStream()
-        val cseq = raopCSeqs[host] ?: 1
-        val session = raopSessions[host] ?: ""
-
-        val dmap = encodeDmapMetadata(metadata)
-        if (dmap.isEmpty()) return
-
-        try {
-            sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
-                "Session" to session,
-                "Content-Type" to "application/x-dmap-tagged",
-                "Content-Length" to dmap.size.toString()
-            ))
-            output.write(dmap)
-            output.flush()
-            raopCSeqs[host] = cseq + 1
-        } catch (e: Exception) {}
-    }
-
-    private suspend fun updateAirPlay2Metadata(host: String, metadata: TrackMetadata) {
-        if (unsupportedSetProperty.contains(host)) return
-        val sessionId = airplaySessionIds[host] ?: return
-        val targetPort = 7000
-        
-        // Use DMAP-tagged metadata as seen in pyatv
-        val dmapData = encodeDmapMetadata(metadata)
-        val mlitContainer = ByteArrayOutputStream().apply {
-            write("mlit".toByteArray())
-            write(ByteBuffer.allocate(4).putInt(dmapData.size).array())
-            write(dmapData)
-        }.toByteArray()
-
-        try {
-            val response = client.post("http://$host:$targetPort/setProperty") {
-                header("X-Apple-Session-ID", sessionId)
-                header("Content-Type", "application/x-dmap-tagged")
-                header("User-Agent", "AirPlay/550.10")
-                setBody(mlitContainer)
-            }
-            if (response.status.value == 404 || response.status.value == 405) {
-                // Fallback to legacy plist metadata if DMAP fails
-                val xmlBody = """
-                    <?xml version="1.0" encoding="UTF-8"?>
-                    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-                    <plist version="1.0">
-                    <dict>
-                        <key>Metadata</key>
-                        <dict>
-                            <key>title</key>
-                            <string>${escapeXml(metadata.title ?: "AriaCast")}</string>
-                            <key>artist</key>
-                            <string>${escapeXml(metadata.artist ?: "AriaCast")}</string>
-                        </dict>
-                    </dict>
-                    </plist>
-                """.trimIndent()
-                client.put("http://$host:$targetPort/setProperty") {
-                    header("X-Apple-Session-ID", sessionId)
-                    header("Content-Type", "application/x-apple-binary-plist")
-                    setBody(xmlBody)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "AirPlay 2 metadata update failed: ${e.message}")
-        }
-    }
-
-    private fun encodeDmapMetadata(metadata: TrackMetadata): ByteArray {
-        val out = ByteArrayOutputStream()
-        
-        fun writeTag(tag: String, value: String?) {
-            if (value == null) return
-            val valBytes = value.toByteArray(Charsets.UTF_8)
-            out.write(tag.toByteArray())
-            val len = ByteBuffer.allocate(4).putInt(valBytes.size).array()
-            out.write(len)
-            out.write(valBytes)
-        }
-
-        writeTag("minm", metadata.title)
-        writeTag("asar", metadata.artist)
-        writeTag("asal", metadata.album)
-
-        return out.toByteArray()
-    }
-
-    private fun createDidlMetadata(streamUrl: String, metadata: TrackMetadata?): String {
-        val title = metadata?.title ?: "AriaCast Live Stream"
-        val artist = metadata?.artist ?: "AriaCast"
-        val album = metadata?.album ?: ""
-        val artwork = metadata?.artworkUrl ?: ""
-
-        val artworkTag = if (artwork.isNotEmpty()) "<upnp:albumArtURI>${escapeXml(artwork)}</upnp:albumArtURI>" else ""
-        
-        return """<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" parentID="-1" restricted="1"><dc:title>${escapeXml(title)}</dc:title><upnp:artist>${escapeXml(artist)}</upnp:artist><upnp:album>${escapeXml(album)}</upnp:album><upnp:class>object.item.audioItem.musicTrack</upnp:class>$artworkTag<res protocolInfo="http-get:*:audio/x-wav:*">${escapeXml(streamUrl)}</res></item></DIDL-Lite>"""
-    }
-
-    private fun escapeXml(str: String): String {
-        return str.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-            .replace("'", "&apos;")
     }
 
     private fun getLocalIpAddress(): String? {
@@ -1475,105 +977,31 @@ class AudioCastService : Service() {
 
     private val mediaProjectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
-            // Only call stop if it's not us stopping it
-            if (mediaProjection != null) {
-                stopCasting()
-            }
+            stopCasting()
         }
     }
 
     private fun stopCasting() {
-        cleanupSession()
-        @Suppress("DEPRECATION")
-        stopForeground(true)
-        stopSelf()
-    }
-
-    private fun cleanupSession() {
-        val destinations = _activeDestinations.value.toList()
-        stopRemoteSessions(destinations)
-        
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, originalVolume, 0)
-        
-        try {
-            audioRecord?.stop()
-            audioRecord?.release()
-        } catch (e: Exception) {}
-        audioRecord = null
-
-        try {
-            mediaProjection?.unregisterCallback(mediaProjectionCallback)
-            mediaProjection?.stop()
-        } catch (e: Exception) {}
+        mediaProjection?.stop()
         mediaProjection = null
-
+        audioRecord?.stop()
+        audioRecord?.release()
+        audioRecord = null
         releaseVideoCodec()
-        
         dlnaHttpServerJob?.cancel()
         dlnaHttpServerJob = null
-        artworkServerJob?.cancel()
-        artworkServerJob = null
-        
-        try { streamServerSocket?.close() } catch (e: Exception) {}
-        streamServerSocket = null
-        try { artworkServerSocket?.close() } catch (e: Exception) {}
-        artworkServerSocket = null
-        
         controlSessions.clear()
-        raopSockets.values.forEach { try { it.close() } catch (e: Exception) {} }
-        raopSockets.clear()
-        raopSessions.clear()
-        raopCSeqs.clear()
+        raopClients.values.forEach { try { it.close() } catch (e: Exception) {} }
+        raopClients.clear()
         _activeDestinations.value = emptyList()
         sessionJob?.cancel()
         sessionJob = null
         _state.value = CastState.OFF
         _stats.value = CastingStats()
-    }
-
-    private fun stopRemoteSessions(destinations: List<CastDestination>) {
-        destinations.forEach { dest ->
-            scope.launch {
-                try {
-                    when (dest.platform) {
-                        "DLNA" -> {
-                            val controlUrl = dest.extra ?: return@launch
-                            val stopBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Stop xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID></u:Stop></s:Body></s:Envelope>"""
-                            client.post(controlUrl) {
-                                header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#Stop\"")
-                                contentType(ContentType.parse("text/xml; charset=utf-8"))
-                                setBody(stopBody)
-                            }
-                        }
-                        "Google Cast" -> {
-                            client.delete("http://${dest.host}:8008/apps/DefaultMediaPlayer")
-                        }
-                        "AirPlay" -> {
-                            if (dest.port == 5000 || dest.name.contains("@")) {
-                                val socket = raopSockets[dest.host]
-                                val output = socket?.getOutputStream()
-                                if (output != null) {
-                                    val cseq = raopCSeqs[dest.host] ?: 1
-                                    sendRtspRequest(output, "TEARDOWN", dest.host, dest.port, cseq, mapOf(
-                                        "Session" to (raopSessions[dest.host] ?: ""),
-                                        "User-Agent" to "AirPlay/366.0"
-                                    ))
-                                }
-                            } else {
-                                val sessionId = airplaySessionIds[dest.host]
-                                if (sessionId != null) {
-                                    client.post("http://${dest.host}:${if(dest.port > 0) dest.port else 7000}/stop") {
-                                        header("X-Apple-Session-ID", sessionId)
-                                        header("X-Apple-Device-ID", "0x${airplayDeviceId.replace(":", "").lowercase()}")
-                                        header("User-Agent", "AirPlay/366.0")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {}
-            }
-        }
+        @Suppress("DEPRECATION")
+        stopForeground(true)
+        stopSelf()
     }
 
     private fun updateNotification() {
@@ -1635,9 +1063,12 @@ class AudioCastService : Service() {
         const val KEY_LAST_SERVER_PORT = "last_server_port"
         const val KEY_LAST_SERVER_NAME = "last_server_name"
 
-        const val SAMPLE_RATE = 44100
-        const val FRAME_SIZE = 3528
-        const val LATENCY = 66150
+        const val SAMPLE_RATE = 48000
+        const val FRAME_SIZE = 3840 
+
+        const val RAOP_SAMPLE_RATE = 44100
+        const val RAOP_FRAME_SAMPLES = 352
+        const val RAOP_FRAME_BYTES = RAOP_FRAME_SAMPLES * 4
         
         const val VIDEO_WIDTH = 1280
         const val VIDEO_HEIGHT = 720
