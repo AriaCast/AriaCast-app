@@ -36,7 +36,7 @@ AriaCast is evolving into a versatile streaming hub, supporting multiple protoco
 *   **DLNA / UPnP**: Broad compatibility with Smart TVs, AV receivers, and media players.
 *   **Google Cast** (Coming Soon 🚧): Support for Chromecast, Nest speakers, and Android TV.
 *   **AirPlay 1**: Support for compatible AirPlay speakers and receivers.
-*   **AirPlay 2**: Enhanced multi-room streaming to Macs, Apple TVs, and HomePods. Includes support for PIN-protected pairing.
+*   **AirPlay 2** (Coming Soon 🚧): Enhanced multi-room streaming to Macs, Apple TVs, and HomePods. Includes support for PIN-protected pairing.
 
 ## How It Works
 
