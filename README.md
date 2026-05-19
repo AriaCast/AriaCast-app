@@ -36,7 +36,7 @@
 <h2>✨ Key Features</h2>
 <div style="background-color: #f6f8fa; padding: 15px; border-radius: 8px;">
   <ul>
-    <li><b>System-Wide Capture:</b> Works with <i>any</i> app (Spotify, YouTube Music, Podcasts).</li>
+    <li><b>System-Wide Capture:</b> Works with <i>any (No DRM)</i> app.</li>
     <li><b>Automatic Discovery:</b> Instant detection of AirPlay and DLNA devices on your network.</li>
     <li><b>Rich Metadata Sync:</b> Pushes track title, artist, and album art to receivers in real-time.</li>
     <li><b>Quick Settings Tile:</b> Start casting directly from your notification shade.</li>
