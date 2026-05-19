@@ -5,8 +5,6 @@
   
   <p>
     <a href="https://github.com/AirPlr/AriaCast-app/releases"><img src="https://img.shields.io/github/downloads/AirPlr/AriaCast-app/latest/total?style=for-the-badge&color=2ea44f" alt="Downloads" /></a>
-    <img src="https://img.shields.io/badge/Supports-AirPlay_1-blue?style=for-the-badge" alt="AirPlay 1" />
-    <img src="https://img.shields.io/badge/Supports-DLNA-orange?style=for-the-badge" alt="DLNA" />
   </p>
 </div>
 
