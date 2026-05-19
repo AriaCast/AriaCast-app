@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/user-attachments/assets/logo_placeholder.png" width="150" height="150" alt="AriaCast Logo" />
+  <img src="<img src="https://github.com/AriaCast/AriaCast-app/blob/main/fastlane/metadata/android/en-US/images/icon.png?raw=true" width="150" height="150" alt="AriaCast Logo" />
   
   <h1>AriaCast for Android</h1>
   <p><b><i>Stream any audio from your Android device to any speaker in your home.</i></b></p>
