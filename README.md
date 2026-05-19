@@ -75,7 +75,8 @@
 <h2>🛠️ Setup & Usage</h2>
 <ol>
   <li><b>Install:</b> Download the latest <a href="https://github.com/AirPlr/AriaCast-app/releases">APK here</a>.</li>
-  <li>Grant <b>Notification Access</b> (for metadata) select your receiver, and enjoy.</li>
+  <li>Grant <b>Notification Access</b> (for metadata)</li>
+<li><b>Select</b> your receiver, and <b>ENJOY</b>.</li>
 </ol>
 
 
