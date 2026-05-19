@@ -75,8 +75,7 @@
 <h2>🛠️ Setup & Usage</h2>
 <ol>
   <li><b>Install:</b> Download the latest <a href="https://github.com/AirPlr/AriaCast-app/releases">APK here</a>.</li>
-  <li><b>Permissions:</b> Grant <b>Notification Access</b> (for metadata) and <b>Audio Capture</b> (required by Android for casting).</li>
-  <li><b>Cast:</b> Open the app, select your receiver, and enjoy.</li>
+  <li>Grant <b>Notification Access</b> (for metadata) select your receiver, and enjoy.</li>
 </ol>
 
 
