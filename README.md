@@ -79,9 +79,6 @@
   <li><b>Cast:</b> Open the app, select your receiver, and enjoy.</li>
 </ol>
 
-<blockquote>
-  <b>⚠️ Note for Root Users:</b> Need to stream DRM-protected content? Use the <a href="https://github.com/LSPosed/DisableFlagSecure">DisableFlagSecure</a> module with LSPosed/Magisk to bypass system restrictions.
-</blockquote>
 
 <hr />
 
