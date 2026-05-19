@@ -25,9 +25,9 @@
 <p>We believe in open standards. AriaCast allows you to stream to a wide array of devices:</p>
 
 <ul>
-  <li><b>AirPlay 1:</b> Seamless streaming to legacy Apple devices and Hi-Fi speakers.</li>
-  <li><b>DLNA / UPnP:</b> Universal compatibility with Smart TVs, AV Receivers, and media boxes.</li>
   <li><b>AriaCast Native:</b> Our high-performance protocol using binary WebSockets for low-latency, high-fidelity audio with rich metadata sync.</li>
+<li><b>AirPlay 1:</b> Seamless streaming to legacy Apple devices and Hi-Fi speakers.</li>
+  <li><b>DLNA / UPnP:</b> Universal compatibility with Smart TVs, AV Receivers, and media boxes.</li>
   <li><i>Coming Soon: AirPlay 2 (Multi-room) & Google Cast.</i></li>
 </ul>
 
