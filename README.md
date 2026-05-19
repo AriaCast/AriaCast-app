@@ -1,92 +1,70 @@
 # AriaCast (Android Application)
 ![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/AirPlr/AriaCast-app/latest/total?style=for-the-badge)
+![AirPlay Compatible](https://img.shields.io/badge/Supports-AirPlay_1-blue?style=for-the-badge)
 
 <img width="30%" height="auto" alt="Screenshot_20260425_220300_AriaCast" src="https://github.com/user-attachments/assets/12b44736-e1f7-47c8-b292-c6e9ae8be728" />
 <img width="30%" height="auto" alt="Screenshot_20260425_220307_AriaCast" src="https://github.com/user-attachments/assets/682ad335-4ffc-40b7-9f78-7894c13764dd" />
 <img width="30%" height="auto" alt="Screenshot_20260425_220321_AriaCast" src="https://github.com/user-attachments/assets/36e14a6d-5c71-4043-9a7b-0cea7949c95d" />
 
 
-**Capture and stream your Android device's internal audio to any receiver on your local network.**
+**Capture and stream your Android device's internal audio to any receiver—including AirPlay 1 speakers and Smart TVs.**
 
-AriaCast is a powerful Android application that allows you to broadcast audio from *any* application—such as Spotify, YouTube Music, or Pocket Casts—to a variety of receivers. Whether it's a dedicated AriaCast server, a DLNA-enabled Smart TV, or a network speaker, AriaCast turns your local devices into high-fidelity networked speakers.
-
-
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/AirPlr)
+AriaCast bridges the gap between Android and the rest of your home audio ecosystem. By capturing your device's internal audio output, it allows you to stream music from *any* app—Spotify, YouTube Music, Pocket Casts, and more—directly to **AirPlay 1 compatible speakers**, DLNA devices, or custom AriaCast servers.
 
 ---
-# HELP US TRANSLATE ARIACAST
-### (Click on the graph to open weblate)
-<a href="https://hosted.weblate.org/engage/ariacast/"><img src="https://hosted.weblate.org/widget/ariacast/ariacast-app/multi-auto.svg" alt="Stato traduzione"></a>
+
+### 🚀 Key Features: Now with AirPlay 1 Support
+*   **Universal AirPlay 1 Streaming**: Directly broadcast your Android audio to legacy AirPlay speakers and receivers. No proprietary hardware required.
+*   **System-Wide Audio Capture**: Uses the `MediaProjection` API to grab audio from any application, ensuring you never miss a beat.
+*   **Real-Time Metadata**: Syncs track info, artist names, and album artwork automatically (via `NotificationListenerService`).
+*   **Zero-Config Discovery**: Automatically scans your local network for available AirPlay and DLNA receivers.
+*   **Quick Control**: Dedicated Notification Shade tile to start/stop casting without ever opening the app.
 
 ---
-## Features
-
-*   **System-Wide Audio Streaming**: Captures the internal audio output of your Android device using the `MediaProjection` API and streams it in real-time with low latency.
-*   **Multi-Protocol Support**: Stream to AriaCast servers, DLNA/UPnP devices, and more.
-*   **Real-Time Metadata**: Automatically detects currently playing media using the `NotificationListenerService`. Syncs rich metadata (Title, Artist, Album, Artwork) to the receiver instantly.
-*   **Auto-Discovery**: Automatically finds available receivers running on your local network.
-*   **Quick Settings Tile**: Start and stop casting instantly from your notification shade without opening the app.
-*   **Efficient Networking**: Uses optimized protocols (including binary WebSockets for the native server) to ensure minimal overhead.
 
 ## Supported Protocols
+AriaCast acts as a versatile streaming hub, focusing on maximum compatibility:
 
-AriaCast is evolving into a versatile streaming hub, supporting multiple protocols to reach all your devices:
+| Protocol | Status | Best For |
+| :--- | :--- | :--- |
+| **AirPlay 1** | ✅ **Active** | Legacy audio systems, Hifi speakers, and receivers. |
+| **AriaCast (Native)** | ✅ **Active** | Low-latency, high-fidelity, and rich metadata. |
+| **DLNA / UPnP** | ✅ **Active** | Smart TVs, AV receivers, and generic media players. |
+| **AirPlay 2** | 🚧 Coming Soon | Multi-room streaming and PIN-protected devices. |
+| **Google Cast** | 🚧 Coming Soon | Chromecast, Nest, and Android TV ecosystem. |
 
-*   **AriaCast (Native)**: Our high-fidelity, low-latency protocol using binary WebSockets. Ideal for the AriaCast Server and Music Assistant.
-*   **DLNA / UPnP**: Broad compatibility with Smart TVs, AV receivers, and media players.
-*   **Google Cast** (Coming Soon 🚧): Support for Chromecast, Nest speakers, and Android TV.
-*   **AirPlay 1**: Support for compatible AirPlay speakers and receivers.
-*   **AirPlay 2** (Coming Soon 🚧): Enhanced multi-room streaming to Macs, Apple TVs, and HomePods. Includes support for PIN-protected pairing.
-
-## How It Works
-
-AriaCast uses a robust foreground service to manage the capture and streaming lifecycle:
-
-1.  **Audio Capture**: When casting starts, the app leverages the `MediaProjection` API to capture the device's internal audio bus.
-2.  **Streaming**: Raw audio data is encoded and transmitted to the selected receiver. For the native AriaCast protocol, this happens over a persistent WebSocket connection.
-3.  **Metadata Sync**: A background `NotificationListenerService` monitors media notifications. When a track changes, metadata is extracted and pushed to the receiver to show what's playing.
-4.  **Control Channel**: Commands like volume adjustments are sent over dedicated control channels (e.g., `/control` WebSocket for native servers), enabling real-time interaction.
+---
 
 ## Setup & Usage
 
 ### Prerequisites
+*   Android 12 (API 31) or higher.
+*   An **AirPlay 1** receiver or DLNA-compatible device on the same local network.
 
-*   An Android device running **Android 12 (API 31)** or higher.
-*   A compatible receiver on the same local network (AriaCast Server, DLNA, AirPlay, etc.).
-
-### Installation & Permissions
-
-1.  **Install the App**: Build from source or install the `AriaCast.apk` on your device.
-2.  **Grant Permissions**:
-    *   **Notification Access**: Required to read media metadata (Artist/Title) from playing apps. You will be prompted to enable this on first launch.
-    *   **Audio Capture**: Android explicitly asks for permission to "start recording or casting" when you first initiate a stream. This is required for internal audio capture.
+### Quick Start
+1.  **Download**: Get the latest `AriaCast.apk` from the [Releases](https://github.com/AirPlr/AriaCast-app/releases) page.
+2.  **Permissions**: Grant **Notification Access** (to sync metadata) and allow **Audio Capture** (required to stream system audio).
+3.  **Stream**: Open the app, select your AirPlay or DLNA speaker from the discovery list, and tap to connect.
 
 ---
 
-### ⚠️ Root Users Only
-
-This application cannot capture DRM-protected content by default due to Android's system-level restrictions. If you have a **rooted device**, you can attempt to bypass these limitations using the following module:
-
-* **Tool:** [LSPosed/DisableFlagSecure](https://github.com/LSPosed/DisableFlagSecure)
-* **Requirement:** Magisk + LSPosed Framework
-
-> **Disclaimer:** Use this at your own risk. Bypassing `FLAG_SECURE` may violate the Terms of Service of some applications and could lead to account suspension or stability issues.
+## Why AriaCast?
+Unlike standard apps that only support specific streaming platforms, AriaCast captures audio at the **system level**. Whether you are listening to a niche podcast app or your favorite music player, AriaCast turns your Android device into a powerful source for your entire home audio network.
 
 ---
 
-### Start Casting
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/AirPlr)
 
- Open AriaCast, wait for it to discover servers, select your target, and tap to Start Casting.
+### ⚠️ Advanced: Root Users
+To capture DRM-protected content, you can bypass `FLAG_SECURE` restrictions on rooted devices using the [LSPosed/DisableFlagSecure](https://github.com/LSPosed/DisableFlagSecure) module.
 
-## Plugin System
+---
 
-AriaCast features a powerful JavaScript-based plugin system that allows extending the app's UI and functionality without recompiling. This is used to provide native controls for specific servers (like Music Assistant) directly within the AriaCast interface.
+## Contributing & Plugins
+AriaCast features a **JavaScript-based plugin system**, allowing the community to extend functionality without recompiling the app.
+*   [Documentation & Plugin Repo](https://github.com/AriaCast/AriaCast-android-plugins)
+*   [Backend Server Repository](https://github.com/AirPlr/Ariacast-server)
 
-See [the PLUGINS repository](https://github.com/AriaCast/AriaCast-android-plugins) for documentation
-
-## Backend Server
-
-While AriaCast can now stream to various devices via DLNA, the native AriaCast Server provides the best experience with full metadata and low-latency control.
-
-*   **Server Repository**: [Link to AriaCast Server](https://github.com/AirPlr/Ariacast-server)
-*   **Music Assistant Plugin Repository**: [Link to Ariacast MusicAssistant Plugin](https://github.com/AirPlr/AriaCast-Receiver-MusicAssistant)
+---
+### TRANSLATIONS
+<a href="https://hosted.weblate.org/engage/ariacast/"><img src="https://hosted.weblate.org/widget/ariacast/ariacast-app/multi-auto.svg" alt="Stato traduzione"></a>
