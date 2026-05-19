@@ -37,7 +37,7 @@
 <div style="background-color: #f6f8fa; padding: 15px; border-radius: 8px;">
   <ul>
     <li><b>System-Wide Capture:</b> Works with <i>any (No DRM)</i> app.</li>
-    <li><b>Automatic Discovery:</b> Instant detection of AirPlay and DLNA devices on your network.</li>
+    <li><b>Automatic Discovery:</b> Instant detection of AriaCast, AirPlay and DLNA devices on your network.</li>
     <li><b>Rich Metadata Sync:</b> Pushes track title, artist, and album art to receivers in real-time.</li>
     <li><b>Quick Settings Tile:</b> Start casting directly from your notification shade.</li>
     <li><b>JavaScript Plugins:</b> Extend app functionality or add custom server controls without re-building.</li>
