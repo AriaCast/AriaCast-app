@@ -29,10 +29,17 @@ class AirPlay2Client(
     private val password: String? = null,
     private val txtPk: ByteArray? = null
 ) {
+    interface EventListener {
+        fun onVolumeChange(db: Double) {}
+        fun onRemoteCommand(command: String) {}
+    }
+
     companion object {
         private const val TAG = "AirPlay2Client"
         private const val PUBKEY_3072_SIZE = 384
     }
+
+    var eventListener: EventListener? = null
 
     private val secureRandom = SecureRandom()
     private val socket = Socket()
@@ -46,6 +53,8 @@ class AirPlay2Client(
     private val timingSocket = DatagramSocket(0)
     private val controlSocket = DatagramSocket(0)
     private var audioSocket: DatagramSocket? = null
+    private var eventSocket: Socket? = null
+    private var eventPort = 0
 
     private var timingRemotePort = 0
     private var controlRemotePort = 0
@@ -81,7 +90,8 @@ class AirPlay2Client(
             output = socket.getOutputStream()
             input = socket.getInputStream()
             localAddress = socket.localAddress.hostAddress ?: "0.0.0.0"
-            sessionUrl = "rtsp://$localAddress/$sessionUuid"
+            val urlHost = if (localAddress.contains(':')) "[$localAddress]" else localAddress
+            sessionUrl = "rtsp://$urlHost/$sessionUuid"
             sequence = secureRandom.nextInt(0xFFFF)
             rtpTimestamp = secureRandom.nextInt()
 
@@ -131,6 +141,7 @@ class AirPlay2Client(
 
             if (!sendSetupSession()) return false
             if (!sendRecord()) return false
+            connectEventPort()
             if (!sendSetupStream()) return false
 
             setVolume(0.0)
@@ -414,12 +425,15 @@ class AirPlay2Client(
 
     private fun parseSessionResponse(body: ByteArray) {
         try {
-            val xml = String(body, Charsets.UTF_8)
-            val eventPortRegex = Regex("<key>eventPort</key><integer>(\\d+)</integer>")
-            eventPortRegex.find(xml)?.let {
-                Log.d(TAG, "Event port: ${it.groupValues[1]}")
+            val dict = BinaryPlist.decode(body)
+            val port = (dict["eventPort"] as? Long)?.toInt()
+            if (port != null && port > 0) {
+                eventPort = port
+                Log.d(TAG, "Event port: $eventPort")
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(TAG, "parseSessionResponse failed: ${e.message}")
+        }
     }
 
     private fun parseTransportResponse(transport: String) {
@@ -446,14 +460,15 @@ class AirPlay2Client(
             val packet = buildRtpPacket(payload)
             val socket = audioSocket ?: return false
 
-            if (supportsEncryption && cipherKeys != null) {
+            val keys = cipherKeys
+            if (supportsEncryption && keys != null) {
+                val counter = synchronized(this) { keys.encryptionCounter++ }
                 val nonce = ByteArray(12)
-                nonce[4] = ((sequence shr 8) and 0xFF).toByte()
-                nonce[5] = (sequence and 0xFF).toByte()
+                for (i in 0..7) nonce[4 + i] = ((counter shr (i * 8)) and 0xFF).toByte()
                 val aad = packet.copyOfRange(4, 12)
                 val payloadEnc = packet.drop(12).toByteArray()
                 val (encrypted, tag) = AirPlay2Crypto.chacha20Poly1305Encrypt(
-                    cipherKeys!!.encryptionKey, nonce, payloadEnc, aad
+                    keys.encryptionKey, nonce, payloadEnc, aad
                 )
                 val finalPacket = packet.copyOfRange(0, 12) + encrypted + tag + nonce.copyOfRange(4, 12)
                 val dp = DatagramPacket(finalPacket, finalPacket.size, InetAddress.getByName(host), audioRemotePort)
@@ -519,12 +534,133 @@ class AirPlay2Client(
         sendRtspRequest("SET_PARAMETER", sessionUrl, "text/parameters", bodyBytes)
     }
 
+    fun sendMetadata(title: String?, artist: String?, album: String?, artworkBytes: ByteArray? = null) {
+        val dict = linkedMapOf<String, Any?>()
+        if (!title.isNullOrEmpty()) dict["dmap.itemname"] = title
+        if (!artist.isNullOrEmpty()) dict["daap.songartist"] = artist
+        if (!album.isNullOrEmpty()) dict["daap.songalbum"] = album
+        if (dict.isNotEmpty()) {
+            sendRtspRequest("SET_PARAMETER", sessionUrl,
+                "application/x-apple-binary-plist", BinaryPlist.encode(dict))
+        }
+        if (artworkBytes != null && artworkBytes.isNotEmpty()) {
+            sendRtspRequest("SET_PARAMETER", sessionUrl, "image/jpeg", artworkBytes)
+        }
+    }
+
+    fun sendProgress(positionMs: Long, durationMs: Long) {
+        val start = 0L
+        val current = (positionMs * sampleRate / 1000L) + rtpTimestamp
+        val end = (durationMs * sampleRate / 1000L)
+        val body = "progress: $start/$current/$end\r\n".toByteArray(Charsets.UTF_8)
+        sendRtspRequest("SET_PARAMETER", sessionUrl, "text/parameters", body)
+    }
+
+    private fun connectEventPort() {
+        if (eventPort <= 0) return
+        try {
+            val s = Socket()
+            s.connect(InetSocketAddress(host, eventPort), 5000)
+            eventSocket = s
+            startEventReadLoop(s)
+            Log.d(TAG, "Event port $eventPort connected")
+        } catch (e: Exception) {
+            Log.w(TAG, "Event port connect failed: ${e.message}")
+        }
+    }
+
+    private fun startEventReadLoop(s: Socket) {
+        thread(name = "ap2-event", isDaemon = true) {
+            try {
+                val input = s.getInputStream()
+                while (running) {
+                    val msg = readEventMessage(input) ?: break
+                    dispatchEventMessage(msg)
+                }
+            } catch (e: Exception) {
+                if (running) Log.w(TAG, "Event loop ended: ${e.message}")
+            }
+        }
+    }
+
+    private data class EventMessage(val method: String, val headers: Map<String, String>, val body: ByteArray?)
+
+    private fun readEventMessage(input: InputStream): EventMessage? {
+        val headerLines = mutableListOf<String>()
+        val buf = StringBuilder()
+        while (true) {
+            val b = input.read()
+            if (b < 0) return null
+            buf.append(b.toChar())
+            if (b == '\n'.code) {
+                val line = buf.toString().trimEnd('\r', '\n')
+                buf.clear()
+                if (line.isEmpty()) break
+                headerLines.add(line)
+            }
+        }
+        if (headerLines.isEmpty()) return null
+        val method = headerLines[0].substringBefore(' ')
+        val headers = linkedMapOf<String, String>()
+        var contentLength = 0
+        for (i in 1 until headerLines.size) {
+            val parts = headerLines[i].split(":", limit = 2)
+            if (parts.size == 2) {
+                val key = parts[0].trim()
+                val value = parts[1].trim()
+                headers[key] = value
+                if (key.equals("Content-Length", ignoreCase = true)) {
+                    contentLength = value.toIntOrNull() ?: 0
+                }
+            }
+        }
+        var body: ByteArray? = null
+        if (contentLength > 0) {
+            body = ByteArray(contentLength)
+            var offset = 0
+            while (offset < contentLength) {
+                val read = input.read(body, offset, contentLength - offset)
+                if (read < 0) break
+                offset += read
+            }
+        }
+        return EventMessage(method, headers, body)
+    }
+
+    private fun dispatchEventMessage(msg: EventMessage) {
+        Log.d(TAG, "Event: ${msg.method} ct=${msg.headers["Content-Type"]}")
+        val body = msg.body ?: return
+        if (msg.headers["Content-Type"]?.contains("apple-binary-plist") != true) return
+        try {
+            val dict = BinaryPlist.decode(body)
+            when (dict["type"]) {
+                "volume" -> {
+                    val db = when (val v = dict["value"]) {
+                        is Double -> v
+                        is Long -> v.toDouble()
+                        else -> return
+                    }
+                    Log.d(TAG, "Event volume: $db dB")
+                    eventListener?.onVolumeChange(db)
+                }
+                "command" -> {
+                    val name = dict["name"] as? String ?: return
+                    Log.d(TAG, "Event command: $name")
+                    eventListener?.onRemoteCommand(name)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Event dispatch failed: ${e.message}")
+        }
+    }
+
     fun close() {
         running = false
         syncThread?.interrupt()
         keepAliveThread?.interrupt()
         if (alacHandle != 0L) { nativeAlac.destroyEncoder(alacHandle); alacHandle = 0L }
         audioSocket?.close()
+        try { eventSocket?.close() } catch (_: Exception) {}
         controlSocket.close()
         timingSocket.close()
         try { socket.close() } catch (_: Exception) {}

@@ -103,6 +103,7 @@ class AudioCastService : Service() {
     private val controlSessions = mutableMapOf<String, DefaultClientWebSocketSession>()
     private val raopClients = mutableMapOf<String, RaopClient>()
     private val airPlay2Clients = mutableMapOf<String, AirPlay2Client>()
+    private val airPlay2VolumeDb = mutableMapOf<String, Double>()
     
     private val dacpId by lazy { 
         sharedPreferences.getString("dacp_id", null) ?: run {
@@ -332,8 +333,9 @@ class AudioCastService : Service() {
         val sessionScope = CoroutineScope(Dispatchers.IO + sessionJob!!)
 
         val hasAirPlay = destinations.any { it.platform == "AirPlay" }
-        val hasNonAirPlay = destinations.any { it.platform != "AirPlay" }
-        if (hasAirPlay && hasNonAirPlay) {
+        val hasAirPlay2 = destinations.any { it.platform == "AirPlay2" }
+        val hasNonAirPlay = destinations.any { it.platform != "AirPlay" && it.platform != "AirPlay2" }
+        if ((hasAirPlay || hasAirPlay2) && hasNonAirPlay) {
             Log.e(TAG, "AirPlay cannot be mixed with other targets")
             _state.value = CastState.ERROR
             return
@@ -345,7 +347,7 @@ class AudioCastService : Service() {
             return
         }
 
-        if (hasAirPlay) {
+        if (hasAirPlay || hasAirPlay2) {
             currentSampleRate = RAOP_SAMPLE_RATE
             currentFrameSizeBytes = RAOP_FRAME_BYTES
         } else {
@@ -711,11 +713,31 @@ class AudioCastService : Service() {
                 password = savedPin,
                 txtPk = parsePkFromExtra(dest.extra)
             )
+            ap2.eventListener = object : AirPlay2Client.EventListener {
+                override fun onVolumeChange(db: Double) {
+                    airPlay2VolumeDb[dest.host] = db.coerceIn(-30.0, 0.0)
+                }
+                override fun onRemoteCommand(command: String) {
+                    scope.launch {
+                        val mediaCmd = when (command.lowercase()) {
+                            "nextitem" -> MediaCommand.NEXT
+                            "previtem" -> MediaCommand.PREVIOUS
+                            "playpause" -> MediaCommand.TOGGLE
+                            "play" -> MediaCommand.PLAY
+                            "pause" -> MediaCommand.PAUSE
+                            "stop" -> MediaCommand.STOP
+                            else -> null
+                        }
+                        if (mediaCmd != null) _controlCommands.emit(mediaCmd)
+                    }
+                }
+            }
             if (!ap2.connect()) {
                 _state.value = CastState.ERROR
                 return
             }
             airPlay2Clients[dest.host] = ap2
+            airPlay2VolumeDb[dest.host] = 0.0
             _state.value = CastState.CASTING
             updateNotification()
 
@@ -897,10 +919,13 @@ class AudioCastService : Service() {
                             client.setVolumeDb(db)
                         } catch (e: Exception) {}
                     }
-                    airPlay2Clients.forEach { (_, client) ->
+                    airPlay2Clients.forEach { (host, client) ->
                         try {
-                            val db = if (direction == "up") -0.0 else -30.0
-                            client.setVolume(db)
+                            val current = airPlay2VolumeDb[host] ?: 0.0
+                            val next = if (direction == "up") (current + 3.0).coerceAtMost(0.0)
+                                       else (current - 3.0).coerceAtLeast(-30.0)
+                            airPlay2VolumeDb[host] = next
+                            client.setVolume(next)
                         } catch (e: Exception) {}
                     }
                 }
@@ -964,7 +989,15 @@ class AudioCastService : Service() {
                 } else if (dest.platform == "AirPlay") {
                     raopClients[dest.host]?.sendMetadata(finalMetadata.title, finalMetadata.artist, finalMetadata.album)
                 } else if (dest.platform == "AirPlay2") {
-                    // AirPlay 2 metadata TBD
+                    airPlay2Clients[dest.host]?.sendMetadata(
+                        finalMetadata.title, finalMetadata.artist, finalMetadata.album,
+                        currentArtworkBytes
+                    )
+                    val pos = finalMetadata.positionMs
+                    val dur = finalMetadata.durationMs
+                    if (pos != null && dur != null && dur > 0) {
+                        airPlay2Clients[dest.host]?.sendProgress(pos, dur)
+                    }
                 }
             } catch (e: Exception) {}
         }
@@ -1083,6 +1116,7 @@ class AudioCastService : Service() {
         raopClients.clear()
         airPlay2Clients.values.forEach { try { it.close() } catch (e: Exception) {} }
         airPlay2Clients.clear()
+        airPlay2VolumeDb.clear()
         _activeDestinations.value = emptyList()
         sessionJob?.cancel()
         sessionJob = null
