@@ -29,10 +29,17 @@ class AirPlay2Client(
     private val password: String? = null,
     private val txtPk: ByteArray? = null
 ) {
+    interface EventListener {
+        fun onVolumeChange(db: Double) {}
+        fun onRemoteCommand(command: String) {}
+    }
+
     companion object {
         private const val TAG = "AirPlay2Client"
         private const val PUBKEY_3072_SIZE = 384
     }
+
+    var eventListener: EventListener? = null
 
     private val secureRandom = SecureRandom()
     private val socket = Socket()
@@ -565,14 +572,85 @@ class AirPlay2Client(
     private fun startEventReadLoop(s: Socket) {
         thread(name = "ap2-event", isDaemon = true) {
             try {
-                val br = s.getInputStream().bufferedReader(Charsets.UTF_8)
+                val input = s.getInputStream()
                 while (running) {
-                    val line = br.readLine() ?: break
-                    Log.d(TAG, "Event: $line")
+                    val msg = readEventMessage(input) ?: break
+                    dispatchEventMessage(msg)
                 }
             } catch (e: Exception) {
                 if (running) Log.w(TAG, "Event loop ended: ${e.message}")
             }
+        }
+    }
+
+    private data class EventMessage(val method: String, val headers: Map<String, String>, val body: ByteArray?)
+
+    private fun readEventMessage(input: InputStream): EventMessage? {
+        val headerLines = mutableListOf<String>()
+        val buf = StringBuilder()
+        while (true) {
+            val b = input.read()
+            if (b < 0) return null
+            buf.append(b.toChar())
+            if (b == '\n'.code) {
+                val line = buf.toString().trimEnd('\r', '\n')
+                buf.clear()
+                if (line.isEmpty()) break
+                headerLines.add(line)
+            }
+        }
+        if (headerLines.isEmpty()) return null
+        val method = headerLines[0].substringBefore(' ')
+        val headers = linkedMapOf<String, String>()
+        var contentLength = 0
+        for (i in 1 until headerLines.size) {
+            val parts = headerLines[i].split(":", limit = 2)
+            if (parts.size == 2) {
+                val key = parts[0].trim()
+                val value = parts[1].trim()
+                headers[key] = value
+                if (key.equals("Content-Length", ignoreCase = true)) {
+                    contentLength = value.toIntOrNull() ?: 0
+                }
+            }
+        }
+        var body: ByteArray? = null
+        if (contentLength > 0) {
+            body = ByteArray(contentLength)
+            var offset = 0
+            while (offset < contentLength) {
+                val read = input.read(body, offset, contentLength - offset)
+                if (read < 0) break
+                offset += read
+            }
+        }
+        return EventMessage(method, headers, body)
+    }
+
+    private fun dispatchEventMessage(msg: EventMessage) {
+        Log.d(TAG, "Event: ${msg.method} ct=${msg.headers["Content-Type"]}")
+        val body = msg.body ?: return
+        if (msg.headers["Content-Type"]?.contains("apple-binary-plist") != true) return
+        try {
+            val dict = BinaryPlist.decode(body)
+            when (dict["type"]) {
+                "volume" -> {
+                    val db = when (val v = dict["value"]) {
+                        is Double -> v
+                        is Long -> v.toDouble()
+                        else -> return
+                    }
+                    Log.d(TAG, "Event volume: $db dB")
+                    eventListener?.onVolumeChange(db)
+                }
+                "command" -> {
+                    val name = dict["name"] as? String ?: return
+                    Log.d(TAG, "Event command: $name")
+                    eventListener?.onRemoteCommand(name)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Event dispatch failed: ${e.message}")
         }
     }
 

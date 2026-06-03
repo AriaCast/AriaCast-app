@@ -713,6 +713,25 @@ class AudioCastService : Service() {
                 password = savedPin,
                 txtPk = parsePkFromExtra(dest.extra)
             )
+            ap2.eventListener = object : AirPlay2Client.EventListener {
+                override fun onVolumeChange(db: Double) {
+                    airPlay2VolumeDb[dest.host] = db.coerceIn(-30.0, 0.0)
+                }
+                override fun onRemoteCommand(command: String) {
+                    scope.launch {
+                        val mediaCmd = when (command.lowercase()) {
+                            "nextitem" -> MediaCommand.NEXT
+                            "previtem" -> MediaCommand.PREVIOUS
+                            "playpause" -> MediaCommand.TOGGLE
+                            "play" -> MediaCommand.PLAY
+                            "pause" -> MediaCommand.PAUSE
+                            "stop" -> MediaCommand.STOP
+                            else -> null
+                        }
+                        if (mediaCmd != null) _controlCommands.emit(mediaCmd)
+                    }
+                }
+            }
             if (!ap2.connect()) {
                 _state.value = CastState.ERROR
                 return
