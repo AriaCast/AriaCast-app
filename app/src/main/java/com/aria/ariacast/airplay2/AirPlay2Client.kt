@@ -72,13 +72,11 @@ class AirPlay2Client(
     private var supportsEncryption = false
     private var deviceEd25519PubKey: ByteArray? = null
     private var sessionId: String? = null
+    private var didTransientPairing = false
 
     @Volatile private var running = false
     private var syncThread: Thread? = null
     private var keepAliveThread: Thread? = null
-
-    private val nativeAlac = com.aria.ariacast.raop.NativeAlac()
-    private var alacHandle: Long = 0
 
     class HttpResponse(val code: Int, val headers: Map<String, String>, val body: ByteArray?)
 
@@ -131,7 +129,9 @@ class AirPlay2Client(
                 }
             }
 
-            if (deviceEd25519PubKey != null) {
+            if (didTransientPairing) {
+                Log.d(TAG, "Transient pairing: skipping pair-verify")
+            } else if (deviceEd25519PubKey != null) {
                 if (!doPairVerify()) {
                     Log.w(TAG, "Pair-verify failed, continuing anyway")
                 }
@@ -146,7 +146,6 @@ class AirPlay2Client(
 
             setVolume(0.0)
 
-            alacHandle = nativeAlac.createEncoder(sampleRate, channels, frameSize)
             running = true
             startSyncLoop()
             startKeepAliveLoop()
@@ -206,26 +205,20 @@ class AirPlay2Client(
     }
 
     private fun doPairSetup(effectivePassword: String?): Boolean {
-        val pin = effectivePassword ?: "3939"
-        val isTransient = effectivePassword == null
-        Log.d(TAG, "Pair-setup: starting (PIN=$pin, transient=$isTransient)")
+        Log.d(TAG, "Pair-setup: starting (password=${effectivePassword ?: "3939 (transient)"})")
 
-        // Try transient first; if 470 retry with full pairing (X-Apple-HKP:3)
-        for (attemptTransient in if (isTransient) listOf(true, false) else listOf(false)) {
-            val attemptPin = if (attemptTransient) "3939" else (effectivePassword ?: return false)
+        // Always try transient (HKP 4) first: this covers devices that show a PIN on screen
+        // (statusFlags bit 9). Fall back to full (HKP 3) only if transient is rejected with 470.
+        // Without a password, skip full pairing (nothing to authenticate with).
+        for (attemptTransient in listOf(true, false)) {
+            val attemptPin = effectivePassword ?: if (attemptTransient) "3939" else return false
             Log.d(TAG, "Pair-setup attempt: transient=$attemptTransient pin=$attemptPin")
             val srp = SRP6aClient(attemptPin, "Pair-Setup", secureRandom)
             val m1 = srp.buildM1()
 
-            val reqHeaders = StringBuilder()
-            reqHeaders.append("Client-Instance: ${deviceId.replace(":", "")}\r\n")
-            reqHeaders.append("X-Apple-HKP: ${if (attemptTransient) "4" else "3"}\r\n")
-            Log.d(TAG, "Pair-setup M1 headers:\n$reqHeaders")
-
             val resp1 = sendPairingRequest("POST", "/pair-setup", "application/pairing+tlv8", m1, attemptTransient)
             Log.d(TAG, "Pair-setup M1 response: ${resp1.code}")
             if (resp1.code == 200) {
-                // Continue with M2-M4 below
                 val m3 = srp.processM2(resp1.body ?: return false) ?: return false
                 val resp2 = sendPairingRequest("POST", "/pair-setup", "application/pairing+tlv8", m3, attemptTransient)
                 if (resp2.code != 200) { Log.e(TAG, "pair-setup M3 failed: ${resp2.code}"); continue }
@@ -241,19 +234,18 @@ class AirPlay2Client(
                     val resp3 = sendPairingRequest("POST", "/pair-setup", "application/pairing+tlv8", m5, false)
                     if (resp3.code != 200) { Log.e(TAG, "pair-setup M5 failed: ${resp3.code}"); continue }
                     val serverKey = srp.verifyM6(resp3.body ?: return false)
-                    if (serverKey == null) {
-                        Log.e(TAG, "pair-setup M6 verification failed"); continue
-                    }
+                    if (serverKey == null) { Log.e(TAG, "pair-setup M6 verification failed"); continue }
                     deviceEd25519PubKey = serverKey
                 }
 
                 sharedSecret = srp.sharedKeyBytes
                 if (sharedSecret != null) {
-                    Log.d(TAG, "Pair-setup complete, shared secret length=${sharedSecret!!.size}")
+                    didTransientPairing = attemptTransient
+                    Log.d(TAG, "Pair-setup complete (transient=$attemptTransient), shared secret length=${sharedSecret!!.size}")
                     return true
                 }
-            } else if (resp1.code == 470 && attemptTransient) {
-                Log.d(TAG, "Transient rejected (470), retrying with full pairing")
+            } else if (resp1.code == 470) {
+                Log.d(TAG, "${if (attemptTransient) "Transient" else "Full"} pairing rejected (470), ${if (attemptTransient) "retrying with full" else "giving up"}")
                 continue
             } else {
                 Log.e(TAG, "pair-setup M1 failed: ${resp1.code}")
@@ -266,7 +258,6 @@ class AirPlay2Client(
 
     private fun doPairVerify(): Boolean {
         Log.d(TAG, "Pair-verify: starting")
-        val isTransient = password == null
 
         val keyPair = AirPlay2Crypto.generateCurve25519KeyPair()
         ecdhKeyPair = keyPair
@@ -276,7 +267,7 @@ class AirPlay2Client(
             TlvUtil.TLV_STATE to byteArrayOf(1),
             TlvUtil.TLV_PUBLIC_KEY to clientPub
         )
-        val resp1 = sendPairingRequest("POST", "/pair-verify", "application/pairing+tlv8", m1, isTransient)
+        val resp1 = sendHttpRequest("POST", "/pair-verify", "application/pairing+tlv8", m1)
         Log.d(TAG, "pair-verify M1 response: ${resp1.code}")
         if (resp1.code != 200) { Log.e(TAG, "pair-verify M1 failed: ${resp1.code}"); return false }
 
@@ -368,7 +359,7 @@ class AirPlay2Client(
             TlvUtil.TLV_ENCRYPTED_DATA to m3Encrypted
         )
         Log.d(TAG, "pair-verify M3 request size=${m3.size}")
-        val resp3 = sendPairingRequest("POST", "/pair-verify", "application/pairing+tlv8", m3, isTransient)
+        val resp3 = sendHttpRequest("POST", "/pair-verify", "application/pairing+tlv8", m3)
         Log.d(TAG, "pair-verify M3 response: ${resp3.code}")
         if (resp3.code != 200) { Log.e(TAG, "pair-verify M3 failed: ${resp3.code}"); return false }
 
@@ -451,13 +442,47 @@ class AirPlay2Client(
         Log.d(TAG, "Transport: audio=$audioRemotePort ctrl=$controlRemotePort timing=$timingRemotePort")
     }
 
+    private fun alacEncodeUncompressed(pcm: ByteArray): ByteArray {
+        // Replicates alac_encode_uncompressed from alac_wrapper.cpp in pure Kotlin.
+        // Writes a 23-bit ALAC uncompressed frame header, then byte-swaps each
+        // little-endian stereo sample to big-endian, all packed into a bit stream.
+        val out = ByteArray(3 + pcm.size + 1)
+        var p = 0
+        var bpos = 0
+
+        fun writeBits(v: Int, blen: Int) {
+            val lb = 8 - bpos
+            val rb = lb - blen
+            if (rb >= 0) {
+                val bd = (v shl rb) and 0xFF
+                out[p] = if (bpos == 0) bd.toByte() else (out[p].toInt() or bd).toByte()
+                if (rb == 0) { p++; bpos = 0 } else bpos += blen
+            } else {
+                out[p] = (out[p].toInt() or ((v ushr (-rb)) and 0xFF)).toByte()
+                p++
+                out[p] = ((v shl (8 + rb)) and 0xFF).toByte()
+                bpos = -rb
+            }
+        }
+
+        writeBits(1, 3); writeBits(0, 4); writeBits(0, 8)
+        writeBits(0, 4); writeBits(0, 1); writeBits(0, 2); writeBits(1, 1)
+
+        var i = 0
+        while (i < pcm.size) {
+            writeBits(pcm[i + 1].toInt() and 0xFF, 8)  // L high byte
+            writeBits(pcm[i + 0].toInt() and 0xFF, 8)  // L low byte
+            writeBits(pcm[i + 3].toInt() and 0xFF, 8)  // R high byte
+            writeBits(pcm[i + 2].toInt() and 0xFF, 8)  // R low byte
+            i += 4
+        }
+        writeBits(7, 3)
+        return out
+    }
+
     fun sendAudioFrame(pcm: ByteArray): Boolean {
         try {
-            val encoded = ByteArray(pcm.size + 4096)
-            val alacSize = nativeAlac.encode(alacHandle, pcm, pcm.size, encoded)
-            if (alacSize <= 0) return false
-
-            val payload = encoded.copyOfRange(0, alacSize)
+            val payload = alacEncodeUncompressed(pcm)
             val packet = buildRtpPacket(payload)
             val socket = audioSocket ?: return false
 
@@ -659,7 +684,6 @@ class AirPlay2Client(
         running = false
         syncThread?.interrupt()
         keepAliveThread?.interrupt()
-        if (alacHandle != 0L) { nativeAlac.destroyEncoder(alacHandle); alacHandle = 0L }
         audioSocket?.close()
         try { eventSocket?.close() } catch (_: Exception) {}
         controlSocket.close()

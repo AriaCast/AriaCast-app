@@ -55,6 +55,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import org.json.JSONArray
 import org.json.JSONObject
+import com.aria.ariacast.airplay2.AirPlay2Client
+import com.aria.ariacast.airplay2.NeedsPinException
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
@@ -186,6 +188,8 @@ class AudioCastService : Service() {
 
     private val _pairingPinRequest = MutableStateFlow<String?>(null)
     val pairingPinRequest: StateFlow<String?> = _pairingPinRequest.asStateFlow()
+
+    @Volatile private var activePinDeferred: CompletableDeferred<String?>? = null
 
     private val _controlCommands = MutableSharedFlow<MediaCommand>(extraBufferCapacity = 10)
     val controlCommands: SharedFlow<MediaCommand> = _controlCommands.asSharedFlow()
@@ -455,6 +459,7 @@ class AudioCastService : Service() {
                     "DLNA" -> launch { startDlnaSession(dest) }
                     "Google Cast" -> launch { startGoogleCastSession(dest) }
                     "AirPlay" -> launch { startAirPlaySession(dest) }
+                    "AirPlay2" -> launch { startAirPlay2Session(dest) }
                     else -> {
                         launch { startControlSession(dest) }
                         if (videoEnabled && destinations.size == 1) { 
@@ -700,13 +705,119 @@ class AudioCastService : Service() {
         val myIp = getLocalIpAddress() ?: return
         try {
             _state.value = CastState.CONNECTING
-            
+
             // For audio-only casting, RAOP (RTSP) is much more reliable and standard.
             // We force RAOP handshake here.
             performRaopHandshake(dest, myIp)
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "AirPlay session failed for ${dest.name}: ${e.message}")
+            _state.value = CastState.ERROR
+        }
+    }
+
+    private suspend fun startAirPlay2Session(dest: CastDestination) = withContext(Dispatchers.IO) {
+        try {
+            _state.value = CastState.CONNECTING
+
+            val extra = dest.extra ?: ""
+            // TXT pk is a 64-char hex string representing the 32-byte Ed25519 public key
+            val pkHex = extra.split(";").find { it.startsWith("pk=") }?.substringAfter("=")
+            val txtPk = if (pkHex?.length == 64) {
+                try { ByteArray(32) { i -> pkHex.substring(i * 2, i * 2 + 2).toInt(16).toByte() } }
+                catch (e: Exception) { null }
+            } else null
+
+            // Load any PIN previously saved for this device
+            var pin: String? = sharedPreferences.getString("airplay2_pin_${dest.host}", null)
+            var clearPinOnFailure = pin != null  // stale saved pin should be wiped if connect() fails
+
+            while (true) {
+                val ap2Client = AirPlay2Client(
+                    host = dest.host,
+                    port = if (dest.port > 0) dest.port else 7000,
+                    deviceId = airplayDeviceId,
+                    dacpId = dacpId,
+                    activeRemote = activeRemote,
+                    sampleRate = SAMPLE_RATE,
+                    channels = 2,
+                    frameSize = AP2_ALAC_FRAME_SIZE,
+                    password = pin,
+                    txtPk = txtPk
+                )
+
+                ap2Client.eventListener = object : AirPlay2Client.EventListener {
+                    override fun onRemoteCommand(command: String) {
+                        val cmd = MediaCommand.entries.find { it.name.equals(command, ignoreCase = true) }
+                        if (cmd != null) scope.launch { _controlCommands.emit(cmd) }
+                    }
+                }
+
+                val connected = try {
+                    ap2Client.connect()
+                } catch (e: NeedsPinException) {
+                    ap2Client.close()
+                    val deferred = CompletableDeferred<String?>()
+                    activePinDeferred = deferred
+                    _pairingPinRequest.value = e.host
+                    pin = deferred.await()
+                    _pairingPinRequest.value = null
+                    activePinDeferred = null
+                    if (pin == null) {
+                        _state.value = CastState.ERROR
+                        return@withContext
+                    }
+                    clearPinOnFailure = false
+                    continue
+                }
+
+                if (!connected) {
+                    if (clearPinOnFailure) {
+                        // Saved PIN was rejected — clear it and retry (NeedsPinException will prompt the user)
+                        sharedPreferences.edit().remove("airplay2_pin_${dest.host}").apply()
+                        pin = null
+                        clearPinOnFailure = false
+                        ap2Client.close()
+                        continue
+                    }
+                    _state.value = CastState.ERROR
+                    ap2Client.close()
+                    return@withContext
+                }
+
+                // Persist PIN so the user won't be asked again next time
+                if (pin != null) {
+                    sharedPreferences.edit().putString("airplay2_pin_${dest.host}", pin).apply()
+                }
+
+                _state.value = CastState.CASTING
+                updateNotification()
+
+                _metadata.value?.let { ap2Client.sendMetadata(it.title, it.artist, it.album) }
+
+                val alacFrameBytes = AP2_ALAC_FRAME_SIZE * 2 * 2  // 352 samples * 2 ch * 2 bytes
+                val buf = ByteArrayOutputStream()
+
+                try {
+                    audioBufferFlow.collect { chunk ->
+                        buf.write(chunk)
+                        while (buf.size() >= alacFrameBytes) {
+                            val arr = buf.toByteArray()
+                            val frame = arr.copyOfRange(0, alacFrameBytes)
+                            buf.reset()
+                            if (arr.size > alacFrameBytes) buf.write(arr, alacFrameBytes, arr.size - alacFrameBytes)
+                            ap2Client.sendAudioFrame(frame)
+                        }
+                    }
+                } finally {
+                    ap2Client.close()
+                }
+                break
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "AirPlay 2 session failed for ${dest.name}: ${e.message}")
             _state.value = CastState.ERROR
         }
     }
@@ -1207,10 +1318,13 @@ class AudioCastService : Service() {
     }
 
     fun submitPairingPin(host: String, pin: String) {
-        _pairingPinRequest.value = null
+        activePinDeferred?.complete(pin)
+        activePinDeferred = null
     }
 
     fun resetPairingPinRequest() {
+        activePinDeferred?.complete(null)
+        activePinDeferred = null
         _pairingPinRequest.value = null
     }
 
@@ -1649,6 +1763,7 @@ class AudioCastService : Service() {
         const val SAMPLE_RATE = 44100
         const val FRAME_SIZE = 3528
         const val LATENCY = 66150
+        private const val AP2_ALAC_FRAME_SIZE = 352  // ALAC frame size in samples for AirPlay 2
         
         const val VIDEO_WIDTH = 1280
         const val VIDEO_HEIGHT = 720

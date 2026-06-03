@@ -25,12 +25,13 @@ object BinaryPlist {
         val objectsOut = ByteArrayOutputStream()
         val offsets = mutableListOf<Int>()
         for (obj in objects) {
-            offsets.add(objectsOut.size())
+            offsets.add(8 + objectsOut.size())  // +8 for "bplist00" header
             writeObject(obj, objects, objectsOut)
         }
-        val offsetSize = if (objectsOut.size() < 256) 1 else if (objectsOut.size() < 65536) 2 else 4
         val numObjects = objects.size
-        val trailerOffset = objectsOut.size() + numObjects * offsetSize
+        val offsetTableStart = 8 + objectsOut.size()  // absolute position in final output
+        val maxOffset = offsetTableStart - 1
+        val offsetSize = if (maxOffset < 256) 1 else if (maxOffset < 65536) 2 else 4
         for (off in offsets) {
             when (offsetSize) {
                 1 -> objectsOut.write(off)
@@ -40,13 +41,12 @@ object BinaryPlist {
         }
         val header = "bplist00".toByteArray()
         val trailer = ByteBuffer.allocate(32).order(ByteOrder.BIG_ENDIAN).apply {
-            putShort(0)     // unused
-            putShort(offsetSize.toShort())
-            putShort(1)     // object ref size (always 1 for <256 objects)
-            putShort(0)     // unused
-            putLong(numObjects.toLong())
-            putLong(0)      // root = first object
-            putLong(trailerOffset.toLong())
+            put(ByteArray(6))              // 6 unused bytes
+            put(offsetSize.toByte())       // 1 byte: offset table entry size
+            put(1.toByte())               // 1 byte: object reference size
+            putLong(numObjects.toLong())   // 8 bytes: number of objects
+            putLong(0L)                    // 8 bytes: root object index
+            putLong(offsetTableStart.toLong()) // 8 bytes: offset table offset
         }.array()
         return ByteArrayOutputStream().apply {
             write(header)
@@ -92,9 +92,9 @@ object BinaryPlist {
                 val values = obj.entries.map { findIndex(it.second, objects) }
                 val size = obj.entries.size
                 if (size < 15) {
-                    out.write(0x0D or (size shl 4))
+                    out.write(0xD0 or size)
                 } else {
-                    out.write(0x0D or (0x0F shl 4))
+                    out.write(0xDF)
                     writeInt(size, out)
                 }
                 keys.forEach { writeIntRef(it, objects.size, out) }
@@ -103,9 +103,9 @@ object BinaryPlist {
             is PlistNode.PArray -> {
                 val size = obj.items.size
                 if (size < 15) {
-                    out.write(0x0F or (size shl 4))
+                    out.write(0xA0 or size)
                 } else {
-                    out.write(0x0F or (0x0F shl 4))
+                    out.write(0xAF)
                     writeInt(size, out)
                 }
                 obj.items.forEach { writeIntRef(findIndex(it, objects), objects.size, out) }
@@ -233,7 +233,7 @@ object BinaryPlist {
                     val (cnt, pos) = resolveCount(off + 1, objSize)
                     String(data, pos, cnt * 2, Charsets.UTF_16BE)
                 }
-                0x08 -> {
+                0x08, 0x0A -> {
                     val (cnt, pos) = resolveCount(off + 1, objSize)
                     (0 until cnt).map { readObject(readRef(pos + it * objectRefSize)) }
                 }

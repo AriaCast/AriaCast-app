@@ -47,10 +47,12 @@ class TlvUtilTest {
     }
 
     @Test
-    fun `parse handles 384-byte public key`() {
+    fun `parse handles 384-byte public key via chunking`() {
         val bigValue = ByteArray(384) { (it and 0xFF).toByte() }
-        val parsed = TlvUtil.parse(TlvUtil.build(TlvUtil.TLV_PUBLIC_KEY to bigValue))
-        assertArrayEquals(bigValue, parsed[TlvUtil.TLV_PUBLIC_KEY]?.firstOrNull())
+        val built = TlvUtil.build(TlvUtil.TLV_PUBLIC_KEY to bigValue)
+        // 384 bytes split into 255 + 129: each chunk has 2-byte header
+        assertEquals(2 + 255 + 2 + 129, built.size)
+        assertArrayEquals(bigValue, TlvUtil.parse(built)[TlvUtil.TLV_PUBLIC_KEY]?.firstOrNull())
     }
 
     @Test
@@ -59,15 +61,15 @@ class TlvUtilTest {
     }
 
     @Test
-    fun `wire format header is type then 2-byte big-endian length`() {
+    fun `wire format is standard HAP TLV8 with 1-byte length`() {
         val value = byteArrayOf(0x12, 0x34, 0x56)
         val built = TlvUtil.build(TlvUtil.TLV_PROOF to value)
+        assertEquals(5, built.size)
         assertEquals(TlvUtil.TLV_PROOF, built[0].toInt() and 0xFF)
-        assertEquals(0, built[1].toInt() and 0xFF)  // length high byte
-        assertEquals(3, built[2].toInt() and 0xFF)  // length low byte
-        assertEquals(0x12.toByte(), built[3])
-        assertEquals(0x34.toByte(), built[4])
-        assertEquals(0x56.toByte(), built[5])
+        assertEquals(3, built[1].toInt() and 0xFF)  // 1-byte length
+        assertEquals(0x12.toByte(), built[2])
+        assertEquals(0x34.toByte(), built[3])
+        assertEquals(0x56.toByte(), built[4])
     }
 
     @Test

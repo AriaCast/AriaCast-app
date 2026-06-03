@@ -487,16 +487,6 @@ class MainActivity : AppCompatActivity() {
     
     override fun onResume() {
         super.onResume()
-        lifecycleScope.launch {
-            audioCastServiceFlow.collectLatest { s ->
-                s?.pairingPinRequest?.collectLatest { host ->
-                    if (host != null) {
-                        showPairingPinDialog(host)
-                    }
-                }
-            }
-        }
-
         checkNotificationListenerPermission()
         
         val newAccent = sharedPreferences.getInt(SettingsActivity.KEY_ACCENT_COLOR, R.color.accent_blue)
