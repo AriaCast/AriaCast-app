@@ -33,8 +33,8 @@ android {
         applicationId = "com.aria.ariacast"
         minSdk = 31
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.1.5"
+        versionCode = 11
+        versionName = "1.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -58,14 +58,6 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
-
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-        }
-    }
-
-    ndkVersion = "28.2.13676358"
 }
 
 dependencies {
@@ -86,11 +78,10 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("androidx.media:media:1.7.0")
     
-// Scripting engine
+    // Scripting engine
     implementation("org.mozilla:rhino:1.7.15")
-
-    // Bouncy Castle for AirPlay 2 crypto (Curve25519, SRP6a, Ed25519, HKDF)
-    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation(libs.bouncycastle.bcprov)
+    implementation(libs.jmdns)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

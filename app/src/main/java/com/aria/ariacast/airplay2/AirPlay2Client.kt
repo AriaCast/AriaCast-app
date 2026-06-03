@@ -268,8 +268,9 @@ class AirPlay2Client(
         Log.d(TAG, "Pair-verify: starting")
         val isTransient = password == null
 
-        ecdhKeyPair = AirPlay2Crypto.generateCurve25519KeyPair()
-        val clientPub = AirPlay2Crypto.getPublicKeyBytes(ecdhKeyPair!!)
+        val keyPair = AirPlay2Crypto.generateCurve25519KeyPair()
+        ecdhKeyPair = keyPair
+        val clientPub = AirPlay2Crypto.getPublicKeyBytes(keyPair)
 
         val m1 = TlvUtil.build(
             TlvUtil.TLV_STATE to byteArrayOf(1),
@@ -293,7 +294,7 @@ class AirPlay2Client(
 
         // ECDH shared = curve25519(client_eph_priv, server_eph_pub)
         val shared = AirPlay2Crypto.curve25519Agree(
-            ecdhKeyPair!!.private as X25519PrivateKeyParameters, serverPubKey
+            keyPair.private as X25519PrivateKeyParameters, serverPubKey
         )
 
         // HKDF decrypt key: HKDF(shared, "Pair-Verify-Encrypt-Salt", "Pair-Verify-Encrypt-Info", 32)

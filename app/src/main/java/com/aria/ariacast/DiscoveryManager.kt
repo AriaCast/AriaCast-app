@@ -6,6 +6,8 @@ import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.util.Log
 import android.util.Patterns
+import com.aria.ariacast.raop.RaopDiscovery
+import com.aria.ariacast.raop.RaopDevice
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,6 +46,7 @@ class DiscoveryManager(private val context: Context) {
     private val MAX_CONCURRENT_RESOLVES = 3
     private var discoveryJob: Job? = null
     private val activeListeners = mutableListOf<NsdManager.DiscoveryListener>()
+    private var raopDiscovery: RaopDiscovery? = null
 
     private fun createNsdListener() = object : NsdManager.DiscoveryListener {
         override fun onDiscoveryStarted(serviceType: String) {
@@ -243,9 +246,29 @@ class DiscoveryManager(private val context: Context) {
         
         val prefs = context.getSharedPreferences("AriaCastPrefs", Context.MODE_PRIVATE)
         val services = mutableListOf("_audiocast._tcp")
-        if (prefs.getBoolean("airplay_enabled", false)) {
-            services.add("_raop._tcp")
+        val airplayEnabled = prefs.getBoolean("airplay_enabled", false)
+        if (airplayEnabled) {
             services.add("_airplay._tcp")
+            
+            raopDiscovery = RaopDiscovery(context)
+            raopDiscovery?.start { device ->
+                val server = Server(
+                    name = device.name,
+                    host = device.host,
+                    port = device.port,
+                    version = device.model ?: "1.0",
+                    codecs = listOf("PCM"),
+                    sampleRate = device.sampleRate,
+                    channels = 2,
+                    platform = "AirPlay",
+                    extra = "et=${device.encryptionType};sr=${device.sampleRate};cn=${device.codec}"
+                )
+                scope.launch {
+                    discoveredServers[device.host] = server
+                    _servers.value = discoveredServers.values.toList()
+                    _state.value = DiscoveryState.FOUND
+                }
+            }
         }
         if (prefs.getBoolean("google_cast_enabled", false)) {
             services.add("_googlecast._tcp")
@@ -277,6 +300,9 @@ class DiscoveryManager(private val context: Context) {
     }
 
     fun stopDiscovery() {
+        raopDiscovery?.stop()
+        raopDiscovery = null
+
         discoveryJob?.cancel()
         discoveryJob = null
         
