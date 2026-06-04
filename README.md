@@ -6,7 +6,7 @@
   <p>
     <a href="https://github.com/AirPlr/AriaCast-app/releases"><img src="https://img.shields.io/github/downloads/AirPlr/AriaCast-app/latest/total?style=for-the-badge&color=2ea44f" alt="Downloads" /></a>
     &nbsp;
-    <a href="https://github.com/phsycologicalFudge/SafeHaven-Store"><img src="https://raw.githubusercontent.com/phsycologicalFudge/SafeHaven-Store/main/assets/gitImages/logo.png" alt="Get it on SafeHaven" height="40" /></a>
+    <a href="https://github.com/phsycologicalFudge/SafeHaven-Store"><img src="assets/get-it-on-safehaven.svg" alt="Get it on SafeHaven" height="70" /></a>
   </p>
 </div>
 
