@@ -1099,13 +1099,15 @@ class AudioCastService : Service() {
                 client.webSocket(host = dest.host, port = dest.port, path = "/audio") audioSocket@{
                     reconnectAttempts = 0
                     
-                    val handshakeFrame = try {
-                        withTimeout(3000L) { incoming.receive() }
-                    } catch (e: Exception) {
-                        return@audioSocket
-                    }
+                    if (dest.platform != "AriaCast") {
+                        val handshakeFrame = try {
+                            withTimeout(3000L) { incoming.receive() }
+                        } catch (e: Exception) {
+                            return@audioSocket
+                        }
 
-                    if (handshakeFrame !is Frame.Text) return@audioSocket
+                        if (handshakeFrame !is Frame.Text) return@audioSocket
+                    }
 
                     _state.value = CastState.CASTING
                     updateNotification()
