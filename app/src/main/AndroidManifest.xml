@@ -6,12 +6,16 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
         tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
     <application
         android:name=".AriaCastApp"
@@ -26,7 +30,7 @@
 
         <service
             android:name=".AudioCastService"
-            android:foregroundServiceType="mediaProjection"
+            android:foregroundServiceType="mediaProjection|connectedDevice"
             android:exported="false" />
 
         <service
@@ -39,7 +43,7 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
-        
+
         <service
             android:name=".MediaNotificationListener"
             android:label="@string/app_name"
@@ -65,6 +69,7 @@
         <activity android:name=".AirPlayPinsActivity" android:exported="false" />
         <activity android:name=".PacketLogActivity" android:exported="false" />
         <activity android:name=".PluginsActivity" android:exported="false" />
+        <activity android:name=".AriaCompanionActivity" android:exported="false" />
         <activity android:name=".WebViewActivity" android:theme="@style/Theme.AriaCast" android:exported="false" />
 
     </application>
