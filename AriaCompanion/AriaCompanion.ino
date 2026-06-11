@@ -72,7 +72,7 @@ static void ringPush(const uint8_t* data, uint32_t len) {
 
 static int32_t ringPop(uint8_t* buf, int32_t maxLen) {
     xSemaphoreTake(ringMutex, portMAX_DELAY);
-    int32_t n = min((int32_t)maxLen, ringAvail);
+    int32_t n = min((int32_t)maxLen, (int32_t)ringAvail);
     for (int32_t i = 0; i < n; i++) {
         buf[i] = ring[ringRead];
         ringRead = (ringRead + 1) % RING_BUF_BYTES;
@@ -161,12 +161,10 @@ void setup() {
     if (ssid.isEmpty()) {
         // ── Setup mode: become a Wi-Fi AP ────────────────────────────────────
         isSetupMode = true;
-        // Last 2 bytes of MAC as hex suffix
-        uint8_t mac[6];
-        esp_read_mac(mac, ESP_MAC_WIFI_STA);
-        char suffix[5];
-        snprintf(suffix, sizeof(suffix), "%02X%02X", mac[4], mac[5]);
-        String apSsid = String("AriaCompanion-") + suffix;
+        // Last 4 hex chars of MAC address as suffix
+        String mac = WiFi.macAddress();  // "XX:XX:XX:XX:XX:XX"
+        mac.replace(":", "");
+        String apSsid = String("AriaCompanion-") + mac.substring(mac.length() - 4);
 
         WiFi.softAP(apSsid.c_str(), "ariacast");
         Serial.println("AP mode — SSID: " + apSsid + "  IP: " + WiFi.softAPIP().toString());
