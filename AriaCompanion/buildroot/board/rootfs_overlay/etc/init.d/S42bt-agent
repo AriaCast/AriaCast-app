@@ -1,0 +1,28 @@
+#!/bin/sh
+# Headless Bluetooth pairing agent — accepts all incoming pair requests.
+# Keeps adapter discoverable and pairable with no timeout.
+
+DAEMON=/usr/bin/python3
+SCRIPT=/opt/aria-companion/bt-agent.py
+PIDFILE=/var/run/bt-agent.pid
+
+start() {
+    printf "Starting bt-agent: "
+    # Give bluetoothd a moment to settle
+    sleep 2
+    start-stop-daemon -S -q -b -m -p "$PIDFILE" -x "$DAEMON" -- "$SCRIPT"
+    echo "OK"
+}
+
+stop() {
+    printf "Stopping bt-agent: "
+    start-stop-daemon -K -q -p "$PIDFILE"
+    echo "OK"
+}
+
+case "$1" in
+    start) start ;;
+    stop)  stop  ;;
+    restart) stop; sleep 1; start ;;
+    *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac
