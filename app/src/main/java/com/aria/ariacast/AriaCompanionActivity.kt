@@ -187,13 +187,19 @@ class AriaCompanionActivity : AppCompatActivity() {
     }
 
     private fun sendWifiCredentials(ssid: String, pass: String) {
-        // Assumes phone is connected to the ESP32's AP (192.168.4.1 is the default ESP32 AP gateway)
+        // Android routes traffic via mobile data when WiFi has no internet (ESP32 AP).
+        // Explicitly bind the connection to the WiFi network so it reaches 192.168.4.1.
         lifecycleScope.launch {
             val ok = withContext(Dispatchers.IO) {
                 try {
+                    val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                    val wifiNetwork = cm.allNetworks.firstOrNull { network ->
+                        cm.getNetworkCapabilities(network)
+                            ?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+                    }
                     val url = URL("http://192.168.4.1/wifi")
                     val body = "ssid=${URLEncoder.encode(ssid, "UTF-8")}&pass=${URLEncoder.encode(pass, "UTF-8")}"
-                    val conn = url.openConnection() as HttpURLConnection
+                    val conn = (wifiNetwork?.openConnection(url) ?: url.openConnection()) as HttpURLConnection
                     conn.apply {
                         requestMethod = "POST"
                         doOutput = true
