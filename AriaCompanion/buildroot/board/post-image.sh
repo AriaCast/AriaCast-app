@@ -7,10 +7,8 @@ EXT_DIR="${BR2_EXTERNAL_ARIACOMP_PATH}"
 GENIMAGE="${HOST_DIR}/bin/genimage"
 GENIMAGE_TMP="${BINARIES_DIR}/genimage.tmp"
 
-# Select genimage config based on architecture
-if file "${BINARIES_DIR}/Image" &>/dev/null || \
-   ls "${BINARIES_DIR}/rpi-firmware/"*64* &>/dev/null 2>&1 || \
-   ls "${BINARIES_DIR}"/kernel8.img &>/dev/null 2>&1; then
+# aarch64 builds produce "Image"; armv6 builds produce "zImage"
+if [[ -f "${BINARIES_DIR}/Image" ]]; then
     BOARD="pizero2w"
     GENIMAGE_CFG="${EXT_DIR}/board/genimage-pizero2w.cfg"
 else
