@@ -1762,8 +1762,8 @@ class AudioCastService : Service() {
         const val KEY_LAST_SERVER_PORT = "last_server_port"
         const val KEY_LAST_SERVER_NAME = "last_server_name"
 
-        const val SAMPLE_RATE = 44100
-        const val FRAME_SIZE = 3528
+        const val SAMPLE_RATE = 48000
+        const val FRAME_SIZE = 3840
         const val LATENCY = 66150
         private const val AP2_ALAC_FRAME_SIZE = 352  // ALAC frame size in samples for AirPlay 2
         
