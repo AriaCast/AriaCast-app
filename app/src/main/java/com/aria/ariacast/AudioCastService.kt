@@ -57,6 +57,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import com.aria.ariacast.airplay2.AirPlay2Client
 import com.aria.ariacast.airplay2.NeedsPinException
+import com.aria.ariacast.raop.AudioResampler
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
@@ -995,11 +996,13 @@ class AudioCastService : Service() {
 
             try {
                 var isFirstPacket = true
-                audioBufferFlow.collect { buffer ->
+                val resampler = AudioResampler(channels = 2)
+                audioBufferFlow.collect { rawBuffer ->
+                    val buffer = resampler.resample(rawBuffer)
                     for (offset in 0 until buffer.size step 1408) {
                         val size = minOf(1408, buffer.size - offset)
                         val chunk = buffer.copyOfRange(offset, offset + size)
-                        
+
                         val bigEndianBuffer = ByteArray(chunk.size)
                         for (i in 0 until chunk.size step 2) {
                             if (i + 1 < chunk.size) {
