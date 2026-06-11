@@ -1,0 +1,131 @@
+#!/bin/sh
+# Smart WiFi startup with AP captive-portal fallback.
+#
+# On first boot (or after /reset): creates an AP "AriaCompanion-XXXX" on
+# 192.168.4.1, runs dnsmasq to redirect all DNS there, and lets aria-mgr
+# serve the WiFi config page.
+#
+# After credentials are saved: reboots → this script joins home network.
+# If home network fails after 30 s: falls back to AP mode automatically.
+
+SETUP_MARKER=/etc/aria-setup-needed
+WPA_CONF=/etc/wpa_supplicant/wpa_supplicant.conf
+IFACE=wlan0
+AP_IP=192.168.4.1
+
+log() { echo "S30network: $*"; }
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+wait_iface() {
+    local tries=0
+    while [ $tries -lt 20 ]; do
+        ip link show "$IFACE" >/dev/null 2>&1 && return 0
+        sleep 0.5; tries=$((tries + 1))
+    done
+    log "ERROR: $IFACE never appeared"; return 1
+}
+
+has_credentials() {
+    # Returns true when wpa_supplicant.conf has a real (non-placeholder) network
+    local ssid
+    ssid=$(grep 'ssid=' "$WPA_CONF" 2>/dev/null | head -1 | cut -d'"' -f2)
+    [ -n "$ssid" ] && [ "$ssid" != "YourNetworkName" ]
+}
+
+wait_for_ip() {
+    local tries=0
+    while [ $tries -lt 20 ]; do
+        sleep 1.5
+        ip -o -4 addr show "$IFACE" 2>/dev/null | grep -q 'inet' && return 0
+        tries=$((tries + 1))
+    done
+    return 1
+}
+
+# ── AP / captive-portal mode ──────────────────────────────────────────────────
+
+start_ap() {
+    local mac suffix ssid
+    mac=$(cat /sys/class/net/$IFACE/address 2>/dev/null | tr -d ':' | tr 'a-f' 'A-F')
+    suffix="${mac: -4}"
+    ssid="AriaCompanion-${suffix}"
+
+    log "Starting AP: SSID=${ssid}  IP=${AP_IP}"
+
+    ip link set "$IFACE" up
+    ip addr flush dev "$IFACE"
+    ip addr add "${AP_IP}/24" dev "$IFACE"
+
+    cat > /tmp/hostapd.conf << EOF
+interface=${IFACE}
+driver=nl80211
+ssid=${ssid}
+hw_mode=g
+channel=6
+auth_algs=1
+wmm_enabled=0
+ignore_broadcast_ssid=0
+EOF
+    hostapd -B /tmp/hostapd.conf -f /var/log/hostapd.log || {
+        log "hostapd failed"; return 1
+    }
+
+    # DHCP + DNS: redirect every DNS query to us (captive portal trigger)
+    dnsmasq \
+        --interface="$IFACE" \
+        --bind-interfaces \
+        --dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,1h \
+        --dhcp-option=3,${AP_IP} \
+        --dhcp-option=6,${AP_IP} \
+        --address=/#/${AP_IP} \
+        --no-resolv \
+        --no-poll \
+        --pid-file=/var/run/dnsmasq-ap.pid \
+        --log-facility=/var/log/dnsmasq.log || {
+        log "dnsmasq failed"; return 1
+    }
+
+    echo "setup" > /run/aria-mode
+    log "AP mode ready on ${AP_IP}"
+}
+
+# ── STA mode ──────────────────────────────────────────────────────────────────
+
+start_sta() {
+    log "Joining home network…"
+    wpa_supplicant -B -i "$IFACE" -c "$WPA_CONF" -f /var/log/wpa_supplicant.log || {
+        log "wpa_supplicant failed"; return 1
+    }
+    dhcpcd -b "$IFACE" >/dev/null 2>&1
+    wait_for_ip && return 0
+
+    log "No IP after 30 s — falling back to AP"
+    kill $(cat /var/run/wpa_supplicant/$IFACE.pid 2>/dev/null) 2>/dev/null
+    kill $(cat /var/run/dhcpcd.pid 2>/dev/null) 2>/dev/null
+    return 1
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+case "$1" in
+    start)
+        wait_iface || exit 1
+
+        if [ -f "$SETUP_MARKER" ] || ! has_credentials; then
+            start_ap
+        else
+            start_sta || start_ap
+            echo "normal" > /run/aria-mode
+        fi
+        ;;
+    stop)
+        wpa_cli -i "$IFACE" terminate 2>/dev/null
+        kill $(cat /var/run/dnsmasq-ap.pid 2>/dev/null) 2>/dev/null
+        kill $(cat /var/run/hostapd.pid  2>/dev/null) 2>/dev/null
+        killall dhcpcd 2>/dev/null
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"; exit 1
+        ;;
+esac

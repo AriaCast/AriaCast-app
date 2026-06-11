@@ -1,0 +1,12 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name>AriaCompanion</name>
+  <service>
+    <type>_ariacompanion._tcp</type>
+    <port>7001</port>
+    <txt-record>sample_rate=44100</txt-record>
+    <txt-record>channels=2</txt-record>
+    <txt-record>bits=16</txt-record>
+  </service>
+</service-group>
