@@ -371,32 +371,32 @@ class AudioCastService : Service() {
             }
         }
 
-        // Use a small delay and multiple attempts for AudioRecord/MediaProjection initialization
-        // This helps if the system hasn't fully released resources from a previous session
+        // MediaProjection token is single-use on Android 14+; obtain it once before any retries.
+        val projection = mediaProjectionManager.getMediaProjection(Activity.RESULT_OK, mediaProjectionToken)
+        if (projection == null) {
+            Log.e(TAG, "MediaProjection is null")
+            _state.value = CastState.ERROR
+            return
+        }
+        mediaProjection = projection
+        projection.registerCallback(mediaProjectionCallback, null)
+
         sessionScope.launch {
+            val config = AudioPlaybackCaptureConfiguration.Builder(projection)
+                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                .build()
+
             var attempt = 0
             var initialized = false
-            
+
             while (attempt < 3 && !initialized && isActive) {
                 if (attempt > 0) delay(400)
                 attempt++
-                
+
                 try {
-                    val projection = mediaProjectionManager.getMediaProjection(Activity.RESULT_OK, mediaProjectionToken)
-                    if (projection == null) {
-                        Log.e(TAG, "MediaProjection is null, attempt $attempt")
-                        continue
-                    }
-                    mediaProjection = projection
-                    projection.registerCallback(mediaProjectionCallback, null)
-
-                    val config = AudioPlaybackCaptureConfiguration.Builder(projection)
-                        .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                        .build()
-
                     val minBufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
-                    val bufferSize = (FRAME_SIZE * 4).coerceAtLeast(minBufSize) 
-                    
+                    val bufferSize = (FRAME_SIZE * 4).coerceAtLeast(minBufSize)
+
                     val recorder = AudioRecord.Builder()
                         .setAudioFormat(
                             AudioFormat.Builder()
@@ -415,16 +415,14 @@ class AudioCastService : Service() {
                     } else {
                         Log.e(TAG, "AudioRecord not initialized, attempt $attempt")
                         recorder.release()
-                        projection.stop()
-                        mediaProjection = null
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Initialization attempt $attempt failed: ${e.message}")
+                    Log.e(TAG, "AudioRecord initialization attempt $attempt failed: ${e.message}")
                 }
             }
 
             if (!initialized) {
-                Log.e(TAG, "Failed to initialize audio capture after $attempt attempts")
+                Log.e(TAG, "Failed to initialize AudioRecord after $attempt attempts")
                 _state.value = CastState.ERROR
                 return@launch
             }
