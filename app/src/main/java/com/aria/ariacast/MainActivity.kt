@@ -149,7 +149,40 @@ class MainActivity : AppCompatActivity() {
 
     fun castToServers(servers: List<Server>) {
         selectedServers = servers
-        startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
+        val companionEnabled = sharedPreferences.getBoolean(AriaCompanionActivity.KEY_COMPANION_ENABLED, false)
+        val companionIp = sharedPreferences.getString(AriaCompanionActivity.KEY_COMPANION_IP, null)
+        if (companionEnabled && !companionIp.isNullOrEmpty()) {
+            launchCompanionCast()
+        } else {
+            startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
+        }
+    }
+
+    private fun launchCompanionCast() {
+        val serviceIntent = Intent(this, AudioCastService::class.java).apply {
+            action = AudioCastService.ACTION_START_COMPANION
+            if (selectedServers.size == 1) {
+                val s = selectedServers[0]
+                putExtra(AudioCastService.EXTRA_SERVER_HOST, s.host)
+                putExtra(AudioCastService.EXTRA_SERVER_PORT, s.port)
+                putExtra(AudioCastService.EXTRA_SERVER_NAME, s.name)
+                putExtra(AudioCastService.EXTRA_SERVER_PLATFORM, s.platform)
+                putExtra(AudioCastService.EXTRA_SERVER_EXTRA, s.extra)
+            } else {
+                val array = org.json.JSONArray()
+                selectedServers.forEach { s ->
+                    array.put(org.json.JSONObject().apply {
+                        put("name", s.name)
+                        put("host", s.host)
+                        put("port", s.port)
+                        put("platform", s.platform)
+                        put("extra", s.extra)
+                    })
+                }
+                putExtra(AudioCastService.EXTRA_SERVERS_JSON, array.toString())
+            }
+        }
+        ContextCompat.startForegroundService(this, serviceIntent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

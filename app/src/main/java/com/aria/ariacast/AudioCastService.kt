@@ -285,9 +285,15 @@ class AudioCastService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_START_COMPANION -> {
+                cleanupSession()
+                val destinations = parseDestinations(intent)
+                if (destinations.isNotEmpty()) startCastingWithCompanion(destinations)
+                return START_STICKY
+            }
             ACTION_START -> {
                 cleanupSession()
-                
+
                 val mediaProjectionToken = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(EXTRA_MEDIA_PROJECTION_TOKEN, Intent::class.java)
                 } else {
@@ -295,33 +301,7 @@ class AudioCastService : Service() {
                     intent.getParcelableExtra(EXTRA_MEDIA_PROJECTION_TOKEN)
                 }
 
-                val destinations = mutableListOf<CastDestination>()
-                val serversJson = intent.getStringExtra(EXTRA_SERVERS_JSON)
-                if (serversJson != null) {
-                    val array = JSONArray(serversJson)
-                    for (i in 0 until array.length()) {
-                        val obj = array.getJSONObject(i)
-                        destinations.add(CastDestination(
-                            name = obj.getString("name"),
-                            host = obj.getString("host"),
-                            port = obj.getInt("port"),
-                            platform = obj.optString("platform", null),
-                            extra = obj.optString("extra", null)
-                        ))
-                    }
-                } else {
-                    val host = intent.getStringExtra(EXTRA_SERVER_HOST)
-                    val port = intent.getIntExtra(EXTRA_SERVER_PORT, 0)
-                    val name = intent.getStringExtra(EXTRA_SERVER_NAME)
-                    val platform = intent.getStringExtra(EXTRA_SERVER_PLATFORM)
-                    val extra = intent.getStringExtra(EXTRA_SERVER_EXTRA)
-                    if (host != null && port != 0 && name != null) {
-                        destinations.add(CastDestination(name, host, port, platform, extra = extra))
-                    } else if (platform == "DLNA" && host != null && name != null) {
-                        destinations.add(CastDestination(name, host, 0, platform, extra = extra))
-                    }
-                }
-
+                val destinations = parseDestinations(intent)
                 if (mediaProjectionToken != null && destinations.isNotEmpty()) {
                     startCasting(mediaProjectionToken, destinations)
                 }
@@ -333,6 +313,134 @@ class AudioCastService : Service() {
             }
         }
         return START_NOT_STICKY
+    }
+
+    private fun parseDestinations(intent: Intent): List<CastDestination> {
+        val destinations = mutableListOf<CastDestination>()
+        val serversJson = intent.getStringExtra(EXTRA_SERVERS_JSON)
+        if (serversJson != null) {
+            val array = JSONArray(serversJson)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                destinations.add(CastDestination(
+                    name = obj.getString("name"),
+                    host = obj.getString("host"),
+                    port = obj.getInt("port"),
+                    platform = obj.optString("platform", null),
+                    extra = obj.optString("extra", null)
+                ))
+            }
+        } else {
+            val host = intent.getStringExtra(EXTRA_SERVER_HOST)
+            val port = intent.getIntExtra(EXTRA_SERVER_PORT, 0)
+            val name = intent.getStringExtra(EXTRA_SERVER_NAME)
+            val platform = intent.getStringExtra(EXTRA_SERVER_PLATFORM)
+            val extra = intent.getStringExtra(EXTRA_SERVER_EXTRA)
+            if (host != null && port != 0 && name != null) {
+                destinations.add(CastDestination(name, host, port, platform, extra = extra))
+            } else if (platform == "DLNA" && host != null && name != null) {
+                destinations.add(CastDestination(name, host, 0, platform, extra = extra))
+            }
+        }
+        return destinations
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startCastingWithCompanion(destinations: List<CastDestination>) {
+        sessionJob?.cancel()
+        _activeDestinations.value = destinations
+        _state.value = CastState.CONNECTING
+        sessionJob = SupervisorJob()
+        val sessionScope = CoroutineScope(Dispatchers.IO + sessionJob!!)
+
+        originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+
+        if (destinations.size == 1) {
+            with(sharedPreferences.edit()) {
+                putString(KEY_LAST_SERVER_HOST, destinations[0].host)
+                putInt(KEY_LAST_SERVER_PORT, destinations[0].port)
+                putString(KEY_LAST_SERVER_NAME, destinations[0].name)
+                apply()
+            }
+        }
+
+        try {
+            val notification = createNotification()
+            val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            } else 0
+            startForeground(NOTIFICATION_ID, notification, serviceType)
+        } catch (e: Exception) {
+            if (e is ForegroundServiceStartNotAllowedException) {
+                Log.e(TAG, "Foreground service start not allowed", e)
+                _state.value = CastState.ERROR
+                return
+            } else {
+                throw e
+            }
+        }
+
+        val companionIp = sharedPreferences.getString(AriaCompanionActivity.KEY_COMPANION_IP, null)
+        val companionPort = sharedPreferences.getInt(AriaCompanionActivity.KEY_COMPANION_PORT, COMPANION_STREAM_PORT)
+
+        if (companionIp.isNullOrEmpty()) {
+            Log.e(TAG, "No companion IP configured")
+            _state.value = CastState.ERROR
+            return
+        }
+
+        sessionScope.launch {
+            if (destinations.any { it.platform == "DLNA" || it.platform == "Google Cast" || it.platform == "AirPlay" }) {
+                startDlnaHttpServer()
+                startArtworkServer()
+            }
+
+            launch { startCompanionAudioCapture(companionIp, companionPort) }
+
+            destinations.forEach { dest ->
+                when (dest.platform) {
+                    "DLNA" -> launch { startDlnaSession(dest) }
+                    "Google Cast" -> launch { startGoogleCastSession(dest) }
+                    "AirPlay" -> launch { startAirPlaySession(dest) }
+                    "AirPlay2" -> launch { startAirPlay2Session(dest) }
+                    else -> {
+                        launch { startControlSession(dest) }
+                        launch { startAudioSession(dest) }
+                        launch { startStatsSession(dest) }
+                    }
+                }
+            }
+
+            startMetadataRefreshLoop()
+            _metadata.value?.let { sendMetadata(it) }
+        }
+    }
+
+    private suspend fun startCompanionAudioCapture(ip: String, port: Int) {
+        // Companion sends 44100 Hz stereo 16-bit LE; upsample to SAMPLE_RATE (48000) before emitting.
+        val resampler = com.aria.ariacast.raop.AudioResampler(l = 160, m = 147, channels = 2)
+        val frameBuffer = ByteArray(COMPANION_FRAME_SIZE)
+        try {
+            java.net.Socket(ip, port).use { socket ->
+                socket.soTimeout = 5000
+                val input = socket.getInputStream()
+                _state.value = CastState.CASTING
+                updateNotification()
+                while (currentCoroutineContext().isActive) {
+                    var totalRead = 0
+                    while (totalRead < COMPANION_FRAME_SIZE) {
+                        val n = input.read(frameBuffer, totalRead, COMPANION_FRAME_SIZE - totalRead)
+                        if (n == -1) throw java.io.EOFException("Companion disconnected")
+                        totalRead += n
+                    }
+                    _audioBufferFlow.emit(resampler.resample(frameBuffer))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Companion audio capture ended: ${e.message}")
+            if (currentCoroutineContext().isActive) _state.value = CastState.ERROR
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -1749,6 +1857,7 @@ class AudioCastService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val NOTIFICATION_CHANNEL_ID = "AudioCastChannel"
         const val ACTION_START = "com.aria.ariacast.ACTION_START"
+        const val ACTION_START_COMPANION = "com.aria.ariacast.ACTION_START_COMPANION"
         const val ACTION_STOP = "com.aria.ariacast.ACTION_STOP"
         const val EXTRA_MEDIA_PROJECTION_TOKEN = "com.aria.ariacast.EXTRA_MEDIA_PROJECTION_TOKEN"
         const val EXTRA_SERVER_HOST = "com.aria.ariacast.EXTRA_SERVER_HOST"
@@ -1766,6 +1875,10 @@ class AudioCastService : Service() {
         const val SAMPLE_RATE = 48000
         const val FRAME_SIZE = 3840
         const val LATENCY = 66150
+        const val COMPANION_STREAM_PORT = 7001
+        private const val COMPANION_SAMPLE_RATE = 44100
+        // 20 ms frame at 44100 Hz stereo 16-bit
+        private const val COMPANION_FRAME_SIZE = 3528
         private const val AP2_ALAC_FRAME_SIZE = 352  // ALAC frame size in samples for AirPlay 2
         
         const val VIDEO_WIDTH = 1280
