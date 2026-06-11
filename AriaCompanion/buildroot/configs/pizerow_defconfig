@@ -43,6 +43,9 @@ BR2_PACKAGE_WPA_SUPPLICANT_NL80211=y
 BR2_PACKAGE_WPA_SUPPLICANT_CTRL_IFACE_DBUS=y
 BR2_PACKAGE_IFUPDOWN_SCRIPTS=y
 BR2_PACKAGE_IPROUTE2=y
+# AP mode (first-time WiFi setup captive portal)
+BR2_PACKAGE_HOSTAPD=y
+BR2_PACKAGE_DNSMASQ=y
 
 # ── Bluetooth ─────────────────────────────────────────────────────────────────
 BR2_PACKAGE_BLUEZ5_UTILS=y
