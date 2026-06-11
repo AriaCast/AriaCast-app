@@ -24,7 +24,8 @@ set -euo pipefail
 # ── Configuration ─────────────────────────────────────────────────────────────
 BUILDROOT_VERSION="2024.02.6"
 BUILDROOT_URL="https://buildroot.org/downloads/buildroot-${BUILDROOT_VERSION}.tar.gz"
-BUILDROOT_DIR="$(pwd)/buildroot-${BUILDROOT_VERSION}"
+# Allow Docker (or the user) to pre-place Buildroot elsewhere
+BUILDROOT_DIR="${BUILDROOT_DIR:-$(pwd)/buildroot-${BUILDROOT_VERSION}}"
 
 EXT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # this directory
 
