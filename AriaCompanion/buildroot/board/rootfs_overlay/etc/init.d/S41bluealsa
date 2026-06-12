@@ -4,10 +4,22 @@
 DAEMON=/usr/bin/bluealsa
 PIDFILE=/var/run/bluealsa.pid
 
+wait_bluetoothd() {
+    local tries=0
+    while [ $tries -lt 20 ]; do
+        bluetoothctl show >/dev/null 2>&1 && return 0
+        sleep 0.5; tries=$((tries + 1))
+    done
+    echo "WARNING: bluetoothd not ready after 10 s" >&2
+    return 1
+}
+
 start() {
     printf "Starting bluealsa: "
+    wait_bluetoothd
     start-stop-daemon -S -q -b -m -p "$PIDFILE" -x "$DAEMON" -- -p a2dp-sink
     echo "OK"
+    [ -c /dev/tty1 ] && printf "  Audio: A2DP sink ready\n" >> /dev/tty1 2>/dev/null
 }
 
 stop() {

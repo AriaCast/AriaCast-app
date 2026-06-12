@@ -58,7 +58,7 @@ static void client_drop(int i) {
 
 static void broadcast(const void *buf, ssize_t len) {
     for (int i = nclients - 1; i >= 0; i--)
-        if (send(clients[i], buf, len, MSG_NOSIGNAL) < 0)
+        if (send(clients[i], buf, len, MSG_NOSIGNAL) != len)
             client_drop(i);
 }
 
@@ -162,7 +162,7 @@ int main(void) {
             char newdev[128];
             if (find_device(newdev, sizeof(newdev)) &&
                 strcmp(newdev, devname) != 0) {
-                strncpy(devname, newdev, sizeof(devname) - 1);
+                snprintf(devname, sizeof(devname), "%s", newdev);
                 pcm = open_pcm(devname);
                 if (pcm)
                     fprintf(stderr, "aria: capturing %s\n", devname);

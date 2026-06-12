@@ -11,6 +11,7 @@ start() {
     start-stop-daemon -S -q -b -m -p "$PIDFILE" \
         -x "$DAEMON" -- >> "$LOGFILE" 2>&1
     echo "OK"
+    [ -c /dev/tty1 ] && printf "  \033[1;32m*\033[0m Ready \xe2\x80\x94 streaming on TCP :7001\n\n" >> /dev/tty1 2>/dev/null
 }
 
 stop() {

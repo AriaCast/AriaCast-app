@@ -42,7 +42,7 @@ if echo "$CC" | grep -q "aarch64"; then
     # Pi Zero 2W — 64-bit
     cat > "$BOARD_CONFIG" << 'EOF'
 arm_64bit=1
-gpu_mem=16
+gpu_mem=64
 dtparam=audio=off
 dtparam=krnbt=on
 EOF
@@ -51,7 +51,7 @@ else
     # Pi Zero W — 32-bit
     cat > "$BOARD_CONFIG" << 'EOF'
 arm_64bit=0
-gpu_mem=16
+gpu_mem=64
 dtparam=audio=off
 enable_uart=1
 dtoverlay=miniuart-bt
@@ -61,11 +61,14 @@ fi
 
 # ── cmdline.txt ───────────────────────────────────────────────────────────────
 cat > "${TARGET_DIR}/../images/rpi-firmware/cmdline.txt" << EOF
-console=serial0,115200 root=/dev/mmcblk0p2 rootfstype=ext4 rootwait quiet
+console=tty1 console=serial0,115200 root=/dev/mmcblk0p2 rootfstype=ext4 rootwait quiet
 EOF
 
 # ── dropbear host keys — generated fresh for each build ───────────────────────
-mkdir -p "${TARGET_DIR}/etc/dropbear"
+if [[ ! -d "${TARGET_DIR}/etc/dropbear" ]]; then
+    rm -rf "${TARGET_DIR}/etc/dropbear"
+    mkdir -p "${TARGET_DIR}/etc/dropbear"
+fi
 if [[ ! -f "${TARGET_DIR}/etc/dropbear/dropbear_ed25519_host_key" ]]; then
     if command -v dropbearkey &>/dev/null; then
         dropbearkey -t ed25519 -f "${TARGET_DIR}/etc/dropbear/dropbear_ed25519_host_key" 2>/dev/null || true

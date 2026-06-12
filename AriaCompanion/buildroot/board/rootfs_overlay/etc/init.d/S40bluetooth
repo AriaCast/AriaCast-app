@@ -8,6 +8,7 @@ start() {
     printf "Starting bluetoothd: "
     start-stop-daemon -S -q -b -m -p "$PIDFILE" -x "$DAEMON" -- --noplugin=sap
     echo "OK"
+    [ -c /dev/tty1 ] && printf "  Bluetooth: started\n" >> /dev/tty1 2>/dev/null
 }
 
 stop() {

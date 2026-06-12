@@ -31,6 +31,10 @@ COPY . /build/ariacomp
 # Create download cache directory (mount a named volume here for fast rebuilds)
 RUN mkdir -p /build/dl-cache
 
+# Create output directories (mount named volumes here for incremental rebuilds)
+RUN mkdir -p /build/ariacomp/output-pizerow \
+             /build/ariacomp/output-pizero2w
+
 # Output dir that will be served
 RUN mkdir -p /build/serve
 

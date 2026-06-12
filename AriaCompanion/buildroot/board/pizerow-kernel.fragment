@@ -1,0 +1,3 @@
+# Force brcmfmac built-in so it loads without mdev/udev
+CONFIG_BRCMFMAC=y
+CONFIG_BRCMFMAC_SDIO=y

@@ -26,10 +26,16 @@ BR2_LINUX_KERNEL_DEFCONFIG="bcmrpi"
 BR2_LINUX_KERNEL_DTS_SUPPORT=y
 BR2_LINUX_KERNEL_INTREE_DTS_NAME="broadcom/bcm2835-rpi-zero-w"
 BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
+BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_ARIACOMP_PATH)/board/pizerow-kernel.fragment"
 
 # ── RPi bootloader firmware ───────────────────────────────────────────────────
 BR2_PACKAGE_RPI_FIRMWARE=y
+BR2_PACKAGE_RPI_FIRMWARE_BOOTCODE_BIN=y
 BR2_PACKAGE_RPI_FIRMWARE_VARIANT_PI=y
+
+# ── WiFi firmware (CYW43438 on Pi Zero W) ─────────────────────────────────────
+BR2_PACKAGE_LINUX_FIRMWARE=y
+BR2_PACKAGE_LINUX_FIRMWARE_CYPRESS_CYW43XX=y
 
 # ── Filesystem ────────────────────────────────────────────────────────────────
 BR2_TARGET_ROOTFS_EXT2=y

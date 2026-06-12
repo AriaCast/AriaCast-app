@@ -14,6 +14,7 @@ IFACE=wlan0
 AP_IP=192.168.4.1
 
 log() { echo "S30network: $*"; }
+tty_print() { [ -c /dev/tty1 ] && printf "  %b\n" "$*" >> /dev/tty1 2>/dev/null; }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -88,6 +89,9 @@ EOF
 
     echo "setup" > /run/aria-mode
     log "AP mode ready on ${AP_IP}"
+    tty_print "\033[1mNetwork:\033[0m AP mode"
+    tty_print "  SSID: ${ssid}   IP: ${AP_IP}"
+    tty_print "  Setup: http://${AP_IP}"
 }
 
 # ── STA mode ──────────────────────────────────────────────────────────────────
@@ -98,7 +102,10 @@ start_sta() {
         log "wpa_supplicant failed"; return 1
     }
     dhcpcd -b "$IFACE" >/dev/null 2>&1
-    wait_for_ip && return 0
+    if wait_for_ip; then
+        tty_print "\033[1mNetwork:\033[0m Wi-Fi connected"
+        return 0
+    fi
 
     log "No IP after 30 s — falling back to AP"
     kill $(cat /var/run/wpa_supplicant/$IFACE.pid 2>/dev/null) 2>/dev/null
@@ -115,8 +122,11 @@ case "$1" in
         if [ -f "$SETUP_MARKER" ] || ! has_credentials; then
             start_ap
         else
-            start_sta || start_ap
-            echo "normal" > /run/aria-mode
+            if start_sta; then
+                echo "normal" > /run/aria-mode
+            else
+                start_ap
+            fi
         fi
         ;;
     stop)

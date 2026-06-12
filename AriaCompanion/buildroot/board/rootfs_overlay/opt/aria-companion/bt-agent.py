@@ -5,19 +5,24 @@ Accepts all incoming pair requests (NoInputNoOutput capability).
 Keeps the adapter permanently discoverable and pairable.
 """
 import sys
+import time
 import dbus
 import dbus.service
 import dbus.mainloop.glib
 from gi.repository import GLib
 
-AGENT_PATH = "/aria/agent"
-CAPABILITY = "NoInputNoOutput"
+AGENT_PATH   = "/aria/agent"
+CAPABILITY   = "NoInputNoOutput"
+A2DP_SINK_UUID = "0000110b-0000-1000-8000-00805f9b34fb"
 
 
 class Agent(dbus.service.Object):
     @dbus.service.method("org.bluez.Agent1", in_signature="os", out_signature="")
     def AuthorizeService(self, device, uuid):
-        pass
+        if uuid.lower() != A2DP_SINK_UUID:
+            raise dbus.DBusException(
+                "org.bluez.Error.Rejected", f"Service {uuid} not allowed"
+            )
 
     @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="s")
     def RequestPinCode(self, device):
@@ -60,11 +65,20 @@ def main():
     bus   = dbus.SystemBus()
     agent = Agent(bus, AGENT_PATH)
 
-    mgr = dbus.Interface(
-        bus.get_object("org.bluez", "/org/bluez"),
-        "org.bluez.AgentManager1",
-    )
-    mgr.RegisterAgent(AGENT_PATH, CAPABILITY)
+    # Retry until bluetoothd is up and RegisterAgent succeeds
+    for attempt in range(30):
+        try:
+            mgr = dbus.Interface(
+                bus.get_object("org.bluez", "/org/bluez"),
+                "org.bluez.AgentManager1",
+            )
+            mgr.RegisterAgent(AGENT_PATH, CAPABILITY)
+            break
+        except dbus.DBusException as e:
+            if attempt == 29:
+                print(f"bt-agent: bluetoothd not ready after 30 s: {e}", file=sys.stderr)
+                sys.exit(1)
+            time.sleep(1)
     mgr.RequestDefaultAgent(AGENT_PATH)
 
     props = dbus.Interface(

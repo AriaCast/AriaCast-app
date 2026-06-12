@@ -15,8 +15,9 @@ set -euo pipefail
 
 TARGET="${1:-both}"
 IMAGE_TAG="ariacomp-builder"
-# Named volume persists the Buildroot package download cache across runs
 DL_VOLUME="ariacomp-dl-cache"
+OUT_VOLUME_PIZEROW="ariacomp-output-pizerow"
+OUT_VOLUME_PIZERO2W="ariacomp-output-pizero2w"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Sanity checks ─────────────────────────────────────────────────────────────
@@ -54,16 +55,26 @@ echo "  │  Downloads ~1.5 GB of packages + cross-compiler   │"
 echo "  │  Compiles Linux kernel + rootfs from source        │"
 echo "  │  Expected time: 60–90 min                          │"
 echo "  ├─ Subsequent runs ─────────────────────────────────┤"
-echo "  │  Cache reused from '${DL_VOLUME}' volume          │"
+echo "  │  Build output reused from output volume(s)         │"
+echo "  │  Only changed packages recompile                   │"
 echo "  │  Expected time: ~5 min                             │"
 echo "  └────────────────────────────────────────────────────┘"
 echo ""
+
+# ── Assemble volume mounts based on target ────────────────────────────────────
+VOLUME_ARGS="-v ${DL_VOLUME}:/build/dl-cache"
+case "$TARGET" in
+    pizerow)  VOLUME_ARGS+=" -v ${OUT_VOLUME_PIZEROW}:/build/ariacomp/output-pizerow"   ;;
+    pizero2w) VOLUME_ARGS+=" -v ${OUT_VOLUME_PIZERO2W}:/build/ariacomp/output-pizero2w" ;;
+    both)     VOLUME_ARGS+=" -v ${OUT_VOLUME_PIZEROW}:/build/ariacomp/output-pizerow"
+              VOLUME_ARGS+=" -v ${OUT_VOLUME_PIZERO2W}:/build/ariacomp/output-pizero2w" ;;
+esac
 
 # ── Run the builder container ─────────────────────────────────────────────────
 docker run \
     --rm \
     --name ariacomp-build \
     -p 8040:8040 \
-    -v "${DL_VOLUME}:/build/dl-cache" \
+    ${VOLUME_ARGS} \
     "${IMAGE_TAG}" \
     "${TARGET}"

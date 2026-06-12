@@ -40,8 +40,10 @@ _CSS = """
   h1{color:#1a73e8;margin-bottom:4px}sub{color:#888;font-size:13px}
   .card{background:#f8f9fa;border-radius:10px;padding:18px;margin:14px 0}
   .ok{background:#e6f4ea;color:#137333}.err{background:#fce8e6;color:#c5221f}
-  input{width:100%;padding:10px;margin:7px 0;box-sizing:border-box;
+  input,select{width:100%;padding:10px;margin:7px 0;box-sizing:border-box;
         border:1px solid #ccc;border-radius:6px;font-size:16px}
+  select{background:#fff}
+  label.sub{font-size:13px;color:#555;margin:6px 0 2px;display:block}
   button{width:100%;padding:12px;border:none;border-radius:6px;
          font-size:16px;cursor:pointer;color:#fff;background:#1a73e8}
   .red{background:#c5221f;margin-top:10px}
@@ -57,6 +59,22 @@ SETUP_HTML = f"""<!DOCTYPE html><html><head>
   <form method="POST" action="/wifi">
     <input type="text"     name="ssid" placeholder="Wi-Fi name (SSID)" required autocomplete="off">
     <input type="password" name="pass" placeholder="Password (leave blank if open)" autocomplete="off">
+    <label class="sub">Wi-Fi regulatory region</label>
+    <select name="country">
+      <option value="AU">Australia (AU)</option><option value="AT">Austria (AT)</option>
+      <option value="BE">Belgium (BE)</option><option value="BR">Brazil (BR)</option>
+      <option value="CA">Canada (CA)</option><option value="CN">China (CN)</option>
+      <option value="DK">Denmark (DK)</option><option value="FI">Finland (FI)</option>
+      <option value="FR">France (FR)</option><option value="DE">Germany (DE)</option>
+      <option value="IT" selected>Italy (IT)</option><option value="JP">Japan (JP)</option>
+      <option value="KR">South Korea (KR)</option><option value="MX">Mexico (MX)</option>
+      <option value="NL">Netherlands (NL)</option><option value="NZ">New Zealand (NZ)</option>
+      <option value="NO">Norway (NO)</option><option value="PL">Poland (PL)</option>
+      <option value="PT">Portugal (PT)</option><option value="SG">Singapore (SG)</option>
+      <option value="ES">Spain (ES)</option><option value="SE">Sweden (SE)</option>
+      <option value="CH">Switzerland (CH)</option><option value="GB">United Kingdom (GB)</option>
+      <option value="US">United States (US)</option><option value="00">World (00)</option>
+    </select>
     <button type="submit">Connect &amp; Reboot</button>
   </form>
 </div>
@@ -183,8 +201,7 @@ def reboot_system():
                      daemon=True).start()
 
 
-def save_wpa_credentials(ssid: str, password: str):
-    country = "IT"
+def save_wpa_credentials(ssid: str, password: str, country: str = "IT"):
     auth    = "NONE" if not password else "WPA-PSK"
     psk     = f'\n    psk="{password}"' if password else ""
 
@@ -285,12 +302,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 body  = self.read_body()
                 form  = self.parse_form(body)
-                ssid  = form.get("ssid", "").strip()
-                passwd = form.get("pass", "")
+                ssid    = form.get("ssid", "").strip()
+                passwd  = form.get("pass", "")
+                country = form.get("country", "IT").strip().upper()[:2]
+                if not country.isalpha():
+                    country = "IT"
                 if not ssid:
                     self.send_html("<h1>SSID required</h1>", 400)
                     return
-                save_wpa_credentials(ssid, passwd)
+                save_wpa_credentials(ssid, passwd, country)
                 self.send_html(SAVED_HTML)
                 reboot_system()
             except Exception as e:
