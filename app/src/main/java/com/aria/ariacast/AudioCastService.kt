@@ -473,6 +473,7 @@ class AudioCastService : Service() {
         } catch (e: Exception) {
             if (e is ForegroundServiceStartNotAllowedException) {
                 Log.e(TAG, "Foreground service start not allowed", e)
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Foreground service start not allowed: ${e.message}")
                 _state.value = CastState.ERROR
                 return
             } else {
@@ -484,6 +485,7 @@ class AudioCastService : Service() {
         val projection = mediaProjectionManager.getMediaProjection(Activity.RESULT_OK, mediaProjectionToken)
         if (projection == null) {
             Log.e(TAG, "MediaProjection is null")
+            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "MediaProjection permission was not granted")
             _state.value = CastState.ERROR
             return
         }
@@ -523,15 +525,18 @@ class AudioCastService : Service() {
                         initialized = true
                     } else {
                         Log.e(TAG, "AudioRecord not initialized, attempt $attempt")
+                        PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AudioRecord not initialized (attempt $attempt)")
                         recorder.release()
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "AudioRecord initialization attempt $attempt failed: ${e.message}")
+                    PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AudioRecord init failed (attempt $attempt): ${e.message}")
                 }
             }
 
             if (!initialized) {
                 Log.e(TAG, "Failed to initialize AudioRecord after $attempt attempts")
+                PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AudioRecord failed to initialize after $attempt attempts — check Microphone permission for AriaCast")
                 _state.value = CastState.ERROR
                 return@launch
             }
@@ -543,21 +548,35 @@ class AudioCastService : Service() {
                 startArtworkServer()
             }
 
-            launch { 
+            launch {
                 try {
                     audioRecord?.startRecording()
+                    PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AudioRecord capture started")
                     val audioBuffer = ByteBuffer.allocate(FRAME_SIZE)
+                    var lastFrameWasSilent: Boolean? = null
                     while (isActive) {
                         val readResult = audioRecord?.read(audioBuffer.array(), 0, FRAME_SIZE) ?: 0
                         if (readResult == FRAME_SIZE) {
-                            _audioBufferFlow.emit(audioBuffer.array().copyOf())
+                            val frame = audioBuffer.array().copyOf()
+                            val isSilent = frame.all { it == 0.toByte() }
+                            if (isSilent != lastFrameWasSilent) {
+                                lastFrameWasSilent = isSilent
+                                PacketLogger.log(
+                                    PacketDirection.IN, PacketType.AUDIO,
+                                    if (isSilent) "Capture is silent — no audio signal detected (check DRM/FLAG_SECURE source, or that something is actually playing)"
+                                    else "Capture is producing a real audio signal"
+                                )
+                            }
+                            _audioBufferFlow.emit(frame)
                         } else if (readResult < 0) {
                             Log.e(TAG, "AudioRecord read error: $readResult")
+                            PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AudioRecord read error: $readResult")
                             break
                         }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Audio recording loop failed", e)
+                    PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "Audio recording loop crashed: ${e.message}")
                 }
             }
 
@@ -1207,15 +1226,21 @@ class AudioCastService : Service() {
             try {
                 client.webSocket(host = dest.host, port = dest.port, path = "/audio") audioSocket@{
                     reconnectAttempts = 0
-                    
+                    PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Audio socket connected to ${dest.name} (${dest.host}:${dest.port})")
+
                     if (dest.platform != "AriaCast") {
                         val handshakeFrame = try {
                             withTimeout(3000L) { incoming.receive() }
                         } catch (e: Exception) {
+                            Log.w(TAG, "Audio handshake timed out for ${dest.host}: ${e.message}")
+                            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Handshake timed out for ${dest.name}: ${e.message}")
                             return@audioSocket
                         }
 
-                        if (handshakeFrame !is Frame.Text) return@audioSocket
+                        if (handshakeFrame !is Frame.Text) {
+                            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Unexpected handshake frame type from ${dest.name}")
+                            return@audioSocket
+                        }
                     }
 
                     _state.value = CastState.CASTING
@@ -1252,6 +1277,8 @@ class AudioCastService : Service() {
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+                Log.e(TAG, "Audio WS connection to ${dest.host}:${dest.port} failed: ${e.message}", e)
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Audio connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
                 reconnectAttempts++
                 val delayTime = (RECONNECT_INITIAL_BACKOFF * 2.0.pow(reconnectAttempts.toDouble().coerceAtMost(5.0))).toLong()
                 delay(delayTime)
@@ -1261,8 +1288,12 @@ class AudioCastService : Service() {
 
     private fun sendAudioFrame(session: DefaultClientWebSocketSession, buffer: ByteArray) {
         val sent = session.outgoing.trySendBlocking(Frame.Binary(true, buffer))
-        if (!sent.isSuccess) {
+        if (sent.isSuccess) {
+            PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "Audio frame sent", buffer.size)
+        } else {
             _stats.value = _stats.value.copy(droppedFrames = _stats.value.droppedFrames + 1)
+            Log.w(TAG, "Audio frame send failed (dropped)")
+            PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "Audio frame dropped (send failed)", buffer.size)
         }
     }
 
@@ -1649,6 +1680,7 @@ class AudioCastService : Service() {
             try {
                 client.webSocket(host = dest.host, port = dest.port, path = "/control") {
                     controlSessions[dest.host] = this
+                    PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL, "Control socket connected to ${dest.name}")
                     for (frame in incoming) {
                         if (frame is Frame.Text) {
                             val text = frame.readText()
@@ -1665,6 +1697,8 @@ class AudioCastService : Service() {
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+                Log.e(TAG, "Control WS connection to ${dest.host}:${dest.port} failed: ${e.message}", e)
+                PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Control connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
                 controlSessions.remove(dest.host)
                 delay(RECONNECT_INITIAL_BACKOFF)
             }
@@ -1675,6 +1709,7 @@ class AudioCastService : Service() {
         while (currentCoroutineContext().isActive) {
             try {
                 client.webSocket(host = dest.host, port = dest.port, path = "/stats") statsSocket@{
+                    PacketLogger.log(PacketDirection.OUT, PacketType.STATS, "Stats socket connected to ${dest.name}")
                     while(isActive) {
                         val frame = withTimeoutOrNull(STATS_TIMEOUT) { incoming.receive() }
                         if (frame is Frame.Text) {
@@ -1691,6 +1726,8 @@ class AudioCastService : Service() {
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+                Log.e(TAG, "Stats WS connection to ${dest.host}:${dest.port} failed: ${e.message}", e)
+                PacketLogger.log(PacketDirection.IN, PacketType.STATS, "Stats connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
                 delay(RECONNECT_INITIAL_BACKOFF)
             }
         }

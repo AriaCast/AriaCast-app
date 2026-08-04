@@ -12,6 +12,10 @@
 
     <!-- Main Activity -->
     <string name="media_projection_denied">Autorisation MediaProjection refusée.</string>
+    <string name="record_audio_permission_required">L\'autorisation Microphone est requise pour capturer et diffuser l\'audio.</string>
+    <string name="notification_access_required_title">Accès aux notifications requis</string>
+    <string name="notification_access_required_message">Ce n\'est pas seulement pour afficher les infos de piste : certains récepteurs (comme le plugin AriaCast Receiver de Music Assistant) ne démarrent la lecture que lorsqu\'AriaCast leur indique que la lecture a commencé, et ce signal passe par l\'accès aux notifications. Sans lui, le cast peut sembler connecté et l\'audio peut être envoyé, mais rien ne sera réellement joué.\n\nSi Android affiche « Ce paramètre est actuellement indisponible » ou « Paramètre restreint », allez dans Paramètres → Applications → AriaCast, appuyez sur le menu ⋮ en haut à droite, puis choisissez « Autoriser les paramètres restreints » — requis pour les applications installées hors du Play Store. Réessayez ensuite d\'activer l\'accès.</string>
+    <string name="open_notification_settings">Ouvrir les réglages</string>
     <string name="select_server_first">Veuillez d\'abord sélectionner un serveur.</string>
     <string name="scanning">Analyse…</string>
     <string name="refresh">Actualiser</string>
@@ -71,7 +75,7 @@
     <string name="plugins">Plugins</string>
     <string name="manage_plugins_desc">Gérer les extensions basées sur des scripts</string>
     <string name="notification_access">Accès aux notifications</string>
-    <string name="notification_access_desc">Requis pour les métadonnées multimédias</string>
+    <string name="notification_access_desc">Requis pour les métadonnées multimédias ET pour démarrer la lecture sur certains récepteurs</string>
     <string name="check_for_updates">Vérifier les mises à jour</string>
     <string name="github_repo">Dépôt GitHub</string>
     <string name="github_repo_desc">Voir le code source et signaler des problèmes</string>

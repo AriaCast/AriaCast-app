@@ -1,5 +1,6 @@
 package com.aria.ariacast
 
+import android.Manifest
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.app.Activity
@@ -8,12 +9,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.Menu
@@ -147,6 +149,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val requestCastPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val recordAudioGranted = grants[Manifest.permission.RECORD_AUDIO]
+            ?: (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+        if (recordAudioGranted) {
+            startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
+        } else {
+            Toast.makeText(this, getString(R.string.record_audio_permission_required), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun beginCast() {
+        val permissionsNeeded = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissionsNeeded.add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            permissionsNeeded.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (permissionsNeeded.isNotEmpty()) {
+            requestCastPermissions.launch(permissionsNeeded.toTypedArray())
+        } else {
+            startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
+        }
+    }
+
     fun castToServers(servers: List<Server>) {
         selectedServers = servers
         val companionEnabled = sharedPreferences.getBoolean(AriaCompanionActivity.KEY_COMPANION_ENABLED, false)
@@ -154,7 +182,7 @@ class MainActivity : AppCompatActivity() {
         if (companionEnabled && !companionIp.isNullOrEmpty()) {
             launchCompanionCast()
         } else {
-            startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
+            beginCast()
         }
     }
 
@@ -263,7 +291,7 @@ class MainActivity : AppCompatActivity() {
                 startService(serviceIntent)
             } else {
                 if (selectedServers.isNotEmpty()) {
-                    startMediaProjection.launch(mediaProjectionManager.createScreenCaptureIntent())
+                    beginCast()
                 } else {
                     Toast.makeText(this, getString(R.string.select_server_first), Toast.LENGTH_SHORT).show()
                 }
@@ -283,8 +311,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         permissionButton.setOnClickListener {
-            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-            startActivity(intent)
+            showNotificationAccessExplanationDialog()
         }
 
         lifecycleScope.launch {

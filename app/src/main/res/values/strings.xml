@@ -17,6 +17,10 @@
 
     <!-- Main Activity -->
     <string name="media_projection_denied">MediaProjection permission denied.</string>
+    <string name="record_audio_permission_required">Microphone permission is required to capture and cast audio.</string>
+    <string name="notification_access_required_title">Notification Access Required</string>
+    <string name="notification_access_required_message">This isn\'t just for showing track info: some receivers (like the Music Assistant AriaCast Receiver) only start playback once AriaCast tells them playback has started, and that signal is sent through Notification Access. Without it, casting can look connected and audio can be sent, but nothing will actually play.\n\nIf Android shows \"This setting is currently unavailable\" or \"Restricted setting\", go to Settings → Apps → AriaCast, tap the ⋮ menu in the top right, and choose \"Allow restricted settings\" — this is required for apps installed outside the Play Store. Then try enabling it again.</string>
+    <string name="open_notification_settings">Open Settings</string>
     <string name="select_server_first">Please select a server first.</string>
     <string name="scanning">Scanning…</string>
     <string name="refresh">Refresh</string>
@@ -76,7 +80,7 @@
     <string name="plugins">Plugins</string>
     <string name="manage_plugins_desc">Manage script-based extensions</string>
     <string name="notification_access">Notification Access</string>
-    <string name="notification_access_desc">Required for media metadata</string>
+    <string name="notification_access_desc">Required for media metadata AND to start playback on some receivers</string>
     <string name="check_for_updates">Check for Updates</string>
     <string name="github_repo">GitHub Repository</string>
     <string name="github_repo_desc">View source code and report issues</string>

@@ -25,10 +25,15 @@ object PacketLogger {
     private val _logFlow = MutableSharedFlow<PacketLog>(extraBufferCapacity = 100)
     val logFlow = _logFlow.asSharedFlow()
 
-    private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+    // SimpleDateFormat is not thread-safe; log() is called concurrently from multiple
+    // Dispatchers.IO threads (one audio/control/stats session per cast destination),
+    // so each thread needs its own formatter instance rather than sharing one.
+    private val dateFormat = object : ThreadLocal<SimpleDateFormat>() {
+        override fun initialValue(): SimpleDateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+    }
 
     fun log(direction: PacketDirection, type: PacketType, message: String, payloadSize: Int = 0) {
-        val timestamp = dateFormat.format(Date())
+        val timestamp = dateFormat.get()!!.format(Date())
         val entry = PacketLog(
             timestamp = timestamp,
             direction = direction,
