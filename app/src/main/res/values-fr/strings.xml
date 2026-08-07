@@ -91,6 +91,8 @@
     <string name="google_cast_protocol_desc">Diffuser vers les appareils Chromecast et Nest</string>
     <string name="airplay_protocol">AirPlay 1</string>
     <string name="airplay_protocol_desc">Diffuser vers des enceintes AirPlay compatibles</string>
+    <string name="airplay2_protocol">AirPlay 2</string>
+    <string name="airplay2_protocol_desc">Diffuser vers des Mac, Apple TV et HomePod</string>
 
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Dossier des plugins mis à jour</string>
@@ -139,4 +141,37 @@
     <string name="group_name">Nom du groupe</string>
     <string name="select_devices">Sélectionner des appareils</string>
     <string name="save">Enregistrer</string>
+
+    <!-- AriaCompanion -->
+    <string name="companion">AriaCompanion</string>
+    <string name="companion_desc">Diffuser via un pont Bluetooth ESP32</string>
+    <string name="companion_device">Appareil compagnon</string>
+    <string name="companion_status_searching">Recherche d\'AriaCompanion…</string>
+    <string name="companion_status_found">Trouvé : %1$s (%2$s)</string>
+    <string name="companion_status_none">Aucun appareil trouvé</string>
+    <string name="companion_scan">Rechercher</string>
+    <string name="companion_manual_ip">Saisir l\'IP manuellement</string>
+    <string name="companion_manual_ip_desc">Saisissez directement l\'adresse IP de l\'ESP32</string>
+    <string name="companion_manual_ip_hint">192.168.1.x</string>
+    <string name="companion_setup">Configuration initiale</string>
+    <string name="companion_setup_desc">Connectez votre téléphone au réseau Wi-Fi « AriaCompanion-XXXX » diffusé par l\'ESP32, puis saisissez ci-dessous les identifiants de votre Wi-Fi domestique.</string>
+    <string name="companion_wifi_ssid">SSID du Wi-Fi domestique</string>
+    <string name="companion_wifi_pass">Mot de passe du Wi-Fi domestique</string>
+    <string name="companion_configure">Configurer et connecter</string>
+    <string name="companion_audio_source">Utiliser comme source audio</string>
+    <string name="companion_audio_source_desc">L\'audio du téléphone est joué sur l\'ESP32 via Bluetooth ; AriaCast le diffuse ensuite depuis celui-ci</string>
+    <string name="companion_saved">Compagnon enregistré : %1$s</string>
+    <string name="companion_cleared">Compagnon effacé</string>
+    <string name="companion_configure_ok">Identifiants envoyés — l\'ESP32 redémarre</string>
+    <string name="companion_configure_fail">Impossible d\'accéder à la page de configuration de l\'ESP32</string>
+    <string name="companion_ip_saved">IP enregistrée : %1$s</string>
+
+    <!-- AirPlay 2 Pairing -->
+    <string name="airplay_pin_title">Saisir le PIN AirPlay</string>
+    <string name="airplay_pin_message">Saisissez le code affiché sur l\'écran de l\'appareil (%1$s)</string>
+    <string name="manage_airplay_pins">Gérer les PIN AirPlay</string>
+    <string name="manage_airplay_pins_desc">Gérer les PIN AirPlay enregistrés pour les appareils appairés</string>
+    <string name="no_pins_saved">Aucun PIN enregistré</string>
+    <string name="edit_pin">Modifier le PIN</string>
+    <string name="delete_pin">Supprimer le PIN</string>
 </resources>
