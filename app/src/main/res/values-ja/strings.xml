@@ -9,7 +9,6 @@
     <string name="ok">OK</string>
     <string name="update_failed_title">アップデートの確認に失敗しました</string>
     <string name="update_failed_message">GitHub に接続してアップデートを確認できませんでした。</string>
-
     <!-- Main Activity -->
     <string name="media_projection_denied">MediaProjection の権限が拒否されました。</string>
     <string name="select_server_first">最初にサーバーを選択してください。</string>
@@ -38,7 +37,6 @@
     <string name="no_servers_found">サーバーが見つかりませんでした</string>
     <string name="grant_notification_permission">通知権限を許可する</string>
     <string name="devices_count_format">%1$d デバイス</string>
-
     <!-- Settings Activity -->
     <string name="settings">設定</string>
     <string name="general">一般</string>
@@ -79,7 +77,6 @@
     <string name="reset_last_server_desc">保存されたサーバー接続の詳細を消去</string>
     <string name="plugin_folder">プラグインフォルダ</string>
     <string name="change_plugin_folder_desc">プラグインフォルダを変更またはクリアする</string>
-
     <!-- Protocols Activity -->
     <string name="protocols">プロトコル</string>
     <string name="protocols_desc">サポートされているストリーミングプロトコルの管理</string>
@@ -91,7 +88,6 @@
     <string name="google_cast_protocol_desc">ChromecastやNestデバイスへのストリーミング</string>
     <string name="airplay_protocol">AirPlay 1</string>
     <string name="airplay_protocol_desc">互換性のあるAirPlayスピーカーへのストリーミング</string>
-
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">プラグインフォルダが更新されました</string>
     <string name="plugin_folder_title">プラグインフォルダ</string>
@@ -110,7 +106,6 @@
     <string name="plugin_consent_message">プラグインはカスタムスクリプトを実行してメディアやサーバーを操作することができます。信頼できるソースからのプラグインのみをインストールしてください。\n\nプラグインシステムを有効にしますか？</string>
     <string name="accept">承諾する</string>
     <string name="decline">拒否する</string>
-
     <!-- AudioCastService -->
     <string name="audio_video">オーディオとビデオ</string>
     <string name="audio_only">オーディオのみ</string>
@@ -121,20 +116,17 @@
     <string name="unknown">不明</string>
     <string name="multiroom_group">マルチルームグループ</string>
     <string name="connecting">接続中…</string>
-
     <!-- Tile Service -->
     <string name="tile_tap_to_cast">タップしてキャスト</string>
     <string name="tile_discovering">検出中…</string>
     <string name="tile_connecting">接続中…</string>
     <string name="tile_casting">キャスト中…</string>
     <string name="tile_error">エラーが発生しました</string>
-
     <!-- Packet Log Activity -->
     <string name="packet_logs">パケットログ</string>
     <string name="packet_logs_desc">デバッグ用の詳細なネットワークパケットログを表示します</string>
     <string name="search_logs">ログを検索…</string>
     <string name="clear_logs">ログを消去</string>
-
     <!-- Create Group Dialog -->
     <string name="create_speaker_group">スピーカーグループの作成</string>
     <string name="group_name">グループ名</string>
