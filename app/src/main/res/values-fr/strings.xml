@@ -9,7 +9,6 @@
     <string name="ok">OK</string>
     <string name="update_failed_title">Échec de la vérification de la mise à jour</string>
     <string name="update_failed_message">Impossible de se connecter à GitHub pour vérifier les mises à jour.</string>
-
     <!-- Main Activity -->
     <string name="media_projection_denied">Autorisation MediaProjection refusée.</string>
     <string name="record_audio_permission_required">L\'autorisation Microphone est requise pour capturer et diffuser l\'audio.</string>
@@ -42,7 +41,6 @@
     <string name="no_servers_found">Aucun serveur découvert</string>
     <string name="grant_notification_permission">Accorder l\'autorisation de notification</string>
     <string name="devices_count_format">%1$d appareils</string>
-
     <!-- Settings Activity -->
     <string name="settings">Paramètres</string>
     <string name="general">Général</string>
@@ -83,7 +81,6 @@
     <string name="reset_last_server_desc">Effacer les détails de connexion du dernier serveur enregistré</string>
     <string name="plugin_folder">Dossier des plugins</string>
     <string name="change_plugin_folder_desc">Changer ou effacer le dossier des plugins</string>
-
     <!-- Protocols Activity -->
     <string name="protocols">Protocoles</string>
     <string name="protocols_desc">Gérer les protocoles de diffusion pris en charge</string>
@@ -97,7 +94,6 @@
     <string name="airplay_protocol_desc">Diffuser vers des enceintes AirPlay compatibles</string>
     <string name="airplay2_protocol">AirPlay 2</string>
     <string name="airplay2_protocol_desc">Diffuser vers des Mac, Apple TV et HomePod</string>
-
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Dossier des plugins mis à jour</string>
     <string name="plugin_folder_title">Dossier des plugins</string>
@@ -116,7 +112,6 @@
     <string name="plugin_consent_message">Les plugins peuvent exécuter des scripts personnalisés pour interagir avec les médias et les serveurs. Installez uniquement des plugins de sources fiables.\n\nSouhaitez-vous activer le système de plugins ?</string>
     <string name="accept">Accepter</string>
     <string name="decline">Refuser</string>
-
     <!-- AudioCastService -->
     <string name="audio_video">Audio &amp; Vidéo</string>
     <string name="audio_only">Audio uniquement</string>
@@ -127,26 +122,22 @@
     <string name="unknown">Inconnu</string>
     <string name="multiroom_group">Groupe Multiroom</string>
     <string name="connecting">Connexion en cours…</string>
-
     <!-- Tile Service -->
     <string name="tile_tap_to_cast">Appuyer pour diffuser</string>
     <string name="tile_discovering">Découverte…</string>
     <string name="tile_connecting">Connexion…</string>
     <string name="tile_casting">Diffusion…</string>
     <string name="tile_error">Une erreur est survenue</string>
-
     <!-- Packet Log Activity -->
     <string name="packet_logs">Journaux de paquets</string>
     <string name="packet_logs_desc">Voir les journaux détaillés des paquets réseau pour le débogage</string>
     <string name="search_logs">Rechercher dans les journaux…</string>
     <string name="clear_logs">Effacer les journaux</string>
-
     <!-- Create Group Dialog -->
     <string name="create_speaker_group">Créer un groupe d\'enceintes</string>
     <string name="group_name">Nom du groupe</string>
     <string name="select_devices">Sélectionner des appareils</string>
     <string name="save">Enregistrer</string>
-
     <!-- AriaCompanion -->
     <string name="companion">AriaCompanion</string>
     <string name="companion_desc">Diffuser via un pont Bluetooth ESP32</string>
@@ -170,7 +161,6 @@
     <string name="companion_configure_ok">Identifiants envoyés — l\'ESP32 redémarre</string>
     <string name="companion_configure_fail">Impossible d\'accéder à la page de configuration de l\'ESP32</string>
     <string name="companion_ip_saved">IP enregistrée : %1$s</string>
-
     <!-- AirPlay 2 Pairing -->
     <string name="airplay_pin_title">Saisir le PIN AirPlay</string>
     <string name="airplay_pin_message">Saisissez le code affiché sur l\'écran de l\'appareil (%1$s)</string>
