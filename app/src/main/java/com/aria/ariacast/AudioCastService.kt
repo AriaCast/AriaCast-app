@@ -80,6 +80,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.Locale
 import kotlin.math.pow
 
 data class CastDestination(
@@ -1524,10 +1525,12 @@ class AudioCastService : Service() {
                     val socket = raopSockets[dest.host]
                     val teardownOutput = if (socket != null && !socket.isClosed) socket.getOutputStream() else null
                     if (teardownOutput != null) {
-                        sendRtspRequest(teardownOutput, "TEARDOWN", dest.host, dest.port, raopCSeqs[dest.host] ?: 1, mapOf(
-                            "Session" to (raopSessions[dest.host] ?: ""),
-                            "User-Agent" to "AirPlay/366.0"
-                        ))
+                        synchronized(teardownOutput) {
+                            sendRtspRequest(teardownOutput, "TEARDOWN", dest.host, dest.port, raopCSeqs[dest.host] ?: 1, mapOf(
+                                "Session" to (raopSessions[dest.host] ?: ""),
+                                "User-Agent" to "AirPlay/366.0"
+                            ))
+                        }
                     }
                 } catch (teardownError: Exception) {}
             }
@@ -1749,16 +1752,18 @@ class AudioCastService : Service() {
             raopSocketsSnapshot.forEach { (host, socket) ->
                 try {
                     val output = socket.getOutputStream()
-                    val cseq = raopCSeqs[host] ?: 1
                     val session = raopSessions[host] ?: ""
                     
                     val volStr = "volume: ${if(direction == "up") -10.0 else -30.0}\r\n"
-                    sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
-                        "Session" to session,
-                        "Content-Type" to "text/parameters",
-                        "Content-Length" to volStr.length.toString()
-                    ), volStr)
-                    raopCSeqs[host] = cseq + 1
+                    synchronized(output) {
+                        val cseq = raopCSeqs[host] ?: 1
+                        sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
+                            "Session" to session,
+                            "Content-Type" to "text/parameters",
+                            "Content-Length" to volStr.length.toString()
+                        ), volStr)
+                        raopCSeqs[host] = cseq + 1
+                    }
                 } catch (e: Exception) {}
             }
 
@@ -1792,15 +1797,17 @@ class AudioCastService : Service() {
             raopSnapshot.forEach { (host, socket) ->
                 try {
                     val output = socket.getOutputStream()
-                    val cseq = raopCSeqs[host] ?: 1
                     val session = raopSessions[host] ?: ""
-                    val volStr = "volume: ${"%.6f".format(dB)}\r\n"
-                    sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
-                        "Session" to session,
-                        "Content-Type" to "text/parameters",
-                        "Content-Length" to volStr.length.toString()
-                    ), volStr)
-                    raopCSeqs[host] = cseq + 1
+                    val volStr = "volume: ${String.format(Locale.US, "%.6f", dB)}\r\n"
+                    synchronized(output) {
+                        val cseq = raopCSeqs[host] ?: 1
+                        sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
+                            "Session" to session,
+                            "Content-Type" to "text/parameters",
+                            "Content-Length" to volStr.length.toString()
+                        ), volStr)
+                        raopCSeqs[host] = cseq + 1
+                    }
                 } catch (_: Exception) {}
             }
 
@@ -1993,21 +2000,23 @@ class AudioCastService : Service() {
     private fun updateRaopMetadata(host: String, metadata: TrackMetadata) {
         val socket = raopSockets[host] ?: return
         val output = socket.getOutputStream()
-        val cseq = raopCSeqs[host] ?: 1
         val session = raopSessions[host] ?: ""
 
         val dmap = encodeDmapMetadata(metadata)
         if (dmap.isEmpty()) return
 
         try {
-            sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
-                "Session" to session,
-                "Content-Type" to "application/x-dmap-tagged",
-                "Content-Length" to dmap.size.toString()
-            ))
-            output.write(dmap)
-            output.flush()
-            raopCSeqs[host] = cseq + 1
+            synchronized(output) {
+                val cseq = raopCSeqs[host] ?: 1
+                sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
+                    "Session" to session,
+                    "Content-Type" to "application/x-dmap-tagged",
+                    "Content-Length" to dmap.size.toString()
+                ))
+                output.write(dmap)
+                output.flush()
+                raopCSeqs[host] = cseq + 1
+            }
         } catch (e: Exception) {}
     }
 
@@ -2375,11 +2384,13 @@ class AudioCastService : Service() {
                                 val socket = raopSockets[dest.host]
                                 val output = socket?.getOutputStream()
                                 if (output != null) {
-                                    val cseq = raopCSeqs[dest.host] ?: 1
-                                    sendRtspRequest(output, "TEARDOWN", dest.host, dest.port, cseq, mapOf(
-                                        "Session" to (raopSessions[dest.host] ?: ""),
-                                        "User-Agent" to "AirPlay/366.0"
-                                    ))
+                                    synchronized(output) {
+                                        val cseq = raopCSeqs[dest.host] ?: 1
+                                        sendRtspRequest(output, "TEARDOWN", dest.host, dest.port, cseq, mapOf(
+                                            "Session" to (raopSessions[dest.host] ?: ""),
+                                            "User-Agent" to "AirPlay/366.0"
+                                        ))
+                                    }
                                 }
                             } else {
                                 val sessionId = airplaySessionIds[dest.host]
