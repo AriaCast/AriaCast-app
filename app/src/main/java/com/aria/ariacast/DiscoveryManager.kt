@@ -514,22 +514,6 @@ class DiscoveryManager(private val context: Context) {
         }
     }
 
-    /**
-     * Resolves a UPnP <controlURL> value against the (already host-validated) device
-     * description location. A relative path is joined onto that location as usual. An
-     * absolute URL is only accepted if it points back at the same host that answered
-     * the SSDP query - otherwise the device description itself could redirect SOAP
-     * control requests to an arbitrary third-party host/port (confused-deputy SSRF),
-     * so it's dropped instead of trusted.
-     */
-    private fun resolveTrustedControlUrl(raw: String, locationUri: java.net.URI, expectedHost: String): String? {
-        if (raw.isEmpty()) return null
-        if (!raw.startsWith("http://", ignoreCase = true) && !raw.startsWith("https://", ignoreCase = true)) {
-            return "${locationUri.scheme}://${locationUri.host}:${locationUri.port}${if (raw.startsWith("/")) "" else "/"}$raw"
-        }
-        val uri = try { java.net.URI(raw) } catch (e: Exception) { return null }
-        return if (uri.host == expectedHost) raw else null
-    }
 
     /** Reads at most [maxBytes] from [input] as UTF-8 text, so a malicious/misbehaving
      *  device can't hang discovery by streaming an unbounded response body. */
@@ -548,6 +532,24 @@ class DiscoveryManager(private val context: Context) {
     companion object {
         private const val TAG = "DiscoveryManager"
         private const val MAX_DEVICE_DESCRIPTION_BYTES = 262_144
+
+        /**
+         * Resolves a UPnP <controlURL> value against the (already host-validated) device
+         * description location. A relative path is joined onto that location as usual. An
+         * absolute URL is only accepted if it points back at the same host that answered
+         * the SSDP query - otherwise the device description itself could redirect SOAP
+         * control requests to an arbitrary third-party host/port (confused-deputy SSRF),
+         * so it's dropped instead of trusted.
+         */
+        internal fun resolveTrustedControlUrl(raw: String, locationUri: java.net.URI, expectedHost: String): String? {
+            if (raw.isEmpty()) return null
+            if (!raw.startsWith("http://", ignoreCase = true) && !raw.startsWith("https://", ignoreCase = true)) {
+                val portPart = if (locationUri.port == -1) "" else ":${locationUri.port}"
+                return "${locationUri.scheme}://${locationUri.host}${portPart}${if (raw.startsWith("/")) "" else "/"}$raw"
+            }
+            val uri = try { java.net.URI(raw) } catch (e: Exception) { return null }
+            return if (uri.host == expectedHost) raw else null
+        }
     }
 }
 
