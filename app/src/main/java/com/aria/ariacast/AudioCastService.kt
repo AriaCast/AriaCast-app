@@ -487,18 +487,18 @@ class AudioCastService : Service() {
     }
 
     private fun fetchCompanionReceiverState(apiHost: String, apiPort: Int): String? {
+        val url = URL("http://$apiHost:$apiPort/api/status")
+        val conn = url.openConnection() as HttpURLConnection
         return try {
-            val url = URL("http://$apiHost:$apiPort/api/status")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 3000
-                readTimeout = 3000
-            }
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 3000
+            conn.readTimeout = 3000
             val body = conn.inputStream.bufferedReader().use { it.readText() }
-            conn.disconnect()
             JSONObject(body).optJSONObject("receiver")?.optString("state")
         } catch (e: Exception) {
             null
+        } finally {
+            conn.disconnect()
         }
     }
 
