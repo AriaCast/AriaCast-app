@@ -869,6 +869,8 @@ class AudioCastService : Service() {
 
             _state.value = CastState.CASTING
             updateNotification()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "DLNA session failed for ${dest.name}: ${e.message}")
             _state.value = CastState.ERROR
@@ -940,6 +942,8 @@ class AudioCastService : Service() {
                 Log.e(TAG, "Google Cast launch failed for all attempted apps on ${dest.name}")
                 _state.value = CastState.ERROR
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Google Cast session failed for ${dest.name}: ${e.message}")
             _state.value = CastState.ERROR
@@ -955,6 +959,8 @@ class AudioCastService : Service() {
             // We force RAOP handshake here.
             performRaopHandshake(dest, myIp)
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "AirPlay session failed for ${dest.name}: ${e.message}")
             _state.value = CastState.ERROR
@@ -1217,6 +1223,8 @@ class AudioCastService : Service() {
             } finally {
                 try { audioSocket.close() } catch (_: Exception) {}
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Snapcast session failed for ${dest.name}: ${e.message}")
             _state.value = CastState.ERROR
@@ -1518,6 +1526,8 @@ class AudioCastService : Service() {
                 syncJob.cancel()
                 timingJob.cancel()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "RAOP failed for ${dest.host}: ${e.message}")
             withContext(NonCancellable) {
