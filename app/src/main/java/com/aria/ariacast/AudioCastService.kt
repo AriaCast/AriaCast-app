@@ -618,18 +618,18 @@ class AudioCastService : Service() {
                 attempt++
 
                 try {
-                    // AirPlay 1 (RAOP) requires 44100 Hz — shairport-sync ignores SDP sample rate.
-                    // Android's AudioFlinger resamples internally when the capture rate
-                    // differs from the source, so this is transparent and correct.
-                    val captureRate = if (destinations.any { it.platform == "AirPlay" }) 44100 else SAMPLE_RATE
-                    val minBufSize = AudioRecord.getMinBufferSize(captureRate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+                    // Always capture at SAMPLE_RATE (48 kHz).  AirPlay 1 (RAOP) needs
+                    // 44100 Hz, but that resampling is done per-destination inside
+                    // performRaopHandshake so other receivers in a multiroom group
+                    // are not affected.
+                    val minBufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
                     val bufferSize = (FRAME_SIZE * 4).coerceAtLeast(minBufSize)
 
                     val recorder = AudioRecord.Builder()
                         .setAudioFormat(
                             AudioFormat.Builder()
                                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                                .setSampleRate(captureRate)
+                                .setSampleRate(SAMPLE_RATE)
                                 .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
                                 .build()
                         )
@@ -1480,7 +1480,7 @@ class AudioCastService : Service() {
                 val accumulator = ByteArrayOutputStream(FRAME_BYTES * 2)
 
                 audioBufferFlow.collect { rawBuffer ->
-                    val buffer = rawBuffer // captured at 44100 Hz natively, no resampling
+                    val buffer = resampler.resample(rawBuffer) // 48000 → 44100 Hz
                     accumulator.write(buffer)
 
                     val accBytes = accumulator.toByteArray()
