@@ -251,6 +251,10 @@ class DiscoveryManager(private val context: Context) {
 
     fun startDiscovery() {
         stopDiscovery()
+        synchronized(discoveredServers) {
+            discoveredServers.clear()
+            _servers.value = emptyList()
+        }
         
         try {
             if (multicastLock == null) {
