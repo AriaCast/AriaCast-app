@@ -80,6 +80,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.Locale
 import kotlin.math.pow
 
 data class CastDestination(
@@ -486,18 +487,18 @@ class AudioCastService : Service() {
     }
 
     private fun fetchCompanionReceiverState(apiHost: String, apiPort: Int): String? {
+        val url = URL("http://$apiHost:$apiPort/api/status")
+        val conn = url.openConnection() as HttpURLConnection
         return try {
-            val url = URL("http://$apiHost:$apiPort/api/status")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 3000
-                readTimeout = 3000
-            }
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 3000
+            conn.readTimeout = 3000
             val body = conn.inputStream.bufferedReader().use { it.readText() }
-            conn.disconnect()
             JSONObject(body).optJSONObject("receiver")?.optString("state")
         } catch (e: Exception) {
             null
+        } finally {
+            conn.disconnect()
         }
     }
 
@@ -549,6 +550,7 @@ class AudioCastService : Service() {
         }
     }
 
+
     @SuppressLint("MissingPermission")
     private fun startCasting(mediaProjectionToken: Intent, destinations: List<CastDestination>) {
         sessionJob?.cancel()
@@ -599,6 +601,11 @@ class AudioCastService : Service() {
         if (projection == null) {
             Log.e(TAG, "MediaProjection is null")
             PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "MediaProjection permission was not granted")
+            stopVolumeSession()
+            releaseWakeLock()
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, originalVolume, 0)
+            sessionJob?.cancel()
+            sessionJob = null
             _state.value = CastState.ERROR
             return
         }
@@ -618,18 +625,18 @@ class AudioCastService : Service() {
                 attempt++
 
                 try {
-                    // AirPlay 1 (RAOP) requires 44100 Hz — shairport-sync ignores SDP sample rate.
-                    // Android's AudioFlinger resamples internally when the capture rate
-                    // differs from the source, so this is transparent and correct.
-                    val captureRate = if (destinations.any { it.platform == "AirPlay" }) 44100 else SAMPLE_RATE
-                    val minBufSize = AudioRecord.getMinBufferSize(captureRate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+                    // Always capture at SAMPLE_RATE (48 kHz).  AirPlay 1 (RAOP) needs
+                    // 44100 Hz, but that resampling is done per-destination inside
+                    // performRaopHandshake so other receivers in a multiroom group
+                    // are not affected.
+                    val minBufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
                     val bufferSize = (FRAME_SIZE * 4).coerceAtLeast(minBufSize)
 
                     val recorder = AudioRecord.Builder()
                         .setAudioFormat(
                             AudioFormat.Builder()
                                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                                .setSampleRate(captureRate)
+                                .setSampleRate(SAMPLE_RATE)
                                 .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
                                 .build()
                         )
@@ -868,6 +875,8 @@ class AudioCastService : Service() {
 
             _state.value = CastState.CASTING
             updateNotification()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "DLNA session failed for ${dest.name}: ${e.message}")
             _state.value = CastState.ERROR
@@ -939,6 +948,8 @@ class AudioCastService : Service() {
                 Log.e(TAG, "Google Cast launch failed for all attempted apps on ${dest.name}")
                 _state.value = CastState.ERROR
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Google Cast session failed for ${dest.name}: ${e.message}")
             _state.value = CastState.ERROR
@@ -954,6 +965,8 @@ class AudioCastService : Service() {
             // We force RAOP handshake here.
             performRaopHandshake(dest, myIp)
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "AirPlay session failed for ${dest.name}: ${e.message}")
             _state.value = CastState.ERROR
@@ -1216,6 +1229,8 @@ class AudioCastService : Service() {
             } finally {
                 try { audioSocket.close() } catch (_: Exception) {}
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Snapcast session failed for ${dest.name}: ${e.message}")
             _state.value = CastState.ERROR
@@ -1480,7 +1495,7 @@ class AudioCastService : Service() {
                 val accumulator = ByteArrayOutputStream(FRAME_BYTES * 2)
 
                 audioBufferFlow.collect { rawBuffer ->
-                    val buffer = rawBuffer // captured at 44100 Hz natively, no resampling
+                    val buffer = resampler.resample(rawBuffer) // 48000 → 44100 Hz
                     accumulator.write(buffer)
 
                     val accBytes = accumulator.toByteArray()
@@ -1517,6 +1532,8 @@ class AudioCastService : Service() {
                 syncJob.cancel()
                 timingJob.cancel()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "RAOP failed for ${dest.host}: ${e.message}")
             withContext(NonCancellable) {
@@ -1524,10 +1541,12 @@ class AudioCastService : Service() {
                     val socket = raopSockets[dest.host]
                     val teardownOutput = if (socket != null && !socket.isClosed) socket.getOutputStream() else null
                     if (teardownOutput != null) {
-                        sendRtspRequest(teardownOutput, "TEARDOWN", dest.host, dest.port, raopCSeqs[dest.host] ?: 1, mapOf(
-                            "Session" to (raopSessions[dest.host] ?: ""),
-                            "User-Agent" to "AirPlay/366.0"
-                        ))
+                        synchronized(teardownOutput) {
+                            sendRtspRequest(teardownOutput, "TEARDOWN", dest.host, dest.port, raopCSeqs[dest.host] ?: 1, mapOf(
+                                "Session" to (raopSessions[dest.host] ?: ""),
+                                "User-Agent" to "AirPlay/366.0"
+                            ))
+                        }
                     }
                 } catch (teardownError: Exception) {}
             }
@@ -1749,16 +1768,18 @@ class AudioCastService : Service() {
             raopSocketsSnapshot.forEach { (host, socket) ->
                 try {
                     val output = socket.getOutputStream()
-                    val cseq = raopCSeqs[host] ?: 1
                     val session = raopSessions[host] ?: ""
                     
                     val volStr = "volume: ${if(direction == "up") -10.0 else -30.0}\r\n"
-                    sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
-                        "Session" to session,
-                        "Content-Type" to "text/parameters",
-                        "Content-Length" to volStr.length.toString()
-                    ), volStr)
-                    raopCSeqs[host] = cseq + 1
+                    synchronized(output) {
+                        val cseq = raopCSeqs[host] ?: 1
+                        sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
+                            "Session" to session,
+                            "Content-Type" to "text/parameters",
+                            "Content-Length" to volStr.length.toString()
+                        ), volStr)
+                        raopCSeqs[host] = cseq + 1
+                    }
                 } catch (e: Exception) {}
             }
 
@@ -1792,15 +1813,17 @@ class AudioCastService : Service() {
             raopSnapshot.forEach { (host, socket) ->
                 try {
                     val output = socket.getOutputStream()
-                    val cseq = raopCSeqs[host] ?: 1
                     val session = raopSessions[host] ?: ""
-                    val volStr = "volume: ${"%.6f".format(dB)}\r\n"
-                    sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
-                        "Session" to session,
-                        "Content-Type" to "text/parameters",
-                        "Content-Length" to volStr.length.toString()
-                    ), volStr)
-                    raopCSeqs[host] = cseq + 1
+                    val volStr = "volume: ${String.format(Locale.US, "%.6f", dB)}\r\n"
+                    synchronized(output) {
+                        val cseq = raopCSeqs[host] ?: 1
+                        sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
+                            "Session" to session,
+                            "Content-Type" to "text/parameters",
+                            "Content-Length" to volStr.length.toString()
+                        ), volStr)
+                        raopCSeqs[host] = cseq + 1
+                    }
                 } catch (_: Exception) {}
             }
 
@@ -1993,21 +2016,23 @@ class AudioCastService : Service() {
     private fun updateRaopMetadata(host: String, metadata: TrackMetadata) {
         val socket = raopSockets[host] ?: return
         val output = socket.getOutputStream()
-        val cseq = raopCSeqs[host] ?: 1
         val session = raopSessions[host] ?: ""
 
         val dmap = encodeDmapMetadata(metadata)
         if (dmap.isEmpty()) return
 
         try {
-            sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
-                "Session" to session,
-                "Content-Type" to "application/x-dmap-tagged",
-                "Content-Length" to dmap.size.toString()
-            ))
-            output.write(dmap)
-            output.flush()
-            raopCSeqs[host] = cseq + 1
+            synchronized(output) {
+                val cseq = raopCSeqs[host] ?: 1
+                sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
+                    "Session" to session,
+                    "Content-Type" to "application/x-dmap-tagged",
+                    "Content-Length" to dmap.size.toString()
+                ))
+                output.write(dmap)
+                output.flush()
+                raopCSeqs[host] = cseq + 1
+            }
         } catch (e: Exception) {}
     }
 
@@ -2375,11 +2400,13 @@ class AudioCastService : Service() {
                                 val socket = raopSockets[dest.host]
                                 val output = socket?.getOutputStream()
                                 if (output != null) {
-                                    val cseq = raopCSeqs[dest.host] ?: 1
-                                    sendRtspRequest(output, "TEARDOWN", dest.host, dest.port, cseq, mapOf(
-                                        "Session" to (raopSessions[dest.host] ?: ""),
-                                        "User-Agent" to "AirPlay/366.0"
-                                    ))
+                                    synchronized(output) {
+                                        val cseq = raopCSeqs[dest.host] ?: 1
+                                        sendRtspRequest(output, "TEARDOWN", dest.host, dest.port, cseq, mapOf(
+                                            "Session" to (raopSessions[dest.host] ?: ""),
+                                            "User-Agent" to "AirPlay/366.0"
+                                        ))
+                                    }
                                 }
                             } else {
                                 val sessionId = airplaySessionIds[dest.host]
