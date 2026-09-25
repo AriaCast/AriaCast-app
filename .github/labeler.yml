@@ -1,0 +1,10 @@
+# Labeler configuration for AriaCast-app
+# Compatible with actions/labeler@v4
+
+documentation:
+  - '*.md'
+  - 'docs/**/*'
+
+enhancement:
+  - 'plugins/**/*'
+  - 'app/**/*'
