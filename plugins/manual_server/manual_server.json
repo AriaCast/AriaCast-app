@@ -1,8 +1,0 @@
-{
-  "id": "manual_server",
-  "name": "Manual Server Entry",
-  "description": "Manually add a server by IP and Port for cross-VLAN casting.",
-  "version": "1.1.0",
-  "author": "AriaCast Team",
-  "scriptPath": "manual_server.js"
-}

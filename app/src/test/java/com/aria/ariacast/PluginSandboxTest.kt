@@ -92,6 +92,10 @@ class PluginSandboxTest {
             val packagesType = cx.evaluateString(scope, "typeof Packages", "test.js", 1, null)
             assertEquals("undefined", packagesType)
 
+            // Direct android package root is undefined by default (verifying ADR-0001 consequence)
+            val androidType = cx.evaluateString(scope, "typeof android", "test.js", 1, null)
+            assertEquals("undefined", androidType)
+
             // Injecting a blocked class via javaToJS throws SecurityException
             var threwSecurityException = false
             try {
@@ -106,13 +110,25 @@ class PluginSandboxTest {
     }
 
     @Test
+    fun `isDynamicProxyClass allows genuine proxy classes but rejects fake proxy named classes`() {
+        // Genuine proxy class
+        val genuineProxy = java.lang.reflect.Proxy.getProxyClass(
+            PluginSandboxTest::class.java.classLoader,
+            Runnable::class.java
+        )
+        assertTrue(PluginClassShutter.visibleToScripts(genuineProxy.name))
+
+        // Non-proxy class with 'Proxy' in name
+        assertFalse(PluginClassShutter.visibleToScripts("org.example.FakeProxyClass"))
+        assertFalse(PluginClassShutter.visibleToScripts("java.net.ProxySelector"))
+    }
+
+    @Test
     fun `manual_server js parses without syntax errors`() {
-        val scriptFile = listOf(
-            java.io.File("plugins/manual_server/manual_server.js"),
-            java.io.File("../plugins/manual_server/manual_server.js")
-        ).firstOrNull { it.exists() }
-        assertNotNull("Script file must exist", scriptFile)
-        val scriptContent = scriptFile!!.readText()
+        val scriptStream = javaClass.classLoader?.getResourceAsStream("plugins/manual_server.js")
+            ?: java.io.File("app/src/test/resources/plugins/manual_server.js").takeIf { it.exists() }?.inputStream()
+        assertNotNull("Script fixture must exist", scriptStream)
+        val scriptContent = scriptStream!!.bufferedReader().use { it.readText() }
 
         val cx = RhinoContext.enter()
         try {

@@ -5,12 +5,14 @@ Commit `6521ec7` introduced `PluginClassShutter` with an unconditional `visibleT
 
 ## Decision
 We decided to replace the blanket denial in `PluginClassShutter` with a strict whitelist/blacklist filter:
-1. Explicitly deny dangerous classes (`java.lang.Runtime`, `java.lang.ProcessBuilder`, `java.lang.System`, `java.lang.ClassLoader`, `java.lang.reflect.*`, `dalvik.system.*`).
+1. Explicitly deny dangerous classes (`java.lang.Runtime`, `java.lang.ProcessBuilder`, `java.lang.System`, `java.lang.ClassLoader`, `java.lang.Thread`, `java.lang.reflect.*`, `dalvik.system.*`).
 2. Whitelist necessary app and Android UI classes (`com.aria.ariacast.*`, `android.view.*`, `android.widget.*`, `android.text.*`, `android.util.*`, `android.app.Activity`, `android.content.Context`, standard primitives/containers).
-3. Retain `SandboxedNativeJavaObject` to block reflection pivots (`getClass()`, `getClassLoader()`).
-4. Augment `ui` helper with `toast()` and `showInputDialog()` to allow plugins like `Manual Server Entry` to show toasts and configuration dialogs without needing raw `android.widget.Toast` packages or crashing in `PluginsActivity`.
+3. Safely permit dynamic proxies for SAM interfaces (e.g. `OnClickListener`) without triggering class static initialization.
+4. Retain `SandboxedNativeJavaObject` to block reflection pivots (`getClass()`, `getClassLoader()`).
+5. Augment `ui` helper with `toast()` and `showInputDialog()` to allow plugins like `Manual Server Entry` to show toasts and configuration dialogs. (Note: `showInputDialog` is currently tailored for manual server configuration with IP/Port fields; it will be generalized into a dynamic schema-based form dialog when additional plugins require configuration inputs).
 
 ## Consequences
 - Plugins can access injected host objects, views, and standard helpers without triggering `SecurityException`.
-- Arbitrary native code execution and reflection escapes remain prevented.
-- Older plugin scripts that call `android.widget.Toast.makeText(activity, ...)` remain backward-compatible while newer scripts can use `ui.toast()`.
+- Arbitrary native code execution, thread manipulation, and reflection escapes remain prevented.
+- Top-level `Packages` and `android` root objects are deliberately omitted from the global scope by `initSafeStandardObjects()` for least privilege. All plugins must use the capability helper `ui.toast()` rather than attempting direct Java package invocations.
+- Production plugins reside in the separate `AriaCast-android-plugins` repository; test fixture scripts are kept under `app/src/test/resources/plugins/`.
