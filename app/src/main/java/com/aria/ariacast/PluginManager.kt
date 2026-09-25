@@ -75,12 +75,13 @@ internal object PluginClassShutter : ClassShutter {
     private fun isDynamicProxyClass(fullClassName: String): Boolean {
         if (fullClassName.startsWith("\$Proxy") ||
             fullClassName.contains(".\$Proxy") ||
-            fullClassName.startsWith("jdk.proxy")) {
+            fullClassName.startsWith("jdk.proxy") ||
+            fullClassName.startsWith("com.sun.proxy.\$Proxy")) {
             return true
         }
         if (fullClassName.contains("Proxy")) {
             return try {
-                val cls = Class.forName(fullClassName)
+                val cls = Class.forName(fullClassName, false, PluginManager::class.java.classLoader)
                 java.lang.reflect.Proxy.isProxyClass(cls)
             } catch (e: Throwable) {
                 false
@@ -134,7 +135,6 @@ internal object PluginClassShutter : ClassShutter {
         "java.lang.Throwable",
         "java.lang.Exception",
         "java.lang.Runnable",
-        "java.lang.Thread",
         "java.util.List",
         "java.util.ArrayList",
         "java.util.Map",

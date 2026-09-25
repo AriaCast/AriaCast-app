@@ -77,6 +77,6 @@ class BinaryPlistTest {
         val decoded = BinaryPlist.decode(BinaryPlist.makeSessionPlist(uuid, "AA:BB:CC:DD:EE:FF", 12345))
         assertEquals("AA:BB:CC:DD:EE:FF", decoded["deviceID"])
         assertEquals(12345L, decoded["timingPort"])
-        assertEquals("NTP", decoded["timingProtocol"])
+        assertEquals("PTP", decoded["timingProtocol"])
     }
 }

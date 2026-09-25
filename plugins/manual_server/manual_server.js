@@ -9,6 +9,26 @@ var showToast = function(msg) {
     }
 };
 
+var saveAndRegister = function(ip, port) {
+    ip = (ip || "").trim();
+    var p = parseInt(port) || 12889;
+    if (!ip) return false;
+    storage.set("last_manual_ip", ip);
+    storage.set("last_manual_port", String(p));
+    if (typeof discovery !== "undefined" && discovery) {
+        if (discovery.addManualServer(ip, p, "Manual: " + ip)) {
+            showToast("Server added: " + ip + ":" + p);
+            return true;
+        } else {
+            showToast("Invalid IP address: " + ip);
+            return false;
+        }
+    } else {
+        showToast("Server saved: " + ip + ":" + p);
+        return true;
+    }
+};
+
 // Auto-register previously saved server into discovery on startup if available
 var savedIp = storage.get("last_manual_ip");
 var savedPort = parseInt(storage.get("last_manual_port")) || 12889;
@@ -28,20 +48,7 @@ if (typeof events !== "undefined" && events && typeof events.onConfigRequested =
                 curIp,
                 curPort,
                 function(ip, port) {
-                    ip = (ip || "").trim();
-                    var p = parseInt(port) || 12889;
-                    if (!ip) return;
-                    storage.set("last_manual_ip", ip);
-                    storage.set("last_manual_port", String(p));
-                    if (typeof discovery !== "undefined" && discovery) {
-                        if (discovery.addManualServer(ip, p, "Manual: " + ip)) {
-                            showToast("Server added: " + ip + ":" + p);
-                        } else {
-                            showToast("Invalid IP address: " + ip);
-                        }
-                    } else {
-                        showToast("Saved: " + ip + ":" + p);
-                    }
+                    saveAndRegister(ip, port);
                 }
             );
         } else {
@@ -80,23 +87,9 @@ var renderUI = function() {
         var bt = ui.findView(btn, "buttonText");
         if (bt) bt.setText("Add Server");
         btn.setOnClickListener(function() {
-            var ip = ipEdit.getText().toString().trim();
-            var port = parseInt(portEdit.getText().toString().trim()) || 12889;
-            if (ip) {
-                if (typeof discovery !== "undefined" && discovery) {
-                    if (discovery.addManualServer(ip, port, "Manual: " + ip)) {
-                        storage.set("last_manual_ip", ip);
-                        storage.set("last_manual_port", String(port));
-                        showToast("Server added: " + ip + ":" + port);
-                    } else {
-                        showToast("Invalid IP address: " + ip);
-                    }
-                } else {
-                    storage.set("last_manual_ip", ip);
-                    storage.set("last_manual_port", String(port));
-                    showToast("Server saved: " + ip + ":" + port);
-                }
-            }
+            var ip = ipEdit.getText().toString();
+            var port = portEdit.getText().toString();
+            saveAndRegister(ip, port);
         });
         ui.add(btn);
     });

@@ -36,7 +36,6 @@ class PluginSandboxTest {
         // Safe standard utilities
         assertTrue(PluginClassShutter.visibleToScripts("java.lang.String"))
         assertTrue(PluginClassShutter.visibleToScripts("java.lang.Integer"))
-        assertTrue(PluginClassShutter.visibleToScripts("java.lang.Thread"))
         assertTrue(PluginClassShutter.visibleToScripts("java.util.ArrayList"))
         assertTrue(PluginClassShutter.visibleToScripts("org.json.JSONObject"))
     }
@@ -48,6 +47,7 @@ class PluginSandboxTest {
         assertFalse(PluginClassShutter.visibleToScripts("java.lang.ProcessBuilder"))
         assertFalse(PluginClassShutter.visibleToScripts("java.lang.System"))
         assertFalse(PluginClassShutter.visibleToScripts("java.lang.ClassLoader"))
+        assertFalse(PluginClassShutter.visibleToScripts("java.lang.Thread"))
         assertFalse(PluginClassShutter.visibleToScripts("java.lang.reflect.Method"))
         assertFalse(PluginClassShutter.visibleToScripts("java.lang.reflect.Field"))
         assertFalse(PluginClassShutter.visibleToScripts("dalvik.system.DexClassLoader"))
@@ -109,8 +109,7 @@ class PluginSandboxTest {
     fun `manual_server js parses without syntax errors`() {
         val scriptFile = listOf(
             java.io.File("plugins/manual_server/manual_server.js"),
-            java.io.File("../plugins/manual_server/manual_server.js"),
-            java.io.File("/home/highwall/Projects/AriaCast-android-plugins/manual_server.js")
+            java.io.File("../plugins/manual_server/manual_server.js")
         ).firstOrNull { it.exists() }
         assertNotNull("Script file must exist", scriptFile)
         val scriptContent = scriptFile!!.readText()
@@ -123,7 +122,7 @@ class PluginSandboxTest {
             cx.setWrapFactory(PluginWrapFactory)
             val scope = cx.initSafeStandardObjects()
 
-            // Dummy bindings so evaluation tests all code paths cleanly
+            // Test capability helpers so evaluation tests all code paths cleanly
             cx.evaluateString(scope, "var storage = { get: function() { return null; }, set: function() {} };", "setup.js", 1, null)
             cx.evaluateString(scope, """
                 var mockView = {

@@ -57,7 +57,7 @@ object TlvUtil {
             val list = result.getOrPut(type) { mutableListOf() }
             if (type == lastType && list.isNotEmpty()) {
                 // Reassemble HAP TLV8 fragments (consecutive same-type chunks)
-                val prev = list.removeLast()
+                val prev = list.removeAt(list.size - 1)
                 val combined = ByteArray(prev.size + value.size)
                 System.arraycopy(prev, 0, combined, 0, prev.size)
                 System.arraycopy(value, 0, combined, prev.size, value.size)
