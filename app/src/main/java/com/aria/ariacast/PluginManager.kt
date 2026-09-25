@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.Toast
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -47,11 +48,79 @@ data class PluginSyncResult(val success: Boolean, val disabledPluginNames: List<
  * API (façade objects instead of raw framework objects) would be needed for a stronger
  * guarantee.
  */
-private object PluginClassShutter : ClassShutter {
-    override fun visibleToScripts(fullClassName: String): Boolean = false
+internal object PluginClassShutter : ClassShutter {
+    override fun visibleToScripts(fullClassName: String): Boolean {
+        // 1. Explicitly deny dangerous classes that could be used for arbitrary code execution,
+        // process execution, class loader manipulation, or reflection escapes.
+        if (BLOCKED_CLASS_PREFIXES.any { fullClassName.startsWith(it) } ||
+            BLOCKED_EXACT_CLASSES.contains(fullClassName)) {
+            return false
+        }
+
+        // 2. Allow classes that plugins legitimately need
+        if (ALLOWED_CLASS_PREFIXES.any { fullClassName.startsWith(it) } ||
+            ALLOWED_EXACT_CLASSES.contains(fullClassName)) {
+            return true
+        }
+
+        return false
+    }
+
+    private val BLOCKED_CLASS_PREFIXES = listOf(
+        "java.lang.reflect.",
+        "dalvik.system.",
+        "java.lang.invoke."
+    )
+
+    private val BLOCKED_EXACT_CLASSES = setOf(
+        "java.lang.Runtime",
+        "java.lang.Process",
+        "java.lang.ProcessBuilder",
+        "java.lang.System",
+        "java.lang.ClassLoader",
+        "java.lang.Compiler"
+    )
+
+    private val ALLOWED_CLASS_PREFIXES = listOf(
+        "com.aria.ariacast.",
+        "android.view.",
+        "android.widget.",
+        "android.text.",
+        "android.util.",
+        "android.graphics.",
+        "com.google.android.material.",
+        "org.json."
+    )
+
+    private val ALLOWED_EXACT_CLASSES = setOf(
+        "android.content.Context",
+        "android.app.Activity",
+        "java.lang.Object",
+        "java.lang.String",
+        "java.lang.CharSequence",
+        "java.lang.Number",
+        "java.lang.Integer",
+        "java.lang.Long",
+        "java.lang.Float",
+        "java.lang.Double",
+        "java.lang.Boolean",
+        "java.lang.Byte",
+        "java.lang.Short",
+        "java.lang.Character",
+        "java.lang.Throwable",
+        "java.lang.Exception",
+        "java.lang.Runnable",
+        "java.lang.Thread",
+        "java.util.List",
+        "java.util.ArrayList",
+        "java.util.Map",
+        "java.util.HashMap",
+        "java.util.Set",
+        "java.util.HashSet"
+    )
 }
 
-private class SandboxedNativeJavaObject(
+internal class SandboxedNativeJavaObject(
     scope: Scriptable,
     javaObject: Any,
     staticType: Class<*>?
@@ -69,7 +138,7 @@ private class SandboxedNativeJavaObject(
     }
 }
 
-private object PluginWrapFactory : WrapFactory() {
+internal object PluginWrapFactory : WrapFactory() {
     override fun wrapAsJavaObject(
         cx: RhinoContext,
         scope: Scriptable,
@@ -199,9 +268,8 @@ class PluginManager(private val context: Context) {
                 ScriptableObject.putProperty(scope, "context", RhinoContext.javaToJS(context, scope))
                 ScriptableObject.putProperty(scope, "service", RhinoContext.javaToJS(initialService, scope))
                 
-                if (activity is MainActivity) {
-                    ScriptableObject.putProperty(scope, "discovery", RhinoContext.javaToJS(activity.discoveryManager, scope))
-                }
+                val discoveryObj = if (activity is MainActivity) activity.discoveryManager else null
+                ScriptableObject.putProperty(scope, "discovery", RhinoContext.javaToJS(discoveryObj, scope))
 
                 val uiHelper = object {
                     fun run(f: Runnable) = activity.runOnUiThread {
@@ -234,6 +302,60 @@ class PluginManager(private val context: Context) {
                             container.visibility = View.VISIBLE
                             activity.pluginContainer.visibility = View.VISIBLE
                         }
+                    }
+                    fun toast(msg: Any?, duration: Int = Toast.LENGTH_SHORT) = activity.runOnUiThread {
+                        Toast.makeText(activity, msg?.toString() ?: "", duration).show()
+                    }
+                    fun showInputDialog(
+                        title: String,
+                        message: String,
+                        defaultIp: String,
+                        defaultPort: String,
+                        onSave: org.mozilla.javascript.Function
+                    ) = activity.runOnUiThread {
+                        val layout = LinearLayout(activity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            val pad = (16 * activity.resources.displayMetrics.density).toInt()
+                            setPadding(pad, pad / 2, pad, pad / 2)
+                        }
+                        val ipInput = com.google.android.material.textfield.TextInputLayout(activity).apply {
+                            hint = activity.getString(R.string.manual_entry_desc)
+                        }
+                        val ipEdit = com.google.android.material.textfield.TextInputEditText(activity).apply {
+                            setText(defaultIp)
+                        }
+                        ipInput.addView(ipEdit)
+                        layout.addView(ipInput)
+
+                        val portInput = com.google.android.material.textfield.TextInputLayout(activity).apply {
+                            hint = "Port (Default: 12889)"
+                        }
+                        val portEdit = com.google.android.material.textfield.TextInputEditText(activity).apply {
+                            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                            setText(defaultPort.ifEmpty { "12889" })
+                        }
+                        portInput.addView(portEdit)
+                        layout.addView(portInput)
+
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                            .setTitle(title)
+                            .setMessage(message)
+                            .setView(layout)
+                            .setPositiveButton(android.R.string.ok) { _, _ ->
+                                val ip = ipEdit.text?.toString()?.trim() ?: ""
+                                val port = portEdit.text?.toString()?.trim() ?: "12889"
+                                val cx = enterSandboxedContext()
+                                try {
+                                    cx.optimizationLevel = -1
+                                    onSave.call(cx, scope, scope, arrayOf(ip, port))
+                                } catch (e: Exception) {
+                                    Log.e("PluginUI", "Error in onSave callback", e)
+                                } finally {
+                                    RhinoContext.exit()
+                                }
+                            }
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show()
                     }
                 }
                 ScriptableObject.putProperty(scope, "ui", RhinoContext.javaToJS(uiHelper, scope))
