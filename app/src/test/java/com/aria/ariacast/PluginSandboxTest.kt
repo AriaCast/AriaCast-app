@@ -16,7 +16,7 @@ class PluginSandboxTest {
         assertTrue(PluginClassShutter.visibleToScripts("com.aria.ariacast.VisualizerView"))
         assertTrue(PluginClassShutter.visibleToScripts("com.aria.ariacast.PluginManager\$runPlugin\$uiHelper\$1"))
 
-        // Android UI classes
+        // Android UI & Jetpack classes
         assertTrue(PluginClassShutter.visibleToScripts("android.widget.Toast"))
         assertTrue(PluginClassShutter.visibleToScripts("android.view.View"))
         assertTrue(PluginClassShutter.visibleToScripts("android.widget.TextView"))
@@ -24,6 +24,14 @@ class PluginSandboxTest {
         assertTrue(PluginClassShutter.visibleToScripts("android.widget.LinearLayout"))
         assertTrue(PluginClassShutter.visibleToScripts("android.app.Activity"))
         assertTrue(PluginClassShutter.visibleToScripts("android.content.Context"))
+        assertTrue(PluginClassShutter.visibleToScripts("androidx.constraintlayout.widget.ConstraintLayout"))
+        assertTrue(PluginClassShutter.visibleToScripts("androidx.core.view.ViewCompat"))
+
+        // Dynamic proxies generated for SAM/interface adapters (e.g. OnClickListener, Runnable)
+        assertTrue(PluginClassShutter.visibleToScripts("\$Proxy0"))
+        assertTrue(PluginClassShutter.visibleToScripts("\$Proxy2"))
+        assertTrue(PluginClassShutter.visibleToScripts("jdk.proxy1.\$Proxy4"))
+        assertTrue(PluginClassShutter.visibleToScripts("com.sun.proxy.\$Proxy1"))
 
         // Safe standard utilities
         assertTrue(PluginClassShutter.visibleToScripts("java.lang.String"))
@@ -57,6 +65,7 @@ class PluginSandboxTest {
         val cx = RhinoContext.enter()
         try {
             cx.optimizationLevel = -1
+            cx.languageVersion = RhinoContext.VERSION_ES6
             cx.setClassShutter(PluginClassShutter)
             cx.setWrapFactory(PluginWrapFactory)
 
@@ -91,6 +100,54 @@ class PluginSandboxTest {
                 threwSecurityException = e is SecurityException || e.message?.contains("prohibited") == true
             }
             assertTrue("Expected security exception when wrapping Runtime", threwSecurityException)
+        } finally {
+            RhinoContext.exit()
+        }
+    }
+
+    @Test
+    fun `manual_server js parses without syntax errors`() {
+        val scriptFile = listOf(
+            java.io.File("plugins/manual_server/manual_server.js"),
+            java.io.File("../plugins/manual_server/manual_server.js"),
+            java.io.File("/home/highwall/Projects/AriaCast-android-plugins/manual_server.js")
+        ).firstOrNull { it.exists() }
+        assertNotNull("Script file must exist", scriptFile)
+        val scriptContent = scriptFile!!.readText()
+
+        val cx = RhinoContext.enter()
+        try {
+            cx.optimizationLevel = -1
+            cx.languageVersion = RhinoContext.VERSION_ES6
+            cx.setClassShutter(PluginClassShutter)
+            cx.setWrapFactory(PluginWrapFactory)
+            val scope = cx.initSafeStandardObjects()
+
+            // Dummy bindings so evaluation tests all code paths cleanly
+            cx.evaluateString(scope, "var storage = { get: function() { return null; }, set: function() {} };", "setup.js", 1, null)
+            cx.evaluateString(scope, """
+                var mockView = {
+                    setOnClickListener: function(f) { this.listener = f; },
+                    setText: function(t) {},
+                    setHint: function(h) {},
+                    setInputType: function(t) {},
+                    getText: function() { return { toString: function() { return "192.168.1.100"; } }; }
+                };
+                var ui = {
+                    run: function(f) { f(); },
+                    clear: function() {},
+                    inflate: function() { return mockView; },
+                    findView: function() { return mockView; },
+                    add: function() {},
+                    toast: function() {},
+                    showInputDialog: function() {}
+                };
+            """.trimIndent(), "setup.js", 1, null)
+            cx.evaluateString(scope, "var discovery = { addManualServer: function() { return true; } };", "setup.js", 1, null)
+            cx.evaluateString(scope, "var events = { onConfigRequested: function() {} };", "setup.js", 1, null)
+            cx.evaluateString(scope, "var console = { info: function() {}, error: function() {} };", "setup.js", 1, null)
+
+            cx.evaluateString(scope, scriptContent, "Manual Server Entry", 1, null)
         } finally {
             RhinoContext.exit()
         }

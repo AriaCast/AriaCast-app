@@ -1,12 +1,13 @@
 console.info("Manual Server Plugin Loaded");
 
-function showToast(msg) {
+var showToast = function(msg) {
+    var text = String(msg == null ? "" : msg);
     if (typeof ui !== "undefined" && ui && typeof ui.toast === "function") {
-        ui.toast(msg);
+        ui.toast(text);
     } else if (typeof android !== "undefined" && android.widget && android.widget.Toast && typeof activity !== "undefined" && activity) {
-        android.widget.Toast.makeText(activity, msg, 0).show();
+        android.widget.Toast.makeText(activity, text, 0).show();
     }
-}
+};
 
 // Auto-register previously saved server into discovery on startup if available
 var savedIp = storage.get("last_manual_ip");
@@ -49,7 +50,7 @@ if (typeof events !== "undefined" && events && typeof events.onConfigRequested =
     });
 }
 
-function renderUI() {
+var renderUI = function() {
     if (typeof ui === "undefined" || !ui) return;
     ui.run(function() {
         ui.clear();
@@ -99,5 +100,5 @@ function renderUI() {
         });
         ui.add(btn);
     });
-}
+};
 renderUI();
