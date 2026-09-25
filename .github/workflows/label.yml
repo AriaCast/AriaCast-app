@@ -17,13 +17,6 @@ jobs:
       pull-requests: write
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        sparse-checkout: |
-          .github/labeler.yml
-        sparse-checkout-cone-mode: false
     - uses: actions/labeler@v4
       with:
         repo-token: "${{ secrets.GITHUB_TOKEN }}"
-        configuration-path: .github/labeler.yml
-

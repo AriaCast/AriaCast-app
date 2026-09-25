@@ -411,7 +411,14 @@ class PluginManager(private val context: Context) {
 
                 val storageHelper = object {
                     fun get(key: String): String? = sharedPreferences.getString("plugin_${plugin.id}_$key", null)
-                    fun set(key: String, value: String) = sharedPreferences.edit().putString("plugin_${plugin.id}_$key", value).apply()
+                    fun set(key: String, value: String) {
+                        sharedPreferences.edit().putString("plugin_${plugin.id}_$key", value).apply()
+                        if (isConfigOnly) {
+                            sharedPreferences.edit()
+                                .putLong("plugins_updated_at", System.currentTimeMillis())
+                                .apply()
+                        }
+                    }
                 }
                 ScriptableObject.putProperty(scope, "storage", RhinoContext.javaToJS(storageHelper, scope))
 

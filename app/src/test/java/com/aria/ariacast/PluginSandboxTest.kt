@@ -167,4 +167,282 @@ class PluginSandboxTest {
             RhinoContext.exit()
         }
     }
+
+    @Test
+    fun `manual_server config dialog rejects empty IP with toast and does not save`() {
+        val scriptStream = javaClass.classLoader?.getResourceAsStream("plugins/manual_server.js")
+            ?: java.io.File("app/src/test/resources/plugins/manual_server.js").takeIf { it.exists() }?.inputStream()
+        assertNotNull("Script fixture must exist", scriptStream)
+        val scriptContent = scriptStream!!.bufferedReader().use { it.readText() }
+
+        val cx = RhinoContext.enter()
+        try {
+            cx.optimizationLevel = -1
+            cx.languageVersion = RhinoContext.VERSION_ES6
+            cx.setClassShutter(PluginClassShutter)
+            cx.setWrapFactory(PluginWrapFactory)
+            val scope = cx.initSafeStandardObjects()
+
+            val savedMap = mutableMapOf<String, String>()
+            val toasts = mutableListOf<String>()
+            var dialogCallback: org.mozilla.javascript.Function? = null
+
+            val storageHelper = object {
+                fun get(key: String): String? = savedMap[key]
+                fun set(key: String, value: String) { savedMap[key] = value }
+            }
+            ScriptableObject.putProperty(scope, "storage", RhinoContext.javaToJS(storageHelper, scope))
+
+            val mockView = object {
+                fun setOnClickListener(f: Any?) {}
+                fun setText(t: Any?) {}
+                fun setHint(h: Any?) {}
+                fun setInputType(t: Any?) {}
+                fun getText(): Any = object {
+                    override fun toString(): String = "192.168.1.100"
+                }
+            }
+
+            val uiHelper = object {
+                fun run(f: Runnable) { f.run() }
+                fun clear() {}
+                fun inflate(layout: String): Any? = mockView
+                fun findView(parent: Any?, id: String): Any? = mockView
+                fun add(view: Any?) {}
+                fun toast(msg: Any?) { toasts.add(msg?.toString() ?: "") }
+                fun showInputDialog(title: String, msg: String, ip: String, port: String, onSave: org.mozilla.javascript.Function) {
+                    dialogCallback = onSave
+                }
+            }
+            ScriptableObject.putProperty(scope, "ui", RhinoContext.javaToJS(uiHelper, scope))
+
+            val eventsHelper = object {
+                fun onConfigRequested(f: org.mozilla.javascript.Function) {
+                    f.call(cx, scope, scope, arrayOf())
+                }
+            }
+            ScriptableObject.putProperty(scope, "events", RhinoContext.javaToJS(eventsHelper, scope))
+            ScriptableObject.putProperty(scope, "console", RhinoContext.javaToJS(object {
+                fun info(m: Any?) {}
+                fun warn(m: Any?) {}
+                fun error(m: Any?) {}
+            }, scope))
+
+            cx.evaluateString(scope, scriptContent, "manual_server.js", 1, null)
+
+            assertNotNull("showInputDialog should have been called", dialogCallback)
+            // Call onSave with empty IP
+            dialogCallback!!.call(cx, scope, scope, arrayOf("", "12889"))
+
+            assertTrue("Expected toast for empty IP", toasts.any { it.contains("enter an IP", ignoreCase = true) })
+            assertFalse("Storage must not contain last_manual_ip", savedMap.containsKey("last_manual_ip"))
+        } finally {
+            RhinoContext.exit()
+        }
+    }
+
+    @Test
+    fun `manual_server config dialog rejects invalid port with toast and does not save`() {
+        val scriptStream = javaClass.classLoader?.getResourceAsStream("plugins/manual_server.js")
+            ?: java.io.File("app/src/test/resources/plugins/manual_server.js").takeIf { it.exists() }?.inputStream()
+        assertNotNull("Script fixture must exist", scriptStream)
+        val scriptContent = scriptStream!!.bufferedReader().use { it.readText() }
+
+        val cx = RhinoContext.enter()
+        try {
+            cx.optimizationLevel = -1
+            cx.languageVersion = RhinoContext.VERSION_ES6
+            cx.setClassShutter(PluginClassShutter)
+            cx.setWrapFactory(PluginWrapFactory)
+            val scope = cx.initSafeStandardObjects()
+
+            val savedMap = mutableMapOf<String, String>()
+            val toasts = mutableListOf<String>()
+            var dialogCallback: org.mozilla.javascript.Function? = null
+
+            val storageHelper = object {
+                fun get(key: String): String? = savedMap[key]
+                fun set(key: String, value: String) { savedMap[key] = value }
+            }
+            ScriptableObject.putProperty(scope, "storage", RhinoContext.javaToJS(storageHelper, scope))
+
+            val mockView = object {
+                fun setOnClickListener(f: Any?) {}
+                fun setText(t: Any?) {}
+                fun setHint(h: Any?) {}
+                fun setInputType(t: Any?) {}
+                fun getText(): Any = object {
+                    override fun toString(): String = "192.168.1.100"
+                }
+            }
+
+            val uiHelper = object {
+                fun run(f: Runnable) { f.run() }
+                fun clear() {}
+                fun inflate(layout: String): Any? = mockView
+                fun findView(parent: Any?, id: String): Any? = mockView
+                fun add(view: Any?) {}
+                fun toast(msg: Any?) { toasts.add(msg?.toString() ?: "") }
+                fun showInputDialog(title: String, msg: String, ip: String, port: String, onSave: org.mozilla.javascript.Function) {
+                    dialogCallback = onSave
+                }
+            }
+            ScriptableObject.putProperty(scope, "ui", RhinoContext.javaToJS(uiHelper, scope))
+
+            val eventsHelper = object {
+                fun onConfigRequested(f: org.mozilla.javascript.Function) {
+                    f.call(cx, scope, scope, arrayOf())
+                }
+            }
+            ScriptableObject.putProperty(scope, "events", RhinoContext.javaToJS(eventsHelper, scope))
+            ScriptableObject.putProperty(scope, "console", RhinoContext.javaToJS(object {
+                fun info(m: Any?) {}
+                fun warn(m: Any?) {}
+                fun error(m: Any?) {}
+            }, scope))
+
+            cx.evaluateString(scope, scriptContent, "manual_server.js", 1, null)
+
+            assertNotNull("showInputDialog should have been called", dialogCallback)
+            // Call onSave with port > 65535
+            dialogCallback!!.call(cx, scope, scope, arrayOf("192.168.1.50", "70000"))
+            assertTrue("Expected toast for out of range port", toasts.any { it.contains("65535") })
+            assertFalse("Storage must not contain last_manual_ip", savedMap.containsKey("last_manual_ip"))
+
+            toasts.clear()
+            // Call onSave with port < 1
+            dialogCallback!!.call(cx, scope, scope, arrayOf("192.168.1.50", "-1"))
+            assertTrue("Expected toast for negative port", toasts.any { it.contains("65535") })
+            assertFalse("Storage must not contain last_manual_ip", savedMap.containsKey("last_manual_ip"))
+        } finally {
+            RhinoContext.exit()
+        }
+    }
+
+    @Test
+    fun `manual_server config dialog does not save if discovery rejects invalid IP`() {
+        val scriptStream = javaClass.classLoader?.getResourceAsStream("plugins/manual_server.js")
+            ?: java.io.File("app/src/test/resources/plugins/manual_server.js").takeIf { it.exists() }?.inputStream()
+        assertNotNull("Script fixture must exist", scriptStream)
+        val scriptContent = scriptStream!!.bufferedReader().use { it.readText() }
+
+        val cx = RhinoContext.enter()
+        try {
+            cx.optimizationLevel = -1
+            cx.languageVersion = RhinoContext.VERSION_ES6
+            cx.setClassShutter(PluginClassShutter)
+            cx.setWrapFactory(PluginWrapFactory)
+            val scope = cx.initSafeStandardObjects()
+
+            val savedMap = mutableMapOf<String, String>()
+            val toasts = mutableListOf<String>()
+            var dialogCallback: org.mozilla.javascript.Function? = null
+
+            val storageHelper = object {
+                fun get(key: String): String? = savedMap[key]
+                fun set(key: String, value: String) { savedMap[key] = value }
+            }
+            ScriptableObject.putProperty(scope, "storage", RhinoContext.javaToJS(storageHelper, scope))
+
+            val discoveryHelper = object {
+                fun addManualServer(h: String, p: Int, n: String): Boolean = false
+            }
+            ScriptableObject.putProperty(scope, "discovery", RhinoContext.javaToJS(discoveryHelper, scope))
+
+            val mockView = object {
+                fun setOnClickListener(f: Any?) {}
+                fun setText(t: Any?) {}
+                fun setHint(h: Any?) {}
+                fun setInputType(t: Any?) {}
+                fun getText(): Any = object {
+                    override fun toString(): String = "192.168.1.100"
+                }
+            }
+
+            val uiHelper = object {
+                fun run(f: Runnable) { f.run() }
+                fun clear() {}
+                fun inflate(layout: String): Any? = mockView
+                fun findView(parent: Any?, id: String): Any? = mockView
+                fun add(view: Any?) {}
+                fun toast(msg: Any?) { toasts.add(msg?.toString() ?: "") }
+                fun showInputDialog(title: String, msg: String, ip: String, port: String, onSave: org.mozilla.javascript.Function) {
+                    dialogCallback = onSave
+                }
+            }
+            ScriptableObject.putProperty(scope, "ui", RhinoContext.javaToJS(uiHelper, scope))
+
+            val eventsHelper = object {
+                fun onConfigRequested(f: org.mozilla.javascript.Function) {
+                    f.call(cx, scope, scope, arrayOf())
+                }
+            }
+            ScriptableObject.putProperty(scope, "events", RhinoContext.javaToJS(eventsHelper, scope))
+            ScriptableObject.putProperty(scope, "console", RhinoContext.javaToJS(object {
+                fun info(m: Any?) {}
+                fun warn(m: Any?) {}
+                fun error(m: Any?) {}
+            }, scope))
+
+            cx.evaluateString(scope, scriptContent, "manual_server.js", 1, null)
+
+            assertNotNull("showInputDialog should have been called", dialogCallback)
+            // Call onSave with invalid IP
+            dialogCallback!!.call(cx, scope, scope, arrayOf("invalid-ip", "12889"))
+
+            assertTrue("Expected toast for invalid IP", toasts.any { it.contains("Invalid IP", ignoreCase = true) })
+            assertFalse("Storage must NOT contain last_manual_ip when discovery rejects it", savedMap.containsKey("last_manual_ip"))
+        } finally {
+            RhinoContext.exit()
+        }
+    }
+
+    @Test
+    fun `manual_server suppresses renderUI when discovery is absent`() {
+        val scriptStream = javaClass.classLoader?.getResourceAsStream("plugins/manual_server.js")
+            ?: java.io.File("app/src/test/resources/plugins/manual_server.js").takeIf { it.exists() }?.inputStream()
+        assertNotNull("Script fixture must exist", scriptStream)
+        val scriptContent = scriptStream!!.bufferedReader().use { it.readText() }
+
+        val cx = RhinoContext.enter()
+        try {
+            cx.optimizationLevel = -1
+            cx.languageVersion = RhinoContext.VERSION_ES6
+            cx.setClassShutter(PluginClassShutter)
+            cx.setWrapFactory(PluginWrapFactory)
+            val scope = cx.initSafeStandardObjects()
+
+            var uiRunCalled = false
+            var uiInflateCalled = false
+
+            val storageHelper = object {
+                fun get(key: String): String? = null
+                fun set(key: String, value: String) {}
+            }
+            ScriptableObject.putProperty(scope, "storage", RhinoContext.javaToJS(storageHelper, scope))
+
+            val uiHelper = object {
+                fun run(f: Runnable) { uiRunCalled = true; f.run() }
+                fun clear() {}
+                fun inflate(layout: String): Any? { uiInflateCalled = true; return null }
+                fun findView(parent: Any?, id: String): Any? = null
+                fun add(view: Any?) {}
+                fun toast(msg: Any?) {}
+                fun showInputDialog(title: String, msg: String, ip: String, port: String, onSave: org.mozilla.javascript.Function) {}
+            }
+            ScriptableObject.putProperty(scope, "ui", RhinoContext.javaToJS(uiHelper, scope))
+            ScriptableObject.putProperty(scope, "console", RhinoContext.javaToJS(object {
+                fun info(m: Any?) {}
+                fun warn(m: Any?) {}
+                fun error(m: Any?) {}
+            }, scope))
+
+            // Notice: discovery is NOT put into scope (or is null)
+            cx.evaluateString(scope, scriptContent, "manual_server.js", 1, null)
+
+            assertFalse("renderUI should NOT inflate layouts when discovery is absent", uiInflateCalled)
+        } finally {
+            RhinoContext.exit()
+        }
+    }
 }
