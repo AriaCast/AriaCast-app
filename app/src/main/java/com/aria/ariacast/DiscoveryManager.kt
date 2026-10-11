@@ -8,6 +8,7 @@ import android.util.Log
 import android.util.Patterns
 import com.aria.ariacast.raop.RaopDiscovery
 import com.aria.ariacast.raop.RaopDevice
+import com.aria.ariacast.airplay.AirPlayTxt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -171,13 +172,18 @@ class DiscoveryManager(private val context: Context) {
             }
         } else if (serviceInfo.serviceType.contains("_airplay")) {
             platform = "AirPlay2"
+            // flags (status), pw, pi (pairing id), srcvers... drive the AirPlay 2 client's
+            // pairing choice; features/pk/id are added below.
+            listOf("flags", "pw", "pi", "srcvers", "protovers", "acl", "gid", "psi").forEach { key ->
+                attrString(key)?.let { extraParts.add(ExtraFields.encode(key, it)) }
+            }
         } else if (serviceInfo.serviceType.contains("_googlecast")) {
             platform = "Google Cast"
             name = attrString("fn") ?: name
             model = attrString("md")
-            attrString("st")?.let { extraParts.add(ExtraFields.encode("st", it)) }
-            attrString("ca")?.let { extraParts.add(ExtraFields.encode("ca", it)) }
-            attrString("ve")?.let { extraParts.add(ExtraFields.encode("ve", it)) }
+            listOf("id", "st", "ca", "ve", "rs", "bs").forEach { key ->
+                attrString(key)?.let { extraParts.add(ExtraFields.encode(if (key == "id") "cast_id" else key, it)) }
+            }
         } else if (serviceInfo.serviceType.contains("_audiocast")) {
             platform = "AriaCast"
         } else if (serviceInfo.serviceType.contains("_snapcast")) {
@@ -274,24 +280,34 @@ class DiscoveryManager(private val context: Context) {
         }
         if (airplayEnabled) {
             raopDiscovery = RaopDiscovery(context)
-            raopDiscovery?.start { device ->
+            raopDiscovery?.start(onDeviceFound = { device ->
+                // Hand the receiver's whole TXT record to the AirPlay 1 client: it picks
+                // encryption (et), codec (cn), metadata types (md) and auth (pw/sf) from it.
+                val fields = device.txt.filterKeys { it in RAOP_TXT_KEYS }.toMutableMap()
+                device.mac?.let { fields["id"] = it }
                 val server = Server(
                     name = device.name,
                     host = device.host,
                     port = device.port,
-                    version = device.model ?: "1.0",
-                    codecs = listOf("PCM"),
+                    version = device.txt["vs"] ?: device.model ?: "1.0",
+                    codecs = listOf(if (AirPlayTxt.intList(device.txt["cn"]).let { it.isEmpty() || 1 in it }) "ALAC" else "PCM"),
                     sampleRate = device.sampleRate,
-                    channels = 2,
+                    channels = device.txt["ch"]?.toIntOrNull() ?: 2,
                     platform = "AirPlay",
-                    extra = "et=${device.encryptionType};sr=${device.sampleRate};cn=${device.codec}"
+                    extra = ExtraFields.join(fields.toList() + listOfNotNull(device.model?.let { "model" to it }))
                 )
-                scope.launch {
-                    discoveredServers[device.host] = server
+                synchronized(discoveredServers) {
+                    discoveredServers["${device.name}::AirPlay"] = server
                     _servers.value = discoveredServers.values.toList()
                     _state.value = DiscoveryState.FOUND
                 }
-            }
+            }, onDeviceLost = { name ->
+                synchronized(discoveredServers) {
+                    if (discoveredServers.remove("$name::AirPlay") != null) {
+                        _servers.value = discoveredServers.values.toList()
+                    }
+                }
+            })
         }
         if (prefs.getBoolean("google_cast_enabled", false)) {
             services.add("_googlecast._tcp")
@@ -537,6 +553,9 @@ class DiscoveryManager(private val context: Context) {
     companion object {
         private const val TAG = "DiscoveryManager"
         private const val MAX_DEVICE_DESCRIPTION_BYTES = 262_144
+
+        /** `_raop._tcp` TXT keys the AirPlay 1 client uses. */
+        private val RAOP_TXT_KEYS = setOf("et", "cn", "md", "pw", "sf", "ft", "am", "tp", "vn", "vs", "ss", "sr", "ch", "da", "sv", "ek", "pk")
 
         /**
          * Resolves a UPnP <controlURL> value against the (already host-validated) device

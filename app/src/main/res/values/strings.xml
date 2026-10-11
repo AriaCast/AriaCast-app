@@ -191,6 +191,8 @@
     <!-- AirPlay 2 Pairing -->
     <string name="airplay_pin_title">Enter AirPlay PIN</string>
     <string name="airplay_pin_message">Enter the code shown on the device screen (%1$s)</string>
+    <string name="airplay_password_title">AirPlay password</string>
+    <string name="airplay_password_message">%1$s is password protected. Enter its AirPlay password.</string>
     <string name="manage_airplay_pins">Manage AirPlay PINs</string>
     <string name="manage_airplay_pins_desc">Manage saved AirPlay PINs for paired devices</string>
     <string name="no_pins_saved">No PINs saved</string>

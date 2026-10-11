@@ -32,8 +32,16 @@ class SRP6aClient(
         private set
     private var salt: ByteArray? = null
 
-    fun buildM1(): ByteArray {
-        return TlvUtil.build(
+    /**
+     * M1. [transient] adds kTLVType_Flags = kPairingFlag_Transient (0x10): without it
+     * the receiver runs a full pairing (expecting M5) instead of stopping after M4.
+     */
+    fun buildM1(transient: Boolean = false): ByteArray {
+        return if (transient) TlvUtil.build(
+            TlvUtil.TLV_STATE to byteArrayOf(1),
+            TlvUtil.TLV_METHOD to byteArrayOf(0),
+            TlvUtil.TLV_FLAGS to byteArrayOf(0x10)
+        ) else TlvUtil.build(
             TlvUtil.TLV_STATE to byteArrayOf(1),
             TlvUtil.TLV_METHOD to byteArrayOf(0)
         )
@@ -201,7 +209,8 @@ class SRP6aClient(
         )
     }
 
-    fun verifyM6(m6Tlv: ByteArray): ByteArray? {
+    /** Verifies M6 and returns the receiver's (pairing identifier, Ed25519 long-term public key). */
+    fun verifyM6(m6Tlv: ByteArray): Pair<ByteArray, ByteArray>? {
         val k = sharedKeyBytes ?: return null
         val saltSet = "Pair-Setup-Encrypt-Salt".toByteArray(Charsets.UTF_8)
         val infoSet = "Pair-Setup-Encrypt-Info".toByteArray(Charsets.UTF_8)
@@ -243,7 +252,7 @@ class SRP6aClient(
         val valid = AirPlay2Crypto.ed25519Verify(pk, verifyData, signature)
         if (!valid) return null
 
-        return pk
+        return deviceId to pk
     }
 
     private fun hash(data: ByteArray): ByteArray {

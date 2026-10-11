@@ -26,6 +26,8 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.media.VolumeProvider
 import android.media.projection.MediaProjectionManager
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -59,10 +61,24 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import org.json.JSONArray
 import org.json.JSONObject
+import com.aria.ariacast.airplay.AirPlayAuthRequiredException
+import com.aria.ariacast.airplay.AirPlayBusyException
+import com.aria.ariacast.airplay.AirPlaySenderIdentity
+import com.aria.ariacast.airplay.AirPlaySessionListener
+import com.aria.ariacast.airplay.AirPlayStreamer
+import com.aria.ariacast.airplay.AirPlayTimingUnsupportedException
+import com.aria.ariacast.airplay.AirPlayVolume
+import com.aria.ariacast.airplay.DacpServer
+import com.aria.ariacast.airplay.PtpMaster
 import com.aria.ariacast.airplay2.AirPlay2Client
-import com.aria.ariacast.airplay2.NeedsPinException
+import com.aria.ariacast.airplay2.HapCredentials
+import com.aria.ariacast.cast.CastClient
+import com.aria.ariacast.cast.CastListener
+import com.aria.ariacast.cast.CastMetadata
 import com.aria.ariacast.raop.AudioResampler
-import com.aria.ariacast.raop.RaopCrypto
+import com.aria.ariacast.raop.RaopClient
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
@@ -118,15 +134,19 @@ class AudioCastService : Service() {
     // destination, plus the metadata refresh timer and volume commands running
     // concurrently), so a plain HashMap/HashSet here is a real ConcurrentModificationException
     // risk - e.g. hitting Stop while a metadata push is in flight. synchronizedMap/Set
-    // (rather than ConcurrentHashMap) because raopSessions legitimately stores null values.
+    // (rather than ConcurrentHashMap) for consistency with the iteration snapshots below.
     private val controlSessions = java.util.Collections.synchronizedMap(mutableMapOf<String, DefaultClientWebSocketSession>())
-    private val raopSockets = java.util.Collections.synchronizedMap(mutableMapOf<String, Socket>())
-    private val raopCSeqs = java.util.Collections.synchronizedMap(mutableMapOf<String, Int>())
-    private val raopSessions = java.util.Collections.synchronizedMap(mutableMapOf<String, String?>())
-    private val airplaySessionIds = java.util.Collections.synchronizedMap(mutableMapOf<String, String>())
-    private val ap2Clients = java.util.Collections.synchronizedMap(mutableMapOf<String, AirPlay2Client>())
+    // Connected AirPlay 1/2 sessions and Google Cast sessions, keyed by receiver host.
+    private val airplayStreamers = java.util.Collections.synchronizedMap(mutableMapOf<String, AirPlayStreamer>())
+    private val castClients = java.util.Collections.synchronizedMap(mutableMapOf<String, CastClient>())
     private val lastSentMetadata = java.util.Collections.synchronizedMap(mutableMapOf<String, String>())
-    private val unsupportedSetProperty = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val lastSentArtwork = java.util.Collections.synchronizedMap(mutableMapOf<String, Int>())
+    @Volatile private var ptpMaster: PtpMaster? = null
+    private var dacpServer: DacpServer? = null
+    private var dacpRegistration: NsdManager.RegistrationListener? = null
+    private var volumeProvider: VolumeProvider? = null
+    private var volumeBeforeMute = -1
+    @Volatile private var lastPlayingState: Boolean? = null
     
     private val dacpId by lazy { 
         sharedPreferences.getString("dacp_id", null) ?: run {
@@ -148,6 +168,32 @@ class AudioCastService : Service() {
             sharedPreferences.edit().putString("airplay_device_id", id).apply()
             id
         }
+    }
+
+    // The long-term identity AirPlay receivers pair with. The Ed25519 seed is a secret
+    // (whoever holds it can impersonate this phone to receivers paired with it), so it
+    // lives in the non-backed-up secure prefs alongside receiver passwords/pairings.
+    private val airPlayIdentity by lazy {
+        val seedHex = securePreferences.getString(KEY_PAIRING_SEED, null)?.takeIf { it.length == 64 } ?: run {
+            val seed = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+            val hex = seed.joinToString("") { "%02x".format(it) }
+            securePreferences.edit().putString(KEY_PAIRING_SEED, hex).apply()
+            hex
+        }
+        val pairingId = securePreferences.getString(KEY_PAIRING_ID, null) ?: run {
+            val id = UUID.randomUUID().toString().uppercase()
+            securePreferences.edit().putString(KEY_PAIRING_ID, id).apply()
+            id
+        }
+        AirPlaySenderIdentity(
+            deviceId = airplayDeviceId,
+            dacpId = dacpId,
+            activeRemote = activeRemote,
+            name = getString(R.string.app_name),
+            model = Build.MODEL ?: "Android",
+            pairingSeed = ByteArray(32) { seedHex.substring(it * 2, it * 2 + 2).toInt(16).toByte() },
+            pairingId = pairingId
+        )
     }
 
     val serverHost: String? get() = _activeDestinations.value.firstOrNull()?.host
@@ -207,10 +253,15 @@ class AudioCastService : Service() {
     private val _metadata = MutableStateFlow<TrackMetadata?>(null)
     val metadata: StateFlow<TrackMetadata?> = _metadata.asStateFlow()
 
-    private val _pairingPinRequest = MutableStateFlow<String?>(null)
-    val pairingPinRequest: StateFlow<String?> = _pairingPinRequest.asStateFlow()
+    /** A receiver needs a PIN (shown on its screen) or a password from the user. */
+    data class PairingRequest(val host: String, val name: String, val kind: AirPlayAuthRequiredException.Kind)
+
+    private val _pairingPinRequest = MutableStateFlow<PairingRequest?>(null)
+    val pairingPinRequest: StateFlow<PairingRequest?> = _pairingPinRequest.asStateFlow()
 
     @Volatile private var activePinDeferred: CompletableDeferred<String?>? = null
+    // Several receivers in a group may each need a code; ask for them one at a time.
+    private val pairingPromptMutex = Mutex()
 
     private val _controlCommands = MutableSharedFlow<MediaCommand>(extraBufferCapacity = 10)
     val controlCommands: SharedFlow<MediaCommand> = _controlCommands.asSharedFlow()
@@ -592,8 +643,16 @@ class AudioCastService : Service() {
 
         acquireWakeLock()
         // Only intercept volume keys for protocols with remote volume control
-        if (destinations.any { it.platform in listOf("AirPlay", "AirPlay2", "AriaCast", "DLNA") }) {
+        if (destinations.any { it.platform in listOf("AirPlay", "AirPlay2", "AriaCast", "DLNA", "Google Cast") }) {
             startVolumeSession()
+        }
+        if (destinations.any { it.platform == "AirPlay" || it.platform == "AirPlay2" }) {
+            startDacpServer()
+        }
+        if (destinations.any { it.platform == "AirPlay2" }) {
+            // Only succeeds where the privileged PTP ports can be bound (rooted devices);
+            // otherwise AirPlay 2 uses NTP timing, falling back to AirPlay 1.
+            ptpMaster = PtpMaster.tryCreate()
         }
 
         // MediaProjection token is single-use on Android 14+; obtain it once before any retries.
@@ -667,7 +726,7 @@ class AudioCastService : Service() {
 
             val videoEnabled = sharedPreferences.getBoolean(SettingsActivity.KEY_VIDEO_ENABLED, false)
 
-            if (destinations.any { it.platform == "DLNA" || it.platform == "Google Cast" || it.platform == "AirPlay" }) {
+            if (destinations.any { it.platform == "DLNA" || it.platform == "Google Cast" }) {
                 startDlnaHttpServer()
                 startArtworkServer()
             }
@@ -708,8 +767,8 @@ class AudioCastService : Service() {
                 when (dest.platform) {
                     "DLNA" -> launch { startDlnaSession(dest) }
                     "Google Cast" -> launch { startGoogleCastSession(dest) }
-                    "AirPlay" -> launch { startAirPlaySession(dest) }
-                    "AirPlay2" -> launch { startAirPlay2Session(dest) }
+                    "AirPlay" -> launch { startAirPlaySession(dest, airplay2 = false) }
+                    "AirPlay2" -> launch { startAirPlaySession(dest, airplay2 = true) }
                     "Snapcast" -> launch { startSnapcastSession(dest) }
                     else -> {
                         launch { startControlSession(dest) }
@@ -883,211 +942,343 @@ class AudioCastService : Service() {
         }
     }
 
-    private suspend fun startGoogleCastSession(dest: CastDestination) {
-        val myIp = getLocalIpAddress() ?: return
+    /**
+     * Google Cast via the CastV2 protocol: launches the Default Media Receiver and
+     * has it play the live WAV stream from our HTTP server. Volume and play/pause
+     * changes made on the device (Home app, speaker buttons) are reflected back.
+     */
+    private suspend fun startGoogleCastSession(dest: CastDestination) = withContext(Dispatchers.IO) {
+        val myIp = getLocalIpAddress() ?: run {
+            _state.value = CastState.ERROR
+            return@withContext
+        }
         val streamUrl = "http://$myIp:$STREAM_PORT/stream.wav"
-        
-        try {
-            _state.value = CastState.CONNECTING
-            
-            // Log available apps to help debugging 404s
+        var failures = 0
+        while (isActive) {
+            val ended = CompletableDeferred<String>()
+            val client = CastClient(dest.host, if (dest.port > 0) dest.port else 8009, object : CastListener {
+                override fun onVolume(level: Double, muted: Boolean) {
+                    reflectReceiverVolume(if (muted) 0 else (level * 100).toInt())
+                }
+                override fun onRemoteCommand(command: String) = dispatchRemoteCommand(command)
+                override fun onDisconnected(reason: String) { ended.complete(reason) }
+            })
             try {
-                val appsResponse = client.get("http://${dest.host}:8008/apps")
-                Log.d(TAG, "Apps list on ${dest.name}: ${appsResponse.bodyAsText()}")
+                _state.value = CastState.CONNECTING
+                client.connect()
+                client.launch()
+                client.load(streamUrl, "audio/wav", castMetadata(_metadata.value))
+                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Google Cast: ${dest.name} playing $streamUrl")
+            } catch (e: CancellationException) {
+                client.close()
+                throw e
             } catch (e: Exception) {
-                Log.d(TAG, "Could not fetch apps list: ${e.message}")
-            }
-
-            // Try common App IDs/Names for DIAL
-            val appIds = listOf("DefaultMediaPlayer", "YouTube", "ChromeCast", "CC1AD845")
-            var launched = false
-            val encodedUrl = URLEncoder.encode(streamUrl, "UTF-8")
-
-            for (appId in appIds) {
-                try {
-                    val launchUrl = "http://${dest.host}:8008/apps/$appId"
-                    
-                    // Try both 'url' and 'v' parameters
-                    val payloads = listOf("url=$encodedUrl", "v=$encodedUrl")
-                    
-                    for (payload in payloads) {
-                        val response = client.post(launchUrl) {
-                            setBody(payload)
-                            contentType(ContentType.Application.FormUrlEncoded)
-                            timeout { requestTimeoutMillis = 5000 }
-                        }
-                        
-                        if (response.status.value in 200..299 || response.status.value == 201) {
-                            launched = true
-                            Log.d(TAG, "Successfully launched Google Cast app: $appId with payload: $payload")
-                            break
-                        }
-                    }
-                    if (launched) break
-                } catch (e: Exception) {
-                    Log.d(TAG, "Failed to launch $appId: ${e.message}")
-                }
-            }
-            
-            // Special fallback for own-tone style mirroring if standard fails
-            if (!launched) {
-                try {
-                    val mirroringUrl = "http://${dest.host}:8008/apps/0F5096C8"
-                    val resp = client.post(mirroringUrl) {
-                        setBody("url=$encodedUrl")
-                        contentType(ContentType.Application.FormUrlEncoded)
-                    }
-                    if (resp.status.value in 200..299) launched = true
-                } catch (e: Exception) {}
-            }
-            
-            if (launched) {
-                _state.value = CastState.CASTING
-                updateNotification()
-            } else {
-                Log.e(TAG, "Google Cast launch failed for all attempted apps on ${dest.name}")
-                _state.value = CastState.ERROR
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "Google Cast session failed for ${dest.name}: ${e.message}")
-            _state.value = CastState.ERROR
-        }
-    }
-
-    private suspend fun startAirPlaySession(dest: CastDestination) {
-        val myIp = getLocalIpAddress() ?: return
-        try {
-            _state.value = CastState.CONNECTING
-
-            // For audio-only casting, RAOP (RTSP) is much more reliable and standard.
-            // We force RAOP handshake here.
-            performRaopHandshake(dest, myIp)
-
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "AirPlay session failed for ${dest.name}: ${e.message}")
-            _state.value = CastState.ERROR
-        }
-    }
-
-    private suspend fun startAirPlay2Session(dest: CastDestination) = withContext(Dispatchers.IO) {
-        try {
-            _state.value = CastState.CONNECTING
-
-            val extra = dest.extra ?: ""
-            // TXT pk is a 64-char hex string representing the 32-byte Ed25519 public key
-            val pkHex = ExtraFields.get(extra, "pk")
-            val txtPk = if (pkHex?.length == 64) {
-                try { ByteArray(32) { i -> pkHex.substring(i * 2, i * 2 + 2).toInt(16).toByte() } }
-                catch (e: Exception) { null }
-            } else null
-
-            // Load any PIN previously saved for this device
-            var pin: String? = securePreferences.getString("airplay2_pin_${dest.host}", null)
-            var clearPinOnFailure = pin != null  // stale saved pin should be wiped if connect() fails
-
-            while (true) {
-                val ap2Client = AirPlay2Client(
-                    host = dest.host,
-                    port = if (dest.port > 0) dest.port else 7000,
-                    deviceId = airplayDeviceId,
-                    dacpId = dacpId,
-                    activeRemote = activeRemote,
-                    sampleRate = SAMPLE_RATE,
-                    channels = 2,
-                    frameSize = AP2_ALAC_FRAME_SIZE,
-                    password = pin,
-                    txtPk = txtPk
-                )
-
-                ap2Client.eventListener = object : AirPlay2Client.EventListener {
-                    override fun onRemoteCommand(command: String) {
-                        val cmd = MediaCommand.entries.find { it.name.equals(command, ignoreCase = true) }
-                        if (cmd != null) scope.launch { _controlCommands.emit(cmd) }
-                    }
-                }
-
-                val connected = try {
-                    ap2Client.connect()
-                } catch (e: NeedsPinException) {
-                    ap2Client.close()
-                    val deferred = CompletableDeferred<String?>()
-                    activePinDeferred = deferred
-                    _pairingPinRequest.value = e.host
-                    pin = deferred.await()
-                    _pairingPinRequest.value = null
-                    activePinDeferred = null
-                    if (pin == null) {
-                        _state.value = CastState.ERROR
-                        return@withContext
-                    }
-                    clearPinOnFailure = false
-                    continue
-                }
-
-                if (!connected) {
-                    if (clearPinOnFailure) {
-                        // Saved PIN was rejected — clear it and retry (NeedsPinException will prompt the user)
-                        securePreferences.edit().remove("airplay2_pin_${dest.host}").apply()
-                        pin = null
-                        clearPinOnFailure = false
-                        ap2Client.close()
-                        continue
-                    }
+                client.close()
+                Log.e(TAG, "Google Cast session failed for ${dest.name}: ${e.message}")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Google Cast ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                if (++failures >= 3) {
                     _state.value = CastState.ERROR
-                    ap2Client.close()
                     return@withContext
                 }
-
-                // Persist PIN so the user won't be asked again next time
-                if (pin != null) {
-                    securePreferences.edit().putString("airplay2_pin_${dest.host}", pin).apply()
-                }
-
-                _state.value = CastState.CASTING
-                updateNotification()
-
-                ap2Clients[dest.host] = ap2Client
-                _metadata.value?.let { ap2Client.sendMetadata(it.title, it.artist, it.album, currentArtworkBytes) }
-
-                val alacFrameBytes = AP2_ALAC_FRAME_SIZE * 2 * 2  // 352 samples * 2 ch * 2 bytes
-                val buf = ByteArrayOutputStream()
-
-                try {
-                    audioBufferFlow.collect { chunk ->
-                        buf.write(chunk)
-                        while (buf.size() >= alacFrameBytes) {
-                            val arr = buf.toByteArray()
-                            val frame = arr.copyOfRange(0, alacFrameBytes)
-                            buf.reset()
-                            if (arr.size > alacFrameBytes) buf.write(arr, alacFrameBytes, arr.size - alacFrameBytes)
-                            ap2Client.sendAudioFrame(frame)
-                        }
-                    }
-                } finally {
-                    ap2Clients.remove(dest.host)
-                    // This runs on cancellation too (e.g. the user hit Stop), where an
-                    // ordinary suspend call would immediately throw - NonCancellable lets
-                    // the TEARDOWN request actually reach the receiver instead of the
-                    // connection just being dropped. teardown() is a blocking call, not a
-                    // suspend one, so it isn't preemptible here; it's bounded by the
-                    // client's own socket timeout rather than by a wrapping withTimeout.
-                    withContext(NonCancellable) {
-                        ap2Client.teardown()
-                        ap2Client.close()
-                    }
-                }
-                break
+                delay(RECONNECT_INITIAL_BACKOFF * 2.0.pow(failures.toDouble()).toLong())
+                continue
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "AirPlay 2 session failed for ${dest.name}: ${e.message}")
-            _state.value = CastState.ERROR
+            failures = 0
+            castClients[dest.host] = client
+            lastSentMetadata.remove(dest.host)
+            _state.value = CastState.CASTING
+            updateNotification()
+            try {
+                val reason = ended.await()
+                Log.w(TAG, "Google Cast ${dest.name} ended: $reason")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Google Cast ${dest.name} ended: $reason")
+                if (reason == "receiver app stopped" || reason == "receiver app closed") {
+                    // The user switched the device to something else - don't fight them for it.
+                    _state.value = CastState.ERROR
+                    return@withContext
+                }
+            } finally {
+                castClients.remove(dest.host, client)
+                withContext(NonCancellable) {
+                    client.stop()
+                    client.close()
+                }
+            }
+            delay(RECONNECT_INITIAL_BACKOFF * 2)
         }
+    }
+
+    private fun castMetadata(metadata: TrackMetadata?): CastMetadata {
+        val myIp = getLocalIpAddress()
+        val art = currentArtworkBytes
+        val imageUrl = when {
+            art != null && myIp != null -> "http://$myIp:$ARTWORK_PORT/artwork.jpg?v=${art.contentHashCode().toUInt()}"
+            else -> metadata?.artworkUrl?.takeIf { it.startsWith("http") }
+        }
+        return CastMetadata(metadata?.title, metadata?.artist, metadata?.album, imageUrl)
+    }
+
+    /**
+     * AirPlay 1 (RAOP) and AirPlay 2 sessions: connects (prompting for a PIN or
+     * password when the receiver asks), then streams the capture resampled to
+     * 44.1 kHz until stopped, reconnecting if the receiver drops us.
+     */
+    private suspend fun startAirPlaySession(dest: CastDestination, airplay2: Boolean) = withContext(Dispatchers.IO) {
+        val txt = ExtraFields.parse(dest.extra)
+        var failures = 0
+        while (isActive) {
+            val ended = CompletableDeferred<String>()
+            val listener = object : AirPlaySessionListener {
+                override fun onRemoteVolume(db: Double) = reflectReceiverVolume(AirPlayVolume.dbToPercent(db))
+                override fun onRemoteCommand(command: String) = dispatchRemoteCommand(command)
+                override fun onDisconnected(reason: String) { ended.complete(reason) }
+            }
+            _state.value = CastState.CONNECTING
+            val streamer = try {
+                connectAirPlay(dest, airplay2, txt, listener)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val label = if (airplay2) "AirPlay 2" else "AirPlay"
+                Log.e(TAG, "$label session failed for ${dest.name}: ${e.message}")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "$label ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                if (e is AirPlayBusyException || e is AirPlayAuthRequiredException || ++failures >= 3) {
+                    _state.value = CastState.ERROR
+                    return@withContext
+                }
+                delay(RECONNECT_INITIAL_BACKOFF * 2.0.pow(failures.toDouble()).toLong())
+                continue
+            }
+            if (streamer == null) { // the user dismissed the PIN/password prompt
+                _state.value = CastState.ERROR
+                return@withContext
+            }
+            failures = 0
+            streamer.extraDelayMs = _activeDestinations.value.find { it.host == dest.host }?.delayMs ?: dest.delayMs
+            airplayStreamers[dest.host] = streamer
+            lastSentMetadata.remove(dest.host)
+            lastSentArtwork.remove(dest.host)
+            PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "${dest.name}: streaming (${streamer.javaClass.simpleName})")
+            _state.value = CastState.CASTING
+            updateNotification()
+            _metadata.value?.let { pushAirPlayMetadata(dest.host, streamer, it) }
+
+            val resampler = AudioResampler(channels = 2) // 48 kHz capture -> 44.1 kHz AirPlay
+            try {
+                val reason = coroutineScope {
+                    val feeder = launch {
+                        audioBufferFlow.collect { chunk -> streamer.writePcm(resampler.resample(chunk)) }
+                    }
+                    val r = ended.await()
+                    feeder.cancel()
+                    r
+                }
+                Log.w(TAG, "AirPlay ${dest.name} dropped: $reason (${streamer.statsSummary()})")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "${dest.name} dropped the session: $reason - reconnecting")
+            } finally {
+                airplayStreamers.remove(dest.host, streamer)
+                withContext(NonCancellable) {
+                    streamer.teardown()
+                    streamer.close()
+                }
+            }
+            delay(RECONNECT_INITIAL_BACKOFF * 2)
+        }
+    }
+
+    /** Returns a streaming session, or null if the user cancelled a PIN/password prompt. */
+    private suspend fun connectAirPlay(
+        dest: CastDestination,
+        airplay2: Boolean,
+        txt: Map<String, String>,
+        listener: AirPlaySessionListener
+    ): AirPlayStreamer? {
+        val volumeDb = AirPlayVolume.percentToDb(receiverVolumePercent())
+        val identity = airPlayIdentity
+        var password = securePreferences.getString(KEY_AIRPLAY_PASSWORD_PREFIX + dest.host, null)
+        var pin: String? = null
+        val pairingKey = KEY_HAP_PAIRING_PREFIX + (txt["id"] ?: dest.host)
+
+        repeat(4) {
+            try {
+                if (airplay2) {
+                    val client = AirPlay2Client(
+                        host = dest.host,
+                        port = if (dest.port > 0) dest.port else 7000,
+                        identity = identity,
+                        txt = txt,
+                        credentials = HapCredentials.deserialize(securePreferences.getString(pairingKey, null)),
+                        pin = pin,
+                        password = password,
+                        initialVolumeDb = volumeDb,
+                        ptpMaster = ptpMaster,
+                        listener = listener,
+                        onPaired = { creds -> securePreferences.edit().putString(pairingKey, creds.serialize()).apply() },
+                        onCredentialsRejected = { securePreferences.edit().remove(pairingKey).apply() }
+                    )
+                    try {
+                        client.connect()
+                        return client
+                    } catch (e: AirPlayTimingUnsupportedException) {
+                        // e.g. shairport-sync in AirPlay 2 mode, which needs PTP (privileged ports
+                        // on Android). Every AirPlay 2 receiver also speaks AirPlay 1 on the same port.
+                        Log.i(TAG, "${dest.name}: ${e.message}; falling back to AirPlay 1")
+                        PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "${dest.name}: AirPlay 2 timing unsupported, using AirPlay 1")
+                        val raop = RaopClient(
+                            host = dest.host,
+                            port = if (dest.port > 0) dest.port else 7000,
+                            identity = identity,
+                            txt = mapOf("md" to "0,1,2", "et" to "0,1", "cn" to "0,1"),
+                            password = password,
+                            initialVolumeDb = volumeDb,
+                            listener = listener
+                        )
+                        raop.connect()
+                        return raop
+                    }
+                } else {
+                    val client = RaopClient(
+                        host = dest.host,
+                        port = dest.port,
+                        identity = identity,
+                        txt = txt,
+                        receiverMac = txt["id"],
+                        password = password,
+                        legacyPaired = securePreferences.getBoolean(KEY_RAOP_LEGACY_PREFIX + dest.host, false),
+                        initialVolumeDb = volumeDb,
+                        listener = listener
+                    )
+                    client.connect()
+                    return client
+                }
+            } catch (e: AirPlayAuthRequiredException) {
+                Log.i(TAG, "${dest.name} needs ${e.kind}: ${e.message}")
+                if (e.kind == AirPlayAuthRequiredException.Kind.PIN && !airplay2) {
+                    securePreferences.edit().remove(KEY_RAOP_LEGACY_PREFIX + dest.host).apply()
+                    try {
+                        RaopClient(dest.host, dest.port, identity).requestPinDisplay()
+                    } catch (e2: Exception) {
+                        Log.w(TAG, "pair-pin-start failed: ${e2.message}")
+                    }
+                }
+                val secret = requestSecret(dest, e.kind) ?: return null
+                when (e.kind) {
+                    AirPlayAuthRequiredException.Kind.PASSWORD -> {
+                        password = secret
+                        securePreferences.edit().putString(KEY_AIRPLAY_PASSWORD_PREFIX + dest.host, secret).apply()
+                    }
+                    AirPlayAuthRequiredException.Kind.PIN -> if (airplay2) {
+                        pin = secret
+                    } else {
+                        RaopClient(dest.host, dest.port, identity).pairWithPin(secret)
+                        securePreferences.edit().putBoolean(KEY_RAOP_LEGACY_PREFIX + dest.host, true).apply()
+                    }
+                }
+            }
+        }
+        throw AirPlayAuthRequiredException(AirPlayAuthRequiredException.Kind.PASSWORD, dest.host, "authentication kept failing")
+    }
+
+    /** Shows the PIN/password dialog and waits for the user's answer (null = cancelled). */
+    private suspend fun requestSecret(dest: CastDestination, kind: AirPlayAuthRequiredException.Kind): String? =
+        pairingPromptMutex.withLock {
+            val deferred = CompletableDeferred<String?>()
+            activePinDeferred = deferred
+            _pairingPinRequest.value = PairingRequest(dest.host, dest.name, kind)
+            try {
+                withTimeoutOrNull(PAIRING_PROMPT_TIMEOUT_MS) { deferred.await() }?.takeIf { it.isNotEmpty() }
+            } finally {
+                _pairingPinRequest.value = null
+                activePinDeferred = null
+            }
+        }
+
+    private fun pushAirPlayMetadata(host: String, streamer: AirPlayStreamer, metadata: TrackMetadata) {
+        val key = "${metadata.title}|${metadata.artist}|${metadata.album}"
+        val art = currentArtworkBytes
+        val artHash = art?.contentHashCode() ?: 0
+        if (lastSentMetadata[host] != key) {
+            lastSentMetadata[host] = key
+            streamer.setMetadata(metadata.title, metadata.artist, metadata.album, metadata.durationMs)
+            lastSentArtwork.remove(host) // receivers tie artwork to the current item
+        }
+        if (art != null && art.isNotEmpty() && lastSentArtwork[host] != artHash) {
+            lastSentArtwork[host] = artHash
+            streamer.setArtwork(art, if (art.size > 3 && art[0] == 0x89.toByte() && art[1] == 'P'.code.toByte()) "image/png" else "image/jpeg")
+        }
+        val duration = metadata.durationMs
+        val position = metadata.positionMs
+        if (duration != null && position != null && duration > 0) streamer.setProgress(position, duration)
+    }
+
+    /** Maps remote-control command names (DACP, AirPlay 2 events, Cast) to the phone's player. */
+    private fun dispatchRemoteCommand(command: String) {
+        val cmd = when (command.lowercase(Locale.US)) {
+            "play", "playresume" -> MediaCommand.PLAY
+            "pause" -> MediaCommand.PAUSE
+            "playpause", "toggleplaypause", "toggle" -> MediaCommand.TOGGLE
+            "nextitem", "nexttrack", "next" -> MediaCommand.NEXT
+            "previtem", "previoustrack", "previous" -> MediaCommand.PREVIOUS
+            "stop" -> MediaCommand.STOP
+            else -> MediaCommand.entries.find { it.name.equals(command, ignoreCase = true) }
+        } ?: return
+        PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Remote command from receiver: $command")
+        scope.launch { _controlCommands.emit(cmd) }
+    }
+
+    private fun startDacpServer() {
+        if (dacpServer != null) return
+        val server = DacpServer(activeRemote) { cmd ->
+            when (cmd) {
+                DacpServer.Command.Play -> dispatchRemoteCommand("play")
+                DacpServer.Command.Pause -> dispatchRemoteCommand("pause")
+                DacpServer.Command.PlayPause -> dispatchRemoteCommand("playpause")
+                DacpServer.Command.Stop -> dispatchRemoteCommand("stop")
+                DacpServer.Command.Next -> dispatchRemoteCommand("nextitem")
+                DacpServer.Command.Previous -> dispatchRemoteCommand("previtem")
+                DacpServer.Command.VolumeUp -> adjustReceiverVolumeSteps(+1)
+                DacpServer.Command.VolumeDown -> adjustReceiverVolumeSteps(-1)
+                DacpServer.Command.MuteToggle -> toggleReceiverMute()
+                is DacpServer.Command.SetVolume -> {
+                    val percent = if (cmd.isPercent) cmd.value.toInt() else AirPlayVolume.dbToPercent(cmd.value)
+                    setReceiverVolumePercent(percent.coerceIn(0, 100))
+                }
+                DacpServer.Command.ShuffleToggle, DacpServer.Command.RepeatAdvance -> {}
+            }
+        }
+        val port = try { server.start() } catch (e: Exception) {
+            Log.w(TAG, "DACP server failed to start: ${e.message}")
+            return
+        }
+        dacpServer = server
+        try {
+            val nsd = getSystemService(NSD_SERVICE) as NsdManager
+            val info = NsdServiceInfo().apply {
+                serviceName = DacpServer.serviceName(dacpId)
+                serviceType = DacpServer.SERVICE_TYPE
+                setPort(port)
+                DacpServer.txtRecords(dacpId).forEach { (k, v) -> setAttribute(k, v) }
+            }
+            val registration = object : NsdManager.RegistrationListener {
+                override fun onServiceRegistered(si: NsdServiceInfo) { Log.d(TAG, "DACP advertised as ${si.serviceName}") }
+                override fun onRegistrationFailed(si: NsdServiceInfo, errorCode: Int) { Log.w(TAG, "DACP registration failed: $errorCode") }
+                override fun onServiceUnregistered(si: NsdServiceInfo) {}
+                override fun onUnregistrationFailed(si: NsdServiceInfo, errorCode: Int) {}
+            }
+            nsd.registerService(info, NsdManager.PROTOCOL_DNS_SD, registration)
+            dacpRegistration = registration
+        } catch (e: Exception) {
+            Log.w(TAG, "DACP mDNS registration failed: ${e.message}")
+        }
+    }
+
+    private fun stopDacpServer() {
+        dacpRegistration?.let { reg ->
+            try { (getSystemService(NSD_SERVICE) as NsdManager).unregisterService(reg) } catch (_: Exception) {}
+        }
+        dacpRegistration = null
+        dacpServer?.stop()
+        dacpServer = null
     }
 
     private suspend fun startSnapcastSession(dest: CastDestination) = withContext(Dispatchers.IO) {
@@ -1261,347 +1452,6 @@ class AudioCastService : Service() {
         }
     }
 
-    private suspend fun performRaopHandshake(dest: CastDestination, myIp: String) = withContext(Dispatchers.IO) {
-        // UDP sockets for audio, control, and timing
-        val audioUdp = DatagramSocket(0)
-        val controlUdp = DatagramSocket(0)
-        val timingUdp = DatagramSocket(0)
-
-        try {
-            val advertisedPort = if (dest.port > 0) dest.port else 5000
-            val portsToTry = if (advertisedPort == 7000) listOf(7000, 5000) else listOf(advertisedPort)
-
-            var socket: Socket? = null
-            for (port in portsToTry) {
-                try {
-                    val s = Socket()
-                    s.connect(java.net.InetSocketAddress(dest.host, port), 5000)
-                    socket = s
-                    break
-                } catch (e: Exception) {
-                    if (port == portsToTry.last()) throw e
-                    Log.d(TAG, "RAOP connect to ${dest.host}:$port failed, trying next port")
-                }
-            }
-            socket!!
-            val targetPort = socket.port
-
-            socket.soTimeout = 10000
-            socket.tcpNoDelay = true
-            raopSockets[dest.host] = socket
-
-            val input = socket.getInputStream()
-            val output = socket.getOutputStream()
-            var cseq = 0
-            raopCSeqs[dest.host] = cseq
-
-            val userAgent = "AirPlay/550.10"
-            val sessionGuid = UUID.randomUUID().toString()
-            val rtpSessionId = (10000000..99999999).random()
-
-            val encryptionTypeBits = ExtraFields.get(dest.extra, "et")?.toIntOrNull() ?: 0
-            val wantsEncryption = (encryptionTypeBits and 1) != 0
-            var raopCrypto: RaopCrypto? = null
-            val cryptoSdp = if (wantsEncryption) {
-                try {
-                    val aesKey = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
-                    val aesIv = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
-                    val encryptedKey = RaopCrypto.encryptAesKey(aesKey)
-                    raopCrypto = RaopCrypto().apply { initAes(aesKey, aesIv) }
-                    val keyB64 = android.util.Base64.encodeToString(encryptedKey, android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
-                    val ivB64 = android.util.Base64.encodeToString(aesIv, android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
-                    "a=rsaaeskey:$keyB64\r\na=aesiv:$ivB64\r\n"
-                } catch (e: Exception) {
-                    Log.w(TAG, "RAOP encryption setup failed for ${dest.host}, falling back to unencrypted: ${e.message}")
-                    raopCrypto = null
-                    ""
-                }
-            } else ""
-
-            val sdp = "v=0\r\n" +
-                    "o=iTunes $rtpSessionId 0 IN IP4 $myIp\r\n" +
-                    "s=iTunes\r\n" +
-                    "c=IN IP4 ${dest.host}\r\n" +
-                    "t=0 0\r\n" +
-                    "m=audio 0 RTP/AVP 96\r\n" +
-                    "a=rtpmap:96 L16/44100/2\r\n" +
-                    "a=fmtp:96 352 0 16 40 10 14 2 255 0 0 44100\r\n" +
-                    cryptoSdp +
-                    "a=control:rtp\r\n"
-
-            val commonHeaders = mutableMapOf(
-                "User-Agent" to userAgent,
-                "X-Apple-Session-ID" to sessionGuid,
-                "X-Apple-Device-ID" to "0x${airplayDeviceId.replace(":", "")}",
-                "Client-Instance" to dacpId.ifEmpty { "0000000000000000" }
-            )
-            if (dacpId.isNotEmpty()) commonHeaders["DACP-ID"] = dacpId
-            if (activeRemote.isNotEmpty()) commonHeaders["Active-Remote"] = activeRemote
-
-            // 1. ANNOUNCE
-            sendRtspRequest(output, "ANNOUNCE", dest.host, targetPort, cseq++, commonHeaders + mapOf(
-                "Content-Type" to "application/sdp",
-                "Content-Length" to sdp.length.toString()
-            ), sdp)
-            readRtspResponse(input)
-
-            // 2. SETUP — advertise our UDP ports
-            sendRtspRequest(output, "SETUP", dest.host, targetPort, cseq++, commonHeaders + mapOf(
-                "Transport" to "RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;control_port=${controlUdp.localPort};timing_port=${timingUdp.localPort}"
-            ))
-            val setupResp = readRtspResponse(input)
-            val session = setupResp.find { it.startsWith("Session:", true) }?.substringAfter(":")?.substringBefore(";")?.trim()
-            raopSessions[dest.host] = session
-
-            // Parse server's UDP ports from SETUP response Transport header
-            var serverAudioPort = 0
-            var serverControlPort = 0
-            var serverTimingPort = 0
-            val transportHeader = setupResp.find { it.startsWith("Transport:", true) }?.substringAfter(":") ?: ""
-            transportHeader.split(";").forEach { part ->
-                when {
-                    part.trim().startsWith("server_port=") -> serverAudioPort = part.substringAfter("=").toIntOrNull() ?: 0
-                    part.trim().startsWith("control_port=") -> serverControlPort = part.substringAfter("=").toIntOrNull() ?: 0
-                    part.trim().startsWith("timing_port=") -> serverTimingPort = part.substringAfter("=").toIntOrNull() ?: 0
-                }
-            }
-            Log.d(TAG, "RAOP SETUP: server audio=$serverAudioPort control=$serverControlPort timing=$serverTimingPort")
-
-            // 3. RECORD
-            sendRtspRequest(output, "RECORD", dest.host, targetPort, cseq++, commonHeaders + mapOf(
-                "Session" to (session ?: ""),
-                "Range" to "npt=0-",
-                "RTP-Info" to "seq=0;rtptime=$LATENCY"
-            ))
-            readRtspResponse(input)
-
-            // 4. Set initial volume to 0 dB (full) — AirPlay range is -30 (silent) to 0 (max)
-            val volBody = "volume: 0.000000\r\n"
-            sendRtspRequest(output, "SET_PARAMETER", dest.host, targetPort, cseq++, commonHeaders + mapOf(
-                "Session" to (session ?: ""),
-                "Content-Type" to "text/parameters",
-                "Content-Length" to volBody.length.toString()
-            ), volBody)
-            readRtspResponse(input)
-
-            raopCSeqs[dest.host] = cseq
-
-            _state.value = CastState.CASTING
-            updateNotification()
-
-            // Initial metadata
-            _metadata.value?.let { updateRaopMetadata(dest.host, it) }
-
-            var sequence = 0
-            var timestamp = LATENCY
-            val serverAddr = InetAddress.getByName(dest.host)
-            // Anchor: wall-clock time when timestamp == LATENCY
-            val startTimeMs = System.currentTimeMillis()
-            val startTimestamp = LATENCY
-
-            // UDP timing thread — receives timing requests from server and replies
-            // In Classic AirPlay, the SERVER sends timing requests to the CLIENT
-            val timingJob = launch(Dispatchers.IO) {
-                try {
-                    timingUdp.soTimeout = 5000 // 5s timeout for debugging
-                    val buf = ByteArray(256)
-                    Log.d(TAG, "RAOP timing thread started, listening on port ${timingUdp.localPort}")
-                    while (isActive) {
-                        try {
-                            val pkt = DatagramPacket(buf, buf.size)
-                            timingUdp.receive(pkt)
-                            val data = pkt.data
-                            Log.d(TAG, "RAOP timing: received ${pkt.length} bytes from ${pkt.address}:${pkt.port}, type=0x${String.format("%02X", data[1])}")
-
-                            if (pkt.length >= 32) {
-                                val payloadType = data[1].toInt() and 0x7F
-                                if (payloadType == 0x52) { // Timing request (PT=82)
-                                    val reqSendSec = ByteBuffer.wrap(data, 24, 4).int
-                                    val reqSendFrac = ByteBuffer.wrap(data, 28, 4).int
-
-                                    val now = System.currentTimeMillis()
-                                    val ntpSec = (now / 1000) + 0x83AA7E80
-                                    val ntpFrac = ((now % 1000) * 0x100000000L / 1000).toInt()
-
-                                    val reply = ByteBuffer.allocate(32).apply {
-                                        put(0x80.toByte())
-                                        put(0xD3.toByte()) // Timing reply (PT=83 | marker)
-                                        putShort(7.toShort())
-                                        putInt(0) // padding
-                                        putInt(reqSendSec) // reference time (T1 from request)
-                                        putInt(reqSendFrac)
-                                        putInt(ntpSec.toInt()) // receive time (T2)
-                                        putInt(ntpFrac)
-                                        putInt(ntpSec.toInt()) // send time (T3)
-                                        putInt(ntpFrac)
-                                    }.array()
-
-                                    val replyPkt = DatagramPacket(reply, reply.size, pkt.address, pkt.port)
-                                    timingUdp.send(replyPkt)
-                                    Log.d(TAG, "RAOP timing: sent reply to ${pkt.address}:${pkt.port}")
-                                }
-                            }
-                        } catch (e: java.net.SocketTimeoutException) {
-                            Log.d(TAG, "RAOP timing: no packet received in 5s (port ${timingUdp.localPort})")
-                        }
-                    }
-                } catch (e: Exception) {
-                    if (isActive) Log.d(TAG, "RAOP timing thread ended: ${e.message}")
-                }
-            }
-
-            // UDP sync thread — send periodic sync packets to keep the receiver's
-            // RTP-to-NTP mapping from drifting. AudioPlaybackCapture delivers audio
-            // in bursts, so the audio thread's timestamp can run ahead of wall clock.
-            // Without periodic re-anchoring, drift accumulates and audio stops.
-            val syncJob = launch(Dispatchers.IO) {
-                // Wait for the first NTP timing exchange to complete
-                delay(3000)
-
-                var isFirstSync = true
-                while (isActive) {
-                    val nowMs = System.currentTimeMillis()
-                    val ntpSec = (nowMs / 1000) + 0x83AA7E80
-                    val ntpFrac = ((nowMs % 1000) * 0x100000000L / 1000).toInt()
-
-                    val elapsedMs = nowMs - startTimeMs
-                    val rtpNow = startTimestamp + (elapsedMs * 44100 / 1000).toInt()
-
-                    val syncPacket = ByteBuffer.allocate(20).apply {
-                        put((if (isFirstSync) 0x90 else 0x80).toByte())
-                        put(0xD4.toByte())
-                        putShort(7.toShort())
-                        putInt(rtpNow - LATENCY)
-                        putInt(ntpSec.toInt())
-                        putInt(ntpFrac)
-                        putInt(rtpNow)
-                    }.array()
-
-                    try {
-                        val pkt = DatagramPacket(syncPacket, syncPacket.size, serverAddr, serverControlPort)
-                        controlUdp.send(pkt)
-                    } catch (e: Exception) { break }
-                    isFirstSync = false
-                    delay(30_000) // re-anchor every 30 seconds
-                }
-            }
-
-            // Audio send loop — send RTP packets over UDP with ALAC uncompressed framing
-            // Accumulate exactly 1408 bytes (352 stereo samples) per ALAC frame
-            val FRAME_BYTES = 1408 // 352 samples × 2 channels × 2 bytes
-            try {
-                var isFirstPacket = true
-                val resampler = AudioResampler(channels = 2)
-                val accumulator = ByteArrayOutputStream(FRAME_BYTES * 2)
-
-                audioBufferFlow.collect { rawBuffer ->
-                    val buffer = resampler.resample(rawBuffer) // 48000 → 44100 Hz
-                    accumulator.write(buffer)
-
-                    val accBytes = accumulator.toByteArray()
-                    var consumed = 0
-                    while (consumed + FRAME_BYTES <= accBytes.size) {
-                        val chunk = accBytes.copyOfRange(consumed, consumed + FRAME_BYTES)
-                        consumed += FRAME_BYTES
-
-                        var alacFrame = alacEncodeUncompressedRaop(chunk)
-                        raopCrypto?.let { alacFrame = it.encryptAudio(alacFrame) }
-
-                        val rtpHeader = ByteBuffer.allocate(12).apply {
-                            put(0x80.toByte())
-                            put((if (isFirstPacket) 0xE0 else 0x60).toByte())
-                            putShort(sequence++.toShort())
-                            putInt(timestamp)
-                            putInt(rtpSessionId)
-                        }
-                        timestamp += FRAME_BYTES / 4 // 352 samples
-                        isFirstPacket = false
-
-                        val payload = rtpHeader.array() + alacFrame
-                        val pkt = DatagramPacket(payload, payload.size, serverAddr, serverAudioPort)
-                        audioUdp.send(pkt)
-                    }
-
-                    // Keep unconsumed remainder for next round
-                    accumulator.reset()
-                    if (consumed < accBytes.size) {
-                        accumulator.write(accBytes, consumed, accBytes.size - consumed)
-                    }
-                }
-            } finally {
-                syncJob.cancel()
-                timingJob.cancel()
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "RAOP failed for ${dest.host}: ${e.message}")
-            withContext(NonCancellable) {
-                try {
-                    val socket = raopSockets[dest.host]
-                    val teardownOutput = if (socket != null && !socket.isClosed) socket.getOutputStream() else null
-                    if (teardownOutput != null) {
-                        synchronized(teardownOutput) {
-                            sendRtspRequest(teardownOutput, "TEARDOWN", dest.host, dest.port, raopCSeqs[dest.host] ?: 1, mapOf(
-                                "Session" to (raopSessions[dest.host] ?: ""),
-                                "User-Agent" to "AirPlay/366.0"
-                            ))
-                        }
-                    }
-                } catch (teardownError: Exception) {}
-            }
-            raopSockets.remove(dest.host)?.close()
-            raopSessions.remove(dest.host)
-            raopCSeqs.remove(dest.host)
-        } finally {
-            audioUdp.close()
-            controlUdp.close()
-            timingUdp.close()
-        }
-    }
-
-    private fun sendRtspRequest(output: OutputStream, method: String, host: String, port: Int, cseq: Int, headers: Map<String, String>, body: String? = null) {
-        val request = StringBuilder()
-        request.append("$method rtsp://$host:$port/AriaCast RTSP/1.0\r\n")
-        request.append("CSeq: $cseq\r\n")
-        headers.forEach { (k, v) -> request.append("$k: $v\r\n") }
-        request.append("\r\n")
-        if (body != null) request.append(body)
-        output.write(request.toString().toByteArray())
-        output.flush()
-    }
-
-    private fun readLineManual(input: InputStream): String? {
-        val sb = StringBuilder()
-        while (true) {
-            val b = input.read()
-            if (b == -1) return if (sb.isEmpty()) null else sb.toString()
-            val c = b.toChar()
-            if (c == '\n') break
-            if (c != '\r') sb.append(c)
-        }
-        return sb.toString()
-    }
-
-    private fun readRtspResponse(input: InputStream): List<String> {
-        val lines = mutableListOf<String>()
-        var line: String?
-        try {
-            while (readLineManual(input).also { line = it } != null && line!!.isNotEmpty()) {
-                lines.add(line!!)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error reading RTSP response: ${e.message}")
-        }
-        if (lines.isNotEmpty()) {
-            val status = lines[0]
-            if (!status.contains("200 OK") && !status.contains("100 Continue")) {
-                Log.w(TAG, "RTSP Non-OK Response: $status")
-            }
-        }
-        return lines
-    }
-
     private suspend fun startAudioSession(dest: CastDestination) {
         var sentFramesCount = 0L
         var reconnectAttempts = 0
@@ -1748,123 +1598,93 @@ class AudioCastService : Service() {
         videoCodec = null
     }
 
+    /** Volume up/down from plugins/UI: one step on every receiver. */
     fun sendVolumeCommand(direction: String) {
-        scope.launch {
-            // Snapshot under the map's intrinsic lock (required for safe iteration over a
-            // synchronizedMap/Set view), then iterate the copy so the blocking network
-            // calls below don't hold that lock and stall concurrent map access elsewhere.
-            val controlSessionsSnapshot = synchronized(controlSessions) { controlSessions.values.toList() }
-            controlSessionsSnapshot.forEach { session ->
-                try {
-                    val command = JSONObject().apply {
-                        put("command", "volume")
-                        put("direction", direction)
-                    }.toString()
-                    session.send(Frame.Text(command))
-                } catch (e: Exception) {}
-            }
-
-            val raopSocketsSnapshot = synchronized(raopSockets) { raopSockets.toMap() }
-            raopSocketsSnapshot.forEach { (host, socket) ->
-                try {
-                    val output = socket.getOutputStream()
-                    val session = raopSessions[host] ?: ""
-                    
-                    val volStr = "volume: ${if(direction == "up") -10.0 else -30.0}\r\n"
-                    synchronized(output) {
-                        val cseq = raopCSeqs[host] ?: 1
-                        sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
-                            "Session" to session,
-                            "Content-Type" to "text/parameters",
-                            "Content-Length" to volStr.length.toString()
-                        ), volStr)
-                        raopCSeqs[host] = cseq + 1
-                    }
-                } catch (e: Exception) {}
-            }
-
-            _activeDestinations.value.forEach { dest ->
-                try {
-                    when (dest.platform) {
-                        "DLNA" -> {
-                            val (_, rcUrl) = getDlnaControlUrls(dest.extra)
-                            if (rcUrl != null) adjustDlnaVolume(rcUrl, direction)
-                        }
-                        "Google Cast" -> {
-                            // DIAL protocol used for Google Cast here does not support volume control.
-                            // This would require implementing the full CastV2 protocol (port 8009).
-                        }
-                        "AirPlay2" -> {
-                            ap2Clients[dest.host]?.setVolume(if (direction == "up") -10.0 else -30.0)
-                        }
-                    }
-                } catch (e: Exception) {}
-            }
-        }
+        adjustReceiverVolumeSteps(if (direction == "up") +1 else -1)
     }
 
-    /** Send an absolute volume in dB to all active receivers.
-     *  AirPlay range: -30.0 (silent) to 0.0 (max). */
-    private fun sendVolumeDb(dB: Double) {
-        Log.d(TAG, "Setting receiver volume to $dB dB")
+    /** Current receiver volume 0-100 (shared by every receiver in the session). */
+    private fun receiverVolumePercent(): Int =
+        sharedPreferences.getInt(KEY_RECEIVER_VOLUME, DEFAULT_RECEIVER_VOLUME).coerceIn(0, 100)
+
+    private fun stepsToPercent(steps: Int) = (steps * 100 + VOLUME_STEPS / 2) / VOLUME_STEPS
+    private fun percentToSteps(percent: Int) = (percent * VOLUME_STEPS + 50) / 100
+
+    private fun adjustReceiverVolumeSteps(delta: Int) {
+        val steps = (percentToSteps(receiverVolumePercent()) + delta).coerceIn(0, VOLUME_STEPS)
+        volumeProvider?.currentVolume = steps
+        setReceiverVolumePercent(stepsToPercent(steps))
+    }
+
+    private fun toggleReceiverMute() {
+        val current = receiverVolumePercent()
+        if (current > 0) {
+            volumeBeforeMute = current
+            setReceiverVolumePercent(0)
+        } else {
+            setReceiverVolumePercent(if (volumeBeforeMute > 0) volumeBeforeMute else DEFAULT_RECEIVER_VOLUME)
+        }
+        volumeProvider?.currentVolume = percentToSteps(receiverVolumePercent())
+    }
+
+    /**
+     * Sets every receiver to [percent] (0 = mute). AirPlay maps it linearly onto
+     * -30..0 dB like iTunes does, Google Cast takes 0..1, DLNA and AriaCast 0..100.
+     */
+    private fun setReceiverVolumePercent(percent: Int) {
+        val p = percent.coerceIn(0, 100)
+        sharedPreferences.edit().putInt(KEY_RECEIVER_VOLUME, p).apply()
+        val dB = AirPlayVolume.percentToDb(p)
+        Log.d(TAG, "Setting receiver volume to $p% ($dB dB)")
         scope.launch {
-            // AirPlay 1 (RAOP)
-            val raopSnapshot = synchronized(raopSockets) { raopSockets.toMap() }
-            raopSnapshot.forEach { (host, socket) ->
+            val airplay = synchronized(airplayStreamers) { airplayStreamers.values.toList() }
+            airplay.forEach { try { it.setVolume(dB) } catch (_: Exception) {} }
+
+            val casts = synchronized(castClients) { castClients.values.toList() }
+            casts.forEach { c ->
                 try {
-                    val output = socket.getOutputStream()
-                    val session = raopSessions[host] ?: ""
-                    val volStr = "volume: ${String.format(Locale.US, "%.6f", dB)}\r\n"
-                    synchronized(output) {
-                        val cseq = raopCSeqs[host] ?: 1
-                        sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
-                            "Session" to session,
-                            "Content-Type" to "text/parameters",
-                            "Content-Length" to volStr.length.toString()
-                        ), volStr)
-                        raopCSeqs[host] = cseq + 1
-                    }
+                    if (p == 0) c.setMuted(true) else { if (c.muted) c.setMuted(false); c.setVolume(p / 100.0) }
                 } catch (_: Exception) {}
             }
 
-            // AirPlay 2
-            val ap2Snapshot = synchronized(ap2Clients) { ap2Clients.toMap() }
-            ap2Snapshot.forEach { (_, client) ->
-                try { client.setVolume(dB) } catch (_: Exception) {}
-            }
-
-            // AriaCast native
             val controlSnapshot = synchronized(controlSessions) { controlSessions.values.toList() }
             controlSnapshot.forEach { session ->
                 try {
                     session.send(Frame.Text(JSONObject().apply {
                         put("command", "volume_set")
-                        put("level", ((dB + 30) / 30 * 100).toInt().coerceIn(0, 100))
+                        put("level", p)
                     }.toString()))
                 } catch (_: Exception) {}
+            }
+
+            _activeDestinations.value.filter { it.platform == "DLNA" }.forEach { dest ->
+                val (_, rcUrl) = getDlnaControlUrls(dest.extra)
+                if (rcUrl != null) setDlnaVolume(rcUrl, p)
             }
         }
     }
 
-    private suspend fun adjustDlnaVolume(rcUrl: String, direction: String) {
+    /**
+     * A receiver changed its own volume (its remote, buttons, Home app): mirror it
+     * on the phone's volume slider without echoing it back to that receiver.
+     */
+    private fun reflectReceiverVolume(percent: Int) {
+        val p = percent.coerceIn(0, 100)
+        if (p == receiverVolumePercent()) return
+        sharedPreferences.edit().putInt(KEY_RECEIVER_VOLUME, p).apply()
+        volumeProvider?.currentVolume = percentToSteps(p)
+        PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Receiver volume changed to $p%")
+    }
+
+    private suspend fun setDlnaVolume(rcUrl: String, percent: Int) {
         try {
-            val getVolBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:GetVolume xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1"><InstanceID>0</InstanceID><Channel>Master</Channel></u:GetVolume></s:Body></s:Envelope>"""
-            val resp = client.post(rcUrl) {
-                header("SoapAction", "\"urn:schemas-upnp-org:service:RenderingControl:1#GetVolume\"")
-                contentType(ContentType.parse("text/xml; charset=utf-8"))
-                setBody(getVolBody)
-            }
-            val volText = resp.bodyAsText()
-            val currentVol = volText.substringAfter("<CurrentVolume>", "").substringBefore("</CurrentVolume>").toIntOrNull() ?: 50
-            val newVol = if (direction == "up") (currentVol + 5).coerceAtMost(100) else (currentVol - 5).coerceAtLeast(0)
-            
-            val setVolBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:SetVolume xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1"><InstanceID>0</InstanceID><Channel>Master</Channel><DesiredVolume>$newVol</DesiredVolume></u:SetVolume></s:Body></s:Envelope>"""
+            val body = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:SetVolume xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1"><InstanceID>0</InstanceID><Channel>Master</Channel><DesiredVolume>$percent</DesiredVolume></u:SetVolume></s:Body></s:Envelope>"""
             client.post(rcUrl) {
                 header("SoapAction", "\"urn:schemas-upnp-org:service:RenderingControl:1#SetVolume\"")
                 contentType(ContentType.parse("text/xml; charset=utf-8"))
-                setBody(setVolBody)
+                setBody(body)
             }
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
     }
 
     fun setDelay(host: String, delayMs: Int) {
@@ -1874,6 +1694,7 @@ class AudioCastService : Service() {
             current[index] = current[index].copy(delayMs = delayMs)
             _activeDestinations.value = current
         }
+        airplayStreamers[host]?.extraDelayMs = delayMs
     }
 
     fun getActiveDestinationsJson(): String {
@@ -1946,6 +1767,15 @@ class AudioCastService : Service() {
 
         val metadataKey = "${finalMetadata.title}-${finalMetadata.artist}"
 
+        // Paused on the phone: AirPlay receivers would otherwise keep playing the ~2 s
+        // they have buffered. FLUSH drops it so the pause takes effect immediately.
+        val wasPlaying = lastPlayingState
+        lastPlayingState = metadata.isPlaying
+        if (wasPlaying == true && !metadata.isPlaying) {
+            val streamers = synchronized(airplayStreamers) { airplayStreamers.values.toList() }
+            streamers.forEach { try { it.flush() } catch (_: Exception) {} }
+        }
+
         destinations.forEach { dest ->
             try {
                 if (dest.platform != "DLNA" && dest.platform != "Google Cast" && dest.platform != "AirPlay" && dest.platform != "AirPlay2") {
@@ -1961,19 +1791,17 @@ class AudioCastService : Service() {
                         timeout { requestTimeoutMillis = 5000 }
                     }
                     PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name}")
-                } else if (dest.platform == "AirPlay") {
-                    updateRaopMetadata(dest.host, finalMetadata)
-                    if (dest.port != 5000) updateAirPlay2Metadata(dest.host, finalMetadata)
-                } else if (dest.platform == "AirPlay2") {
-                    val ap2 = ap2Clients[dest.host]
-                    if (ap2 != null) {
-                        ap2.sendMetadata(finalMetadata.title, finalMetadata.artist, finalMetadata.album, currentArtworkBytes)
-                        val duration = finalMetadata.durationMs
-                        val position = finalMetadata.positionMs
-                        if (duration != null && position != null) {
-                            ap2.sendProgress(position, duration)
-                        }
-                        PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name} (AirPlay 2)")
+                } else if (dest.platform == "AirPlay" || dest.platform == "AirPlay2") {
+                    airplayStreamers[dest.host]?.let { streamer ->
+                        pushAirPlayMetadata(dest.host, streamer, finalMetadata)
+                        PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name} (AirPlay)")
+                    }
+                } else if (dest.platform == "Google Cast") {
+                    val cast = castClients[dest.host]
+                    if (cast != null && lastSentMetadata[dest.host] != metadataKey + currentArtworkBytes?.contentHashCode()) {
+                        lastSentMetadata[dest.host] = metadataKey + currentArtworkBytes?.contentHashCode()
+                        cast.updateMetadata(castMetadata(metadata))
+                        PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name} (Google Cast)")
                     }
                 } else if (dest.platform == "DLNA") {
                     if (lastSentMetadata[dest.host] != metadataKey) {
@@ -2011,96 +1839,6 @@ class AudioCastService : Service() {
 
         val fields = ExtraFields.parse(extra)
         return fields["av_control"] to fields["rc_control"]
-    }
-
-    private fun updateRaopMetadata(host: String, metadata: TrackMetadata) {
-        val socket = raopSockets[host] ?: return
-        val output = socket.getOutputStream()
-        val session = raopSessions[host] ?: ""
-
-        val dmap = encodeDmapMetadata(metadata)
-        if (dmap.isEmpty()) return
-
-        try {
-            synchronized(output) {
-                val cseq = raopCSeqs[host] ?: 1
-                sendRtspRequest(output, "SET_PARAMETER", host, socket.port, cseq, mapOf(
-                    "Session" to session,
-                    "Content-Type" to "application/x-dmap-tagged",
-                    "Content-Length" to dmap.size.toString()
-                ))
-                output.write(dmap)
-                output.flush()
-                raopCSeqs[host] = cseq + 1
-            }
-        } catch (e: Exception) {}
-    }
-
-    private suspend fun updateAirPlay2Metadata(host: String, metadata: TrackMetadata) {
-        if (unsupportedSetProperty.contains(host)) return
-        val sessionId = airplaySessionIds[host] ?: return
-        val targetPort = 7000
-        
-        // Use DMAP-tagged metadata as seen in pyatv
-        val dmapData = encodeDmapMetadata(metadata)
-        val mlitContainer = ByteArrayOutputStream().apply {
-            write("mlit".toByteArray())
-            write(ByteBuffer.allocate(4).putInt(dmapData.size).array())
-            write(dmapData)
-        }.toByteArray()
-
-        try {
-            val response = client.post("http://$host:$targetPort/setProperty") {
-                header("X-Apple-Session-ID", sessionId)
-                header("Content-Type", "application/x-dmap-tagged")
-                header("User-Agent", "AirPlay/550.10")
-                setBody(mlitContainer)
-            }
-            if (response.status.value == 404 || response.status.value == 405) {
-                // Fallback to legacy plist metadata if DMAP fails
-                val xmlBody = """
-                    <?xml version="1.0" encoding="UTF-8"?>
-                    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-                    <plist version="1.0">
-                    <dict>
-                        <key>Metadata</key>
-                        <dict>
-                            <key>title</key>
-                            <string>${escapeXml(metadata.title ?: "AriaCast")}</string>
-                            <key>artist</key>
-                            <string>${escapeXml(metadata.artist ?: "AriaCast")}</string>
-                        </dict>
-                    </dict>
-                    </plist>
-                """.trimIndent()
-                client.put("http://$host:$targetPort/setProperty") {
-                    header("X-Apple-Session-ID", sessionId)
-                    header("Content-Type", "application/x-apple-binary-plist")
-                    setBody(xmlBody)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "AirPlay 2 metadata update failed: ${e.message}")
-        }
-    }
-
-    private fun encodeDmapMetadata(metadata: TrackMetadata): ByteArray {
-        val out = ByteArrayOutputStream()
-        
-        fun writeTag(tag: String, value: String?) {
-            if (value == null) return
-            val valBytes = value.toByteArray(Charsets.UTF_8)
-            out.write(tag.toByteArray())
-            val len = ByteBuffer.allocate(4).putInt(valBytes.size).array()
-            out.write(len)
-            out.write(valBytes)
-        }
-
-        writeTag("minm", metadata.title)
-        writeTag("asar", metadata.artist)
-        writeTag("asal", metadata.album)
-
-        return out.toByteArray()
     }
 
     private fun createDidlMetadata(streamUrl: String, metadata: TrackMetadata?): String {
@@ -2217,6 +1955,10 @@ class AudioCastService : Service() {
             put("bitrate", currentBitrateString)
             put("state", _state.value.name)
             put("destinations_count", _activeDestinations.value.size)
+            val streamers = synchronized(airplayStreamers) { airplayStreamers.toMap() }
+            if (streamers.isNotEmpty()) {
+                put("airplay", JSONObject().apply { streamers.forEach { (host, st) -> put(host, st.statsSummary()) } })
+            }
         }.toString()
     }
 
@@ -2285,16 +2027,20 @@ class AudioCastService : Service() {
         // the race and the receiver was left holding the session open until its own
         // timeout. Capture the raw socket/client references now (before this coroutine
         // runs) so a fast reconnect that reuses these maps in the meantime isn't affected.
-        val raopSocketsSnapshot = synchronized(raopSockets) { raopSockets.values.toList() }
-        val ap2ClientsSnapshot = synchronized(ap2Clients) { ap2Clients.values.toList() }
-        raopSockets.clear()
-        raopSessions.clear()
-        raopCSeqs.clear()
-        ap2Clients.clear()
+        val streamersSnapshot = synchronized(airplayStreamers) { airplayStreamers.values.toList() }
+        val castSnapshot = synchronized(castClients) { castClients.values.toList() }
+        airplayStreamers.clear()
+        castClients.clear()
+        lastSentMetadata.clear()
+        lastSentArtwork.clear()
+        stopDacpServer()
+        val ptp = ptpMaster
+        ptpMaster = null
         scope.launch(Dispatchers.IO) {
-            withTimeoutOrNull(2000) { teardownJobs.joinAll() }
-            raopSocketsSnapshot.forEach { try { it.close() } catch (e: Exception) {} }
-            ap2ClientsSnapshot.forEach { try { it.close() } catch (e: Exception) {} }
+            withTimeoutOrNull(3000) { teardownJobs.joinAll() }
+            streamersSnapshot.forEach { try { it.close() } catch (e: Exception) {} }
+            castSnapshot.forEach { try { it.close() } catch (e: Exception) {} }
+            ptp?.stop()
         }
         _activeDestinations.value = emptyList()
         sessionJob?.cancel()
@@ -2343,24 +2089,26 @@ class AudioCastService : Service() {
             // Empty callback — needed to claim media button routing
         })
 
-        // AirPlay volume: -30 dB (silent) to 0 dB (max), 30 steps of 1 dB
-        val maxSteps = 30
-        session.setPlaybackToRemote(object : VolumeProvider(
-            VOLUME_CONTROL_ABSOLUTE, maxSteps, maxSteps
+        // Receiver volume in VOLUME_STEPS steps (AirPlay: 1 dB per step over -30..0 dB,
+        // step 0 = mute), starting from the level used last time.
+        val provider = object : VolumeProvider(
+            VOLUME_CONTROL_ABSOLUTE, VOLUME_STEPS, percentToSteps(receiverVolumePercent())
         ) {
             override fun onSetVolumeTo(volume: Int) {
-                setCurrentVolume(volume)
-                val dB = volume - maxSteps
-                sendVolumeDb(dB.toDouble())
+                val v = volume.coerceIn(0, VOLUME_STEPS)
+                setCurrentVolume(v)
+                setReceiverVolumePercent(stepsToPercent(v))
             }
 
             override fun onAdjustVolume(direction: Int) {
-                val newVol = (currentVolume + direction).coerceIn(0, maxSteps)
-                setCurrentVolume(newVol)
-                val dB = newVol - maxSteps
-                sendVolumeDb(dB.toDouble())
+                if (direction == AudioManager.ADJUST_TOGGLE_MUTE) { toggleReceiverMute(); return }
+                val v = (currentVolume + direction).coerceIn(0, VOLUME_STEPS)
+                setCurrentVolume(v)
+                setReceiverVolumePercent(stepsToPercent(v))
             }
-        })
+        }
+        volumeProvider = provider
+        session.setPlaybackToRemote(provider)
 
         session.isActive = true
         mediaSession = session
@@ -2368,6 +2116,7 @@ class AudioCastService : Service() {
     }
 
     private fun stopVolumeSession() {
+        volumeProvider = null
         mediaSession?.isActive = false
         mediaSession?.release()
         mediaSession = null
@@ -2379,9 +2128,8 @@ class AudioCastService : Service() {
             scope.launch {
                 try {
                     when (dest.platform) {
-                        "AirPlay2" -> {
-                            ap2Clients[dest.host]?.teardown()
-                        }
+                        "AirPlay", "AirPlay2" -> airplayStreamers[dest.host]?.teardown()
+                        "Google Cast" -> castClients[dest.host]?.stop()
                         "DLNA" -> {
                             val (controlUrl, _) = getDlnaControlUrls(dest.extra)
                             if (controlUrl == null) return@launch
@@ -2390,33 +2138,6 @@ class AudioCastService : Service() {
                                 header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#Stop\"")
                                 contentType(ContentType.parse("text/xml; charset=utf-8"))
                                 setBody(stopBody)
-                            }
-                        }
-                        "Google Cast" -> {
-                            client.delete("http://${dest.host}:8008/apps/DefaultMediaPlayer")
-                        }
-                        "AirPlay" -> {
-                            if (dest.port == 5000 || dest.name.contains("@")) {
-                                val socket = raopSockets[dest.host]
-                                val output = socket?.getOutputStream()
-                                if (output != null) {
-                                    synchronized(output) {
-                                        val cseq = raopCSeqs[dest.host] ?: 1
-                                        sendRtspRequest(output, "TEARDOWN", dest.host, dest.port, cseq, mapOf(
-                                            "Session" to (raopSessions[dest.host] ?: ""),
-                                            "User-Agent" to "AirPlay/366.0"
-                                        ))
-                                    }
-                                }
-                            } else {
-                                val sessionId = airplaySessionIds[dest.host]
-                                if (sessionId != null) {
-                                    client.post("http://${dest.host}:${if(dest.port > 0) dest.port else 7000}/stop") {
-                                        header("X-Apple-Session-ID", sessionId)
-                                        header("X-Apple-Device-ID", "0x${airplayDeviceId.replace(":", "").lowercase()}")
-                                        header("User-Agent", "AirPlay/366.0")
-                                    }
-                                }
                             }
                         }
                     }
@@ -2493,13 +2214,22 @@ class AudioCastService : Service() {
 
         const val SAMPLE_RATE = 48000
         const val FRAME_SIZE = 3840
-        const val LATENCY = 66150
         // REST API port on the AriaCompanion WiFi sender board (renamed from
         // the old raw-TCP COMPANION_STREAM_PORT=7001 now that the board
         // streams straight to a chosen AriaCast Receiver instead of to a
         // bespoke TCP port on the phone).
         const val COMPANION_API_PORT = 8081
-        private const val AP2_ALAC_FRAME_SIZE = 352  // ALAC frame size in samples for AirPlay 2
+
+        // Secure-prefs keys for AirPlay secrets (excluded from backup, see SECURE_PREFS_NAME).
+        const val KEY_AIRPLAY_PASSWORD_PREFIX = "airplay_password_"
+        const val KEY_HAP_PAIRING_PREFIX = "airplay2_pairing_"
+        const val KEY_RAOP_LEGACY_PREFIX = "airplay_legacy_paired_"
+        private const val KEY_PAIRING_SEED = "airplay_pairing_seed"
+        private const val KEY_PAIRING_ID = "airplay_pairing_id"
+        private const val KEY_RECEIVER_VOLUME = "receiver_volume_percent"
+        private const val DEFAULT_RECEIVER_VOLUME = 50
+        private const val VOLUME_STEPS = 30
+        private const val PAIRING_PROMPT_TIMEOUT_MS = 180_000L
         
         const val VIDEO_WIDTH = 1280
         const val VIDEO_HEIGHT = 720
@@ -2512,46 +2242,4 @@ class AudioCastService : Service() {
         private const val ARTWORK_PORT = 8090
         private const val STREAM_PORT = 8091
     }
-    /** Encode little-endian PCM into an ALAC uncompressed frame.
-     *  Writes the 23-bit ALAC header, byte-swaps each stereo sample pair
-     *  to big-endian, and appends the 3-bit end tag. */
-    private fun alacEncodeUncompressedRaop(pcm: ByteArray): ByteArray {
-        val out = ByteArray(3 + pcm.size + 1) // header + samples + trailer padding
-        var p = 0
-        var bpos = 0
-
-        fun writeBits(v: Int, blen: Int) {
-            val lb = 8 - bpos
-            val rb = lb - blen
-            if (rb >= 0) {
-                val bd = (v shl rb) and 0xFF
-                out[p] = if (bpos == 0) bd.toByte() else (out[p].toInt() or bd).toByte()
-                if (rb == 0) { p++; bpos = 0 } else bpos += blen
-            } else {
-                out[p] = (out[p].toInt() or ((v ushr (-rb)) and 0xFF)).toByte()
-                p++
-                out[p] = ((v shl (8 + rb)) and 0xFF).toByte()
-                bpos = -rb
-            }
-        }
-
-        // ALAC uncompressed frame header: 3 bits tag(1) + 4 bits unused + 8 bits unused
-        //                                 + 4 bits unused + 1 bit "has size" + 2 bits unused + 1 bit "not compressed"
-        writeBits(1, 3); writeBits(0, 4); writeBits(0, 8)
-        writeBits(0, 4); writeBits(0, 1); writeBits(0, 2); writeBits(1, 1)
-
-        // Byte-swap little-endian stereo samples to big-endian
-        var i = 0
-        while (i < pcm.size) {
-            writeBits(pcm[i + 1].toInt() and 0xFF, 8)  // L high
-            writeBits(pcm[i + 0].toInt() and 0xFF, 8)  // L low
-            writeBits(pcm[i + 3].toInt() and 0xFF, 8)  // R high
-            writeBits(pcm[i + 2].toInt() and 0xFF, 8)  // R low
-            i += 4
-        }
-        // End tag
-        writeBits(7, 3)
-        return out
-    }
-
 }

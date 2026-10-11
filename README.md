@@ -28,10 +28,10 @@
 
 <ul>
   <li><b>AriaCast Native:</b> Our high-performance protocol using binary WebSockets for low-latency, high-fidelity audio with rich metadata sync.</li>
-<li><b>AirPlay 1:</b> Seamless streaming to legacy Apple devices and Hi-Fi speakers.</li>
-  <li><b>AirPlay 2:</b> Encrypted streaming (HomeKit pairing) to Macs, Apple TVs and HomePods, with live metadata, artwork and volume sync.</li>
+<li><b>AirPlay 1:</b> AirPort Express, Apple TV and any AirPlay speaker/receiver (RAOP): lossless ALAC or PCM, RSA/AES encryption, password and on-screen-code pairing, now-playing text, artwork and progress, receiver remote control and volume sync.</li>
+  <li><b>AirPlay 2:</b> HomePods, Apple TVs, Macs and AirPlay 2 speakers: HomeKit pairing (transient or PIN), encrypted control and audio channels, metadata, artwork and volume sync, with automatic fallback to AirPlay 1 for receivers that need timing Android can't provide.</li>
+  <li><b>Google Cast:</b> Chromecast, Nest speakers/displays and Cast groups, with now-playing metadata and two-way volume and play/pause sync.</li>
   <li><b>DLNA / UPnP:</b> Universal compatibility with Smart TVs, AV Receivers, and media boxes.</li>
-  <li><i>Coming Soon: Google Cast.</i></li>
 </ul>
 
 <hr />
@@ -91,6 +91,16 @@
   <br><br>
   <a href="https://buymeacoffee.com/AirPlr"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee"></a>
 </div>
+
+<hr />
+
+<h3>🧪 Protocol tests</h3>
+<p>
+  Unit tests run with <code>./gradlew testDebugUnitTest</code>. The AirPlay clients are also tested end to end against real
+  <a href="https://github.com/mikebrady/shairport-sync">shairport-sync</a> receivers (AirPlay 1, and AirPlay 2 with nqptp): start them with
+  <code>sudo scripts/e2e/start-receivers.sh</code> (see the script for options), then run <code>AIRPLAY_E2E=1 ./gradlew testDebugUnitTest</code>.
+  The tests check the audio the receiver actually decodes, not just the handshakes.
+</p>
 
 <hr />
 

@@ -393,7 +393,7 @@ class MainActivity : AppCompatActivity() {
         "AriaCast" -> 12889
         "AirPlay" -> 5000
         "AirPlay2" -> 7000
-        "Google Cast" -> 8008
+        "Google Cast" -> 8009 // CastV2 (TLS)
         else -> 0 // DLNA needs SSDP-sourced control URLs - can't be reached blind.
     }
 
@@ -561,9 +561,9 @@ class MainActivity : AppCompatActivity() {
         
         lifecycleScope.launch {
             audioCastServiceFlow.collectLatest { s ->
-                s?.pairingPinRequest?.collectLatest { host ->
-                    if (host != null) {
-                        showPairingPinDialog(host)
+                s?.pairingPinRequest?.collectLatest { request ->
+                    if (request != null) {
+                        showPairingPinDialog(request)
                     }
                 }
             }
@@ -792,11 +792,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showPairingPinDialog(host: String) {
+    private fun showPairingPinDialog(request: AudioCastService.PairingRequest) {
+        val isPassword = request.kind == com.aria.ariacast.airplay.AirPlayAuthRequiredException.Kind.PASSWORD
         val input = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            filters = arrayOf(android.text.InputFilter.LengthFilter(6))
-            hint = "0000"
+            if (isPassword) {
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            } else {
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                filters = arrayOf(android.text.InputFilter.LengthFilter(8))
+                hint = "0000"
+            }
         }
         
         val container = android.widget.FrameLayout(this).apply {
@@ -809,14 +814,18 @@ class MainActivity : AppCompatActivity() {
             addView(input)
         }
 
+        val label = if (request.name.isNotEmpty()) request.name else request.host
         MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.airplay_pin_title)
-            .setMessage(getString(R.string.airplay_pin_message, host))
+            .setTitle(if (isPassword) R.string.airplay_password_title else R.string.airplay_pin_title)
+            .setMessage(getString(if (isPassword) R.string.airplay_password_message else R.string.airplay_pin_message, label))
             .setView(container)
+            .setCancelable(false)
             .setPositiveButton(R.string.save) { _, _ ->
                 val pin = input.text.toString()
                 if (pin.isNotEmpty()) {
-                    audioCastService?.submitPairingPin(host, pin)
+                    audioCastService?.submitPairingPin(request.host, pin)
+                } else {
+                    audioCastService?.resetPairingPinRequest()
                 }
             }
             .setNegativeButton(R.string.cancel) { _, _ ->

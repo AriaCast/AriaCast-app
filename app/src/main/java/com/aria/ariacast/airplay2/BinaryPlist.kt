@@ -1,304 +1,208 @@
 package com.aria.ariacast.airplay2
 
 import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.util.UUID
-import kotlin.experimental.and
 
+/**
+ * Apple binary property list ("bplist00") encoder/decoder - the body format of
+ * AirPlay 2 SETUP / GET /info / event messages and AirPlay 1 legacy pairing.
+ *
+ * Supported types: dictionaries (String keys), lists, strings (ASCII and
+ * UTF-16), integers (Int/Long; negatives as 8-byte), floating point, booleans,
+ * byte arrays and null.
+ */
 object BinaryPlist {
 
-    private sealed class PlistNode {
-        data class PDict(val entries: List<Pair<String, PlistNode>>) : PlistNode()
-        data class PArray(val items: List<PlistNode>) : PlistNode()
-        data class PString(val value: String) : PlistNode()
-        data class PUint(val value: Long) : PlistNode()
-        data class PBool(val value: Boolean) : PlistNode()
-        data class PData(val value: ByteArray) : PlistNode()
-    }
+    fun encode(root: Map<String, Any?>): ByteArray = encodeValue(root)
 
-    fun encode(root: Map<String, Any?>): ByteArray {
-        val node = toNode(root)
-        val objects = mutableListOf<PlistNode>()
-        val offsetMap = mutableMapOf<Int, Int>()
-        collectObjects(node, objects, offsetMap)
-        val objectsOut = ByteArrayOutputStream()
-        val offsets = mutableListOf<Int>()
-        for (obj in objects) {
-            offsets.add(8 + objectsOut.size())  // +8 for "bplist00" header
-            writeObject(obj, objects, objectsOut)
-        }
-        val numObjects = objects.size
-        val offsetTableStart = 8 + objectsOut.size()  // absolute position in final output
-        val maxOffset = offsetTableStart - 1
-        val offsetSize = if (maxOffset < 256) 1 else if (maxOffset < 65536) 2 else 4
-        for (off in offsets) {
-            when (offsetSize) {
-                1 -> objectsOut.write(off)
-                2 -> objectsOut.write(ByteBuffer.allocate(2).order(ByteOrder.BIG_ENDIAN).putShort(off.toShort()).array())
-                4 -> objectsOut.write(ByteBuffer.allocate(4).order(ByteOrder.BIG_ENDIAN).putInt(off).array())
+    /** Encodes any supported value as the plist root (e.g. a list, for SETPEERS). */
+    fun encodeValue(root: Any?): ByteArray {
+        // Count objects first: the reference width depends on the total.
+        val all = ArrayList<Any?>()
+        flatten(root, all)
+        val count = all.size
+        val refSize = if (count <= 0xFF) 1 else if (count <= 0xFFFF) 2 else 4
+
+        // Each object gets the next index; a container's children are emitted after
+        // it (keys then values), mirroring flatten()'s order.
+        val encoded = ArrayList<ByteArray?>(count)
+        fun emit(value: Any?): Int {
+            val index = encoded.size
+            encoded.add(null)
+            encoded[index] = when (value) {
+                is Map<*, *> -> {
+                    val entries = value.entries.toList()
+                    val keyRefs = entries.map { emit(it.key.toString()) }
+                    val valueRefs = entries.map { emit(it.value) }
+                    ByteArrayOutputStream().apply {
+                        writeMarker(this, 0xD, entries.size)
+                        keyRefs.forEach { writeSized(this, it.toLong(), refSize) }
+                        valueRefs.forEach { writeSized(this, it.toLong(), refSize) }
+                    }.toByteArray()
+                }
+                is List<*> -> {
+                    val refs = value.map { emit(it) }
+                    ByteArrayOutputStream().apply {
+                        writeMarker(this, 0xA, refs.size)
+                        refs.forEach { writeSized(this, it.toLong(), refSize) }
+                    }.toByteArray()
+                }
+                else -> scalarBytes(value)
             }
+            return index
         }
-        val header = "bplist00".toByteArray()
-        val trailer = ByteBuffer.allocate(32).order(ByteOrder.BIG_ENDIAN).apply {
-            put(ByteArray(6))              // 6 unused bytes
-            put(offsetSize.toByte())       // 1 byte: offset table entry size
-            put(1.toByte())               // 1 byte: object reference size
-            putLong(numObjects.toLong())   // 8 bytes: number of objects
-            putLong(0L)                    // 8 bytes: root object index
-            putLong(offsetTableStart.toLong()) // 8 bytes: offset table offset
-        }.array()
-        return ByteArrayOutputStream().apply {
-            write(header)
-            write(objectsOut.toByteArray())
-            write(trailer)
-        }.toByteArray()
+        emit(root)
+
+        val out = ByteArrayOutputStream()
+        out.write("bplist00".toByteArray(Charsets.US_ASCII))
+        val offsets = LongArray(encoded.size)
+        encoded.forEachIndexed { i, bytes -> offsets[i] = out.size().toLong(); out.write(bytes!!) }
+        val offsetTableStart = out.size().toLong()
+        val offsetSize = when {
+            offsetTableStart <= 0xFF -> 1
+            offsetTableStart <= 0xFFFF -> 2
+            else -> 4
+        }
+        offsets.forEach { writeSized(out, it, offsetSize) }
+        out.write(ByteArray(6))
+        out.write(offsetSize)
+        out.write(refSize)
+        writeSized(out, encoded.size.toLong(), 8)
+        writeSized(out, 0L, 8)               // root object index
+        writeSized(out, offsetTableStart, 8)
+        return out.toByteArray()
     }
 
-    private fun collectObjects(node: PlistNode, list: MutableList<PlistNode>, seen: MutableMap<Int, Int>) {
-        val hc = node.hashCode()
-        if (hc in seen) return
-        seen[hc] = list.size
-        list.add(node)
-        when (node) {
-            is PlistNode.PDict -> node.entries.forEach { (k, v) -> collectObjects(PlistNode.PString(k), list, seen); collectObjects(v, list, seen) }
-            is PlistNode.PArray -> node.items.forEach { collectObjects(it, list, seen) }
-            else -> {}
+    private fun flatten(value: Any?, out: MutableList<Any?>) {
+        out.add(value)
+        when (value) {
+            is Map<*, *> -> {
+                value.keys.forEach { out.add(it.toString()) }
+                value.values.forEach { flatten(it, out) }
+            }
+            is List<*> -> value.forEach { flatten(it, out) }
         }
     }
 
-    private fun toNode(value: Any?): PlistNode = when (value) {
-        is Map<*, *> -> PlistNode.PDict(value.entries.map { (k, v) -> k.toString() to toNode(v) })
-        is List<*> -> PlistNode.PArray(value.map { toNode(it) })
-        is String -> PlistNode.PString(value)
-        is Number -> PlistNode.PUint(value.toLong())
-        is Boolean -> PlistNode.PBool(value)
-        is ByteArray -> PlistNode.PData(value)
-        else -> PlistNode.PString(value.toString())
-    }
-
-    private fun findIndex(node: PlistNode, objects: List<PlistNode>): Int {
-        val hc = node.hashCode()
-        for (i in objects.indices) {
-            if (objects[i].hashCode() == hc && objects[i] == node) return i
-        }
-        return 0
-    }
-
-    private fun writeObject(obj: PlistNode, objects: List<PlistNode>, out: ByteArrayOutputStream) {
-        when (obj) {
-            is PlistNode.PDict -> {
-                val keys = obj.entries.map { findIndex(PlistNode.PString(it.first), objects) }
-                val values = obj.entries.map { findIndex(it.second, objects) }
-                val size = obj.entries.size
-                if (size < 15) {
-                    out.write(0xD0 or size)
+    private fun scalarBytes(value: Any?): ByteArray {
+        val out = ByteArrayOutputStream()
+        when (value) {
+            null -> out.write(0x00)
+            is Boolean -> out.write(if (value) 0x09 else 0x08)
+            is Float, is Double -> {
+                out.write(0x23)
+                writeSized(out, java.lang.Double.doubleToRawLongBits((value as Number).toDouble()), 8)
+            }
+            is Number -> writeInt(out, value.toLong())
+            is ByteArray -> { writeMarker(out, 0x4, value.size); out.write(value) }
+            is String -> {
+                if (value.all { it.code < 0x80 }) {
+                    writeMarker(out, 0x5, value.length)
+                    out.write(value.toByteArray(Charsets.US_ASCII))
                 } else {
-                    out.write(0xDF)
-                    writeInt(size, out)
-                }
-                keys.forEach { writeIntRef(it, objects.size, out) }
-                values.forEach { writeIntRef(it, objects.size, out) }
-            }
-            is PlistNode.PArray -> {
-                val size = obj.items.size
-                if (size < 15) {
-                    out.write(0xA0 or size)
-                } else {
-                    out.write(0xAF)
-                    writeInt(size, out)
-                }
-                obj.items.forEach { writeIntRef(findIndex(it, objects), objects.size, out) }
-            }
-            is PlistNode.PString -> {
-                val raw = obj.value.toByteArray(Charsets.UTF_8)
-                val len = raw.size
-                if (len < 15) {
-                    out.write(0x50 or len)
-                } else {
-                    out.write(0x50 or 0x0F)
-                    writeInt(len, out)
-                }
-                out.write(raw)
-            }
-            is PlistNode.PUint -> {
-                val v = obj.value
-                when {
-                    v in 0..0xFF -> { out.write(0x10 or 0); out.write(v.toInt()) }
-                    v in 0..0xFFFF -> { out.write(0x10 or 1); out.write(ByteBuffer.allocate(2).order(ByteOrder.BIG_ENDIAN).putShort(v.toShort()).array()) }
-                    v in 0..0xFFFFFFFFL -> { out.write(0x10 or 2); out.write(ByteBuffer.allocate(4).order(ByteOrder.BIG_ENDIAN).putInt(v.toInt()).array()) }
-                    else -> { out.write(0x10 or 3); out.write(ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN).putLong(v).array()) }
+                    writeMarker(out, 0x6, value.length) // UTF-16 code units
+                    out.write(value.toByteArray(Charsets.UTF_16BE))
                 }
             }
-            is PlistNode.PBool -> out.write(if (obj.value) 0x09 else 0x08)
-            is PlistNode.PData -> {
-                val len = obj.value.size
-                if (len < 15) {
-                    out.write(0x40 or len)
-                } else {
-                    out.write(0x40 or 0x0F)
-                    writeInt(len, out)
-                }
-                out.write(obj.value)
-            }
+            else -> return scalarBytes(value.toString())
+        }
+        return out.toByteArray()
+    }
+
+    private fun writeInt(out: ByteArrayOutputStream, v: Long) {
+        when {
+            v in 0..0xFF -> { out.write(0x10); writeSized(out, v, 1) }
+            v in 0..0xFFFF -> { out.write(0x11); writeSized(out, v, 2) }
+            v in 0..0xFFFFFFFFL -> { out.write(0x12); writeSized(out, v, 4) }
+            else -> { out.write(0x13); writeSized(out, v, 8) } // negatives are 8-byte two's complement
         }
     }
 
-    private fun writeInt(value: Int, out: ByteArrayOutputStream) {
-        if (value < 0x0F) {
-            out.write(value)
-        } else if (value < 0x100) {
-            out.write(0x10); out.write(value)
+    private fun writeMarker(out: ByteArrayOutputStream, type: Int, count: Int) {
+        if (count < 15) {
+            out.write((type shl 4) or count)
         } else {
-            out.write(0x11)
-            out.write(ByteBuffer.allocate(2).order(ByteOrder.BIG_ENDIAN).putShort(value.toShort()).array())
+            out.write((type shl 4) or 0xF)
+            writeInt(out, count.toLong())
         }
     }
 
-    private fun writeIntRef(index: Int, numObjects: Int, out: ByteArrayOutputStream) {
-        if (numObjects <= 256) {
-            out.write(index)
-        } else {
-            out.write(ByteBuffer.allocate(2).order(ByteOrder.BIG_ENDIAN).putShort(index.toShort()).array())
-        }
+    private fun writeSized(out: ByteArrayOutputStream, v: Long, size: Int) {
+        for (i in size - 1 downTo 0) out.write((v ushr (8 * i)).toInt() and 0xFF)
     }
 
-    fun encodeSet(uuid: UUID): ByteArray = encode(mapOf(
-        "deviceID" to "00:00:00:00:00:00",
-        "sessionUUID" to uuid.toString().uppercase(),
-        "timingPort" to 0L,
-        "timingProtocol" to "PTP"
-    ))
+    @Suppress("UNCHECKED_CAST")
+    fun decode(data: ByteArray): Map<String, Any?> = decodeValue(data) as? Map<String, Any?> ?: emptyMap()
 
-    fun makeSessionPlist(uuid: UUID, deviceId: String, timingPort: Int): ByteArray = encode(mapOf(
-        "deviceID" to deviceId,
-        "sessionUUID" to uuid.toString().uppercase(),
-        "timingPort" to timingPort.toLong(),
-        "timingProtocol" to "PTP"
-    ))
-
-    fun decode(data: ByteArray): Map<String, Any?> {
+    fun decodeValue(data: ByteArray): Any? {
         if (data.size < 40) throw IllegalArgumentException("too short")
-        val magic = data.copyOf(8).toString(Charsets.UTF_8)
-        if (magic != "bplist00") throw IllegalArgumentException("not a binary plist")
+        if (String(data, 0, 8, Charsets.US_ASCII) != "bplist00") throw IllegalArgumentException("not a binary plist")
+        val t = data.size - 32
+        val offsetSize = data[t + 6].toInt() and 0xFF
+        val refSize = data[t + 7].toInt() and 0xFF
+        val numObjects = readSized(data, t + 8, 8).toInt()
+        val rootIndex = readSized(data, t + 16, 8).toInt()
+        val tableOffset = readSized(data, t + 24, 8).toInt()
+        if (offsetSize !in 1..8 || refSize !in 1..8 || numObjects < 0 || tableOffset < 8 ||
+            tableOffset + numObjects.toLong() * offsetSize > t) {
+            throw IllegalArgumentException("corrupt trailer")
+        }
+        val offsets = IntArray(numObjects) { readSized(data, tableOffset + it * offsetSize, offsetSize).toInt() }
 
-        val trailer = data.copyOfRange(data.size - 32, data.size)
-        val buf = ByteBuffer.wrap(trailer).order(ByteOrder.BIG_ENDIAN)
-        val _unused6 = ByteArray(6); buf.get(_unused6)
-        val offsetIntSize = buf.get().toInt() and 0xFF
-        val objectRefSize = buf.get().toInt() and 0xFF
-        val numObjects = buf.getLong()
-        val rootIndex = buf.getLong().toInt()
-        val offsetTableOffset = buf.getLong().toInt()
-
-        val objectOffsets = IntArray(numObjects.toInt())
-        for (i in 0 until numObjects.toInt()) {
-            objectOffsets[i] = readSizedInt(data, offsetTableOffset + i * offsetIntSize, offsetIntSize)
+        fun count(pos: Int, low: Int): Pair<Int, Int> {
+            if (low != 0xF) return low to pos
+            val marker = data[pos].toInt() and 0xFF
+            val bytes = 1 shl (marker and 0xF)
+            return readSized(data, pos + 1, bytes).toInt() to pos + 1 + bytes
         }
 
-        fun readRef(offset: Int): Int = readSizedInt(data, offset, objectRefSize)
-
-        fun resolveCount(dataPos: Int, count: Int): Pair<Int, Int> {
-            if (count != 0x0F) return count to dataPos
-            val marker = data[dataPos].toInt() and 0xFF
-            val valBytes = 1 shl (marker and 0x0F)
-            val resolved = readSizedInt(data, dataPos + 1, valBytes)
-            return resolved to (dataPos + 1 + valBytes)
-        }
-
-        fun readObject(objIndex: Int): Any? {
-            val off = objectOffsets[objIndex]
+        fun read(index: Int, depth: Int): Any? {
+            if (depth > 64) throw IllegalArgumentException("plist nested too deeply")
+            if (index !in offsets.indices) throw IllegalArgumentException("bad object reference $index")
+            val off = offsets[index]
             val marker = data[off].toInt() and 0xFF
-            val objType = marker shr 4
-            val objSize = marker and 0x0F
-            return when (objType) {
-                0x00 -> when (marker) {
-                    0x00 -> null; 0x08 -> false; 0x09 -> true; else -> null
+            val low = marker and 0xF
+            return when (marker shr 4) {
+                0x0 -> when (marker) { 0x08 -> false; 0x09 -> true; else -> null }
+                0x1 -> {
+                    val bytes = 1 shl low
+                    val v = readSized(data, off + 1, minOf(bytes, 8))
+                    // 1/2/4-byte ints are unsigned, 8-byte are signed - readSized gives both.
+                    v
                 }
-                0x01 -> {
-                    val bytes = 1 shl objSize
-                    if (bytes <= 4) readSizedInt(data, off + 1, bytes).toLong()
-                    else readSizedLong(data, off + 1, bytes)
+                0x2 -> {
+                    val bytes = 1 shl low
+                    if (bytes == 4) java.lang.Float.intBitsToFloat(readSized(data, off + 1, 4).toInt()).toDouble()
+                    else java.lang.Double.longBitsToDouble(readSized(data, off + 1, 8))
                 }
-                0x02, 0x03 -> readSizedInt(data, off + 1, 1 shl objSize).toDouble()
-                0x04 -> {
-                    val (cnt, pos) = resolveCount(off + 1, objSize)
-                    data.copyOfRange(pos, pos + cnt)
+                0x3 -> java.lang.Double.longBitsToDouble(readSized(data, off + 1, 8)) // date (seconds since 2001)
+                0x4 -> { val (n, p) = count(off + 1, low); data.copyOfRange(p, p + n) }
+                0x5 -> { val (n, p) = count(off + 1, low); String(data, p, n, Charsets.US_ASCII) }
+                0x6 -> { val (n, p) = count(off + 1, low); String(data, p, n * 2, Charsets.UTF_16BE) }
+                0x7 -> { val (n, p) = count(off + 1, low); String(data, p, n, Charsets.UTF_8) }
+                0x8 -> readSized(data, off + 1, low + 1) // UID
+                0xA, 0xC -> {
+                    val (n, p) = count(off + 1, low)
+                    (0 until n).map { read(readSized(data, p + it * refSize, refSize).toInt(), depth + 1) }
                 }
-                0x05 -> {
-                    val (cnt, pos) = resolveCount(off + 1, objSize)
-                    String(data, pos, cnt, Charsets.US_ASCII)
-                }
-                0x06 -> {
-                    val (cnt, pos) = resolveCount(off + 1, objSize)
-                    String(data, pos, cnt * 2, Charsets.UTF_16BE)
-                }
-                0x08, 0x0A -> {
-                    val (cnt, pos) = resolveCount(off + 1, objSize)
-                    (0 until cnt).map { readObject(readRef(pos + it * objectRefSize)) }
-                }
-                0x0D -> {
-                    val (cnt, pos) = resolveCount(off + 1, objSize)
-                    val keys = (0 until cnt).map { readObject(readRef(pos + it * objectRefSize))?.toString() ?: "" }
-                    val vStart = pos + cnt * objectRefSize
-                    val values = (0 until cnt).map { readObject(readRef(vStart + it * objectRefSize)) }
-                    val dict = linkedMapOf<String, Any?>()
-                    for (j in 0 until cnt) dict[keys[j]] = values[j]
+                0xD -> {
+                    val (n, p) = count(off + 1, low)
+                    val dict = LinkedHashMap<String, Any?>()
+                    for (i in 0 until n) {
+                        val k = read(readSized(data, p + i * refSize, refSize).toInt(), depth + 1)?.toString() ?: ""
+                        dict[k] = read(readSized(data, p + (n + i) * refSize, refSize).toInt(), depth + 1)
+                    }
                     dict
                 }
                 else -> null
             }
         }
-
-        val root = readObject(rootIndex)
-        @Suppress("UNCHECKED_CAST")
-        return (root as? Map<String, Any?>) ?: emptyMap()
+        return read(rootIndex, 0)
     }
 
-    private fun readSizedInt(data: ByteArray, offset: Int, bytes: Int): Int {
-        var v = 0
-        for (i in 0 until bytes) {
-            v = (v shl 8) or (data[offset + i].toInt() and 0xFF)
-        }
-        return v
-    }
-
-    private fun readSizedLong(data: ByteArray, offset: Int, bytes: Int): Long {
+    private fun readSized(data: ByteArray, offset: Int, bytes: Int): Long {
+        if (offset < 0 || offset + bytes > data.size) throw IllegalArgumentException("plist read out of bounds")
         var v = 0L
-        for (i in 0 until bytes) {
-            v = (v shl 8) or (data[offset + i].toLong() and 0xFF)
-        }
+        for (i in 0 until bytes) v = (v shl 8) or (data[offset + i].toLong() and 0xFF)
         return v
     }
-
-    private fun readCount(data: ByteArray, offset: Int): Int {
-        val marker = data[offset].toInt() and 0xFF
-        val bytes = 1 shl (marker and 0x0F)
-        return readSizedInt(data, offset + 1, bytes)
-    }
-
-    fun makeStreamPlist(
-        controlPort: Int,
-        sharedSecret: ByteArray,
-        streamConnectionId: Long,
-        sampleRate: Int = 44100,
-        spf: Int = 352,
-        payloadType: Int = 96
-    ): ByteArray = encode(mapOf(
-        "streams" to listOf(mapOf(
-            "audioFormat" to 262144L,
-            "audioMode" to "default",
-            "controlPort" to controlPort.toLong(),
-            "ct" to 2L,
-            "isMedia" to true,
-            "latencyMax" to 88200L,
-            "latencyMin" to 11025L,
-            "shk" to sharedSecret,
-            "spf" to spf.toLong(),
-            "sr" to sampleRate.toLong(),
-            "type" to payloadType.toLong(),
-            "supportsDynamicStreamID" to false,
-            "streamConnectionID" to streamConnectionId
-        ))
-    ))
 }

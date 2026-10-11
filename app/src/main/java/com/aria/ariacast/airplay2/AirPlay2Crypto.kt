@@ -6,6 +6,9 @@ import org.bouncycastle.crypto.digests.SHA512Digest
 import org.bouncycastle.crypto.generators.Ed25519KeyPairGenerator
 import org.bouncycastle.crypto.generators.HKDFBytesGenerator
 import org.bouncycastle.crypto.generators.X25519KeyPairGenerator
+import org.bouncycastle.crypto.modes.ChaCha20Poly1305
+import org.bouncycastle.crypto.params.AEADParameters
+import org.bouncycastle.crypto.params.KeyParameter
 import org.bouncycastle.crypto.params.Ed25519KeyGenerationParameters
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
 import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters
@@ -44,20 +47,36 @@ class AirPlay2Crypto {
             return out
         }
 
+        // BouncyCastle's lightweight AEAD rather than a JCE Cipher: the JCE algorithm name
+        // differs between desktop JDKs ("ChaCha20-Poly1305") and Android's Conscrypt
+        // ("ChaCha20/Poly1305/NoPadding"), and the full BC provider can't be registered on
+        // Android because the platform already ships a stripped provider named "BC".
         fun chacha20Poly1305Encrypt(
             key: ByteArray,
             nonce: ByteArray,
             plaintext: ByteArray,
             aad: ByteArray
         ): Pair<ByteArray, ByteArray> {
-            val cipher = Cipher.getInstance("ChaCha20-Poly1305/None/NoPadding")
-            val spec = SecretKeySpec(key, "ChaCha20")
-            val iv = IvParameterSpec(nonce)
-            cipher.init(Cipher.ENCRYPT_MODE, spec, iv)
-            cipher.updateAAD(aad)
-            val ciphertext = cipher.doFinal(plaintext)
-            val tagStart = ciphertext.size - 16
-            return Pair(ciphertext.copyOfRange(0, tagStart), ciphertext.copyOfRange(tagStart, ciphertext.size))
+            val sealed = chacha20Poly1305Seal(key, nonce, plaintext, 0, plaintext.size, aad)
+            val tagStart = sealed.size - 16
+            return Pair(sealed.copyOfRange(0, tagStart), sealed.copyOfRange(tagStart, sealed.size))
+        }
+
+        /** Returns ciphertext || 16-byte tag. */
+        fun chacha20Poly1305Seal(
+            key: ByteArray,
+            nonce: ByteArray,
+            plaintext: ByteArray,
+            offset: Int,
+            length: Int,
+            aad: ByteArray
+        ): ByteArray {
+            val cipher = ChaCha20Poly1305()
+            cipher.init(true, AEADParameters(KeyParameter(key), 128, nonce, aad))
+            val out = ByteArray(cipher.getOutputSize(length))
+            var n = cipher.processBytes(plaintext, offset, length, out, 0)
+            n += cipher.doFinal(out, n)
+            return if (n == out.size) out else out.copyOf(n)
         }
 
         fun chacha20Poly1305Decrypt(
@@ -67,12 +86,25 @@ class AirPlay2Crypto {
             aad: ByteArray,
             tag: ByteArray
         ): ByteArray {
-            val cipher = Cipher.getInstance("ChaCha20-Poly1305/None/NoPadding")
-            val spec = SecretKeySpec(key, "ChaCha20")
-            val iv = IvParameterSpec(nonce)
-            cipher.init(Cipher.DECRYPT_MODE, spec, iv)
-            cipher.updateAAD(aad)
-            return cipher.doFinal(ciphertext + tag)
+            val sealed = ciphertext + tag
+            return chacha20Poly1305Open(key, nonce, sealed, 0, sealed.size, aad)
+        }
+
+        /** Decrypts ciphertext || tag; throws on authentication failure. */
+        fun chacha20Poly1305Open(
+            key: ByteArray,
+            nonce: ByteArray,
+            sealed: ByteArray,
+            offset: Int,
+            length: Int,
+            aad: ByteArray
+        ): ByteArray {
+            val cipher = ChaCha20Poly1305()
+            cipher.init(false, AEADParameters(KeyParameter(key), 128, nonce, aad))
+            val out = ByteArray(cipher.getOutputSize(length))
+            var n = cipher.processBytes(sealed, offset, length, out, 0)
+            n += cipher.doFinal(out, n)
+            return if (n == out.size) out else out.copyOf(n)
         }
 
         fun aes128CtrEncrypt(key: ByteArray, counter: ByteArray, data: ByteArray): ByteArray {
@@ -107,11 +139,16 @@ class AirPlay2Crypto {
             return generator.generateKeyPair()
         }
 
-        // Returns raw 32-byte Ed25519 private key seed
+        // Returns raw 32-byte Ed25519 private key seed (BC's lightweight params encode the
+        // bare seed, not a PKCS#8 structure).
         fun getEd25519PrivateKey(pair: AsymmetricCipherKeyPair): ByteArray {
-            val encoded = (pair.private as Ed25519PrivateKeyParameters).encoded
-            // PKCS#8: 30 2E 02 01 00 30 05 06 03 2B 65 70 04 22 04 20 <32 byte seed>
-            return encoded.copyOfRange(16, 48)
+            return (pair.private as Ed25519PrivateKeyParameters).encoded
+        }
+
+        /** Rebuilds a persisted Ed25519 identity from its 32-byte seed. */
+        fun ed25519KeyPairFromSeed(seed: ByteArray): AsymmetricCipherKeyPair {
+            val priv = Ed25519PrivateKeyParameters(seed, 0)
+            return AsymmetricCipherKeyPair(priv.generatePublicKey(), priv)
         }
 
         // Returns raw 32-byte Ed25519 public key
