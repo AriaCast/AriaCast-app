@@ -3,6 +3,31 @@
 All notable changes to AriaCast are documented here. Releases prior to 1.1.8
 are available as [GitHub Releases](https://github.com/AriaCast/AriaCast-app/releases).
 
+## [Unreleased]
+
+### AirPlay 1 (RAOP) - rewritten
+- Fixed: encrypted streams never worked - the AirPort RSA public key was wrong, and the AES tail block was padded instead of sent in the clear.
+- Fixed: audio was announced as `L16` while ALAC frames were sent, so receivers played noise; the codec now follows the receiver's `cn` (ALAC, or real L16 PCM).
+- Fixed: the `et`/`cn` TXT lists (e.g. `0,3,5`) were misread; full TXT records now reach the client.
+- Fixed: metadata lacked the `mlit` container and `RTP-Info`; text, artwork and progress are now delivered according to the receiver's `md`.
+- New: RTP is paced on a single monotonic clock with sync packets every second, a jitter buffer with inaudible drift correction, and retransmission of lost packets.
+- New: password-protected receivers (Digest auth), Apple TV on-screen-code pairing, MFi `auth-setup`, `Apple-Challenge` verification, keep-alives with automatic reconnect, FLUSH on pause, mute, and a proper TEARDOWN.
+
+### AirPlay 2 - rewritten
+- Fixed: transient pairing omitted the transient flag, and nothing after pairing was encrypted; the RTSP control channel and the event channel now use HomeKit session encryption.
+- Fixed: 48 kHz audio was sent as 44.1 kHz (slow, drifting playback); it's now resampled.
+- New: PIN pairing (`/pair-pin-start`, full pair-setup) with stored credentials and pair-verify on later connections; access-control passwords.
+- New: NTP timing for Apple receivers, PTP where the device allows it, and automatic fallback to AirPlay 1 for PTP-only receivers (e.g. shairport-sync).
+- New: DMAP metadata, artwork and progress, `/feedback` keep-alives, retransmission, event-channel volume/command handling, stream + session TEARDOWN.
+
+### Google Cast - new
+- Real Cast protocol (CastV2 over TLS) replacing the DIAL launch attempts that didn't work on current devices: launches the Default Media Receiver, plays the live stream with metadata and artwork, mirrors device volume and play/pause, and stops cleanly.
+
+### Shared
+- Receiver remote control (DACP): play/pause/next/previous/volume from receivers' remotes and apps.
+- One volume level for all receivers, mirrored when a receiver changes its own volume; mute at the bottom step.
+- PIN/password prompts per receiver; saved passwords and pairings can be managed in *Manage AirPlay PINs*.
+
 ## [1.1.8]
 
 This release brings a new streaming protocol, hardware volume key support, and a major round of AirPlay 1/2 reliability fixes, alongside a rework of the AriaCompanion suite and Home Assistant integration.

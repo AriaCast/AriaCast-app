@@ -72,11 +72,40 @@ class BinaryPlistTest {
     }
 
     @Test
-    fun `makeSessionPlist produces valid plist with required keys`() {
-        val uuid = java.util.UUID.randomUUID()
-        val decoded = BinaryPlist.decode(BinaryPlist.makeSessionPlist(uuid, "AA:BB:CC:DD:EE:FF", 12345))
-        assertEquals("AA:BB:CC:DD:EE:FF", decoded["deviceID"])
-        assertEquals(12345L, decoded["timingPort"])
-        assertEquals("PTP", decoded["timingProtocol"])
+    fun `nested containers, unicode, doubles, booleans and negatives round-trip`() {
+        val input = linkedMapOf<String, Any?>(
+            "streams" to listOf(mapOf("type" to 96L, "shk" to ByteArray(32) { it.toByte() }, "isMedia" to true)),
+            "name" to "Küche ♫ Speaker",
+            "volume" to -12.5,
+            "offset" to -3L,
+            "flag" to false
+        )
+        val decoded = BinaryPlist.decode(BinaryPlist.encode(input))
+        val stream = (decoded["streams"] as List<*>)[0] as Map<*, *>
+        assertEquals(96L, stream["type"])
+        assertArrayEquals(ByteArray(32) { it.toByte() }, stream["shk"] as ByteArray)
+        assertEquals(true, stream["isMedia"])
+        assertEquals("Küche ♫ Speaker", decoded["name"])
+        assertEquals(-12.5, decoded["volume"] as Double, 0.0)
+        assertEquals(-3L, decoded["offset"])
+        assertEquals(false, decoded["flag"])
+    }
+
+    @Test
+    fun `identical values are encoded as distinct objects`() {
+        // The old encoder deduplicated by hashCode alone, so values with colliding hashes
+        // silently referenced the wrong object; equal values must still decode correctly.
+        val input = linkedMapOf<String, Any?>("a" to "same", "b" to "same", "c" to listOf("same", "same"))
+        val decoded = BinaryPlist.decode(BinaryPlist.encode(input))
+        assertEquals("same", decoded["a"])
+        assertEquals("same", decoded["b"])
+        assertEquals(listOf("same", "same"), decoded["c"])
+    }
+
+    @Test
+    fun `list roots and more than 255 objects encode correctly`() {
+        val big = (0 until 300).map { "item$it" }
+        val decoded = BinaryPlist.decodeValue(BinaryPlist.encodeValue(big))
+        assertEquals(big, decoded)
     }
 }
