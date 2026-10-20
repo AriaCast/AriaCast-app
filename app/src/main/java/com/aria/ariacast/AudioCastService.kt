@@ -1828,6 +1828,15 @@ class AudioCastService : Service() {
                 contentType(ContentType.parse("text/xml; charset=utf-8"))
                 setBody(body)
             }
+
+            // SetAVTransportURI resets many renderers (e.g. WiiM) to a stopped state,
+            // so playback must be restarted explicitly or it stays paused at 0:00.
+            val playBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><Speed>1</Speed></u:Play></s:Body></s:Envelope>"""
+            client.post(avUrl) {
+                header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#Play\"")
+                contentType(ContentType.parse("text/xml; charset=utf-8"))
+                setBody(playBody)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update DLNA metadata: ${e.message}")
         }
