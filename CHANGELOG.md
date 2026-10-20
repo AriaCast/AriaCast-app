@@ -3,7 +3,9 @@
 All notable changes to AriaCast are documented here. Releases prior to 1.1.8
 are available as [GitHub Releases](https://github.com/AriaCast/AriaCast-app/releases).
 
-## [Unreleased]
+## [1.1.9]
+
+This release rewrites the AirPlay 1 and AirPlay 2 senders from the ground up, adds real Google Cast support, and includes a batch of discovery, DLNA and plugin-sandbox fixes.
 
 ### AirPlay 1 (RAOP) - rewritten
 - Fixed: encrypted streams never worked - the AirPort RSA public key was wrong, and the AES tail block was padded instead of sent in the clear.
@@ -27,6 +29,15 @@ are available as [GitHub Releases](https://github.com/AriaCast/AriaCast-app/rele
 - Receiver remote control (DACP): play/pause/next/previous/volume from receivers' remotes and apps.
 - One volume level for all receivers, mirrored when a receiver changes its own volume; mute at the bottom step.
 - PIN/password prompts per receiver; saved passwords and pairings can be managed in *Manage AirPlay PINs*.
+
+### Fixes & Improvements
+- AirPlay 1: resample per destination instead of changing the global capture rate (@daniel-freiermuth).
+- AirPlay 1: all RAOP output-stream writers are now synchronized on the interleaved RTSP socket (@daniel-freiermuth).
+- DLNA: send `Play` after `SetAVTransportURI` on track change (fixes WiiM playback/pause), and omit the port when the URI uses the default HTTP/HTTPS port (@daniel-freiermuth).
+- Discovery: stale devices are now dropped, and Music Assistant Snapserver discovery is fixed (@daniel-freiermuth, @arthurbre).
+- Cast: fixed a resource leak on early return in `startCasting`; `CancellationException` is no longer treated as an error (@daniel-freiermuth).
+- AriaCompanion: disconnect `HttpURLConnection` on error when fetching receiver state (@daniel-freiermuth).
+- Plugins: stricter `PluginClassShutter` whitelist (allows dynamic proxies and androidx), explicit overloads, ES6 mode and new UI helpers (@Highwall2016).
 
 ## [1.1.8]
 
