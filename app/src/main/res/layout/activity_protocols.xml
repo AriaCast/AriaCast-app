@@ -248,7 +248,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:alpha="0.5"
+                android:alpha="1"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:padding="12dp">
@@ -284,8 +284,7 @@
                     android:id="@+id/googleCastSwitch"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:alpha="1"
-                    android:clickable="false" />
+                    android:alpha="1" />
             </LinearLayout>
 
         </LinearLayout>
