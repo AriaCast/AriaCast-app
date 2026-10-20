@@ -39,9 +39,9 @@ android {
     defaultConfig {
         applicationId = "com.aria.ariacast"
         minSdk = 31
-        targetSdk = 35
-        versionCode = 15
-        versionName = "1.1.8"
+        targetSdk = 36
+        versionCode = 16
+        versionName = "1.1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
