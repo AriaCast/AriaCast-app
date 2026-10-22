@@ -3,7 +3,7 @@
 All notable changes to AriaCast are documented here. Releases prior to 1.1.8
 are available as [GitHub Releases](https://github.com/AriaCast/AriaCast-app/releases).
 
-## [1.1.9]
+## [1.1.9_hotfix]
 
 ### AirPlay 1 (RAOP) - rewritten
 - Fixed: encrypted streams never worked - the AirPort RSA public key was wrong, and the AES tail block was padded instead of sent in the clear.
