@@ -40,8 +40,8 @@ android {
         applicationId = "com.aria.ariacast"
         minSdk = 31
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.1.9"
+        versionCode = 17
+        versionName = "1.1.9_hotfix"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
