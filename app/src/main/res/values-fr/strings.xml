@@ -169,4 +169,17 @@
     <string name="no_pins_saved">Aucun PIN enregistré</string>
     <string name="edit_pin">Modifier le PIN</string>
     <string name="delete_pin">Supprimer le PIN</string>
+    <string name="record_audio_permission_permanently_denied">AriaCast à besoin d\'accéder au microphone pour récupérer et diffuser l\'audio, mais l\'accès lui a été refusé. Ouvrez les réglages afin de lui permettre.</string>
+    <string name="deep_link_invalid">Ce lien AriaCast manque d\'une adresse d\'appareil</string>
+    <string name="deep_link_wifi_failed">Impossible de se connecter au réseau Wi-Fi %1$s</string>
+    <string name="deep_link_wifi_unreachable">Associé à %1$s mais impossible de joindre l\'appareil</string>
+    <string name="deep_link_not_found">Impossible de trouver %1$s sur votre réseau</string>
+    <string name="deep_link_casting">Diffusion vers %1$s (%2$s)</string>
+    <string name="deep_link_stopping">Diffusion arrêtée vers %1$s</string>
+    <string name="snapcast_protocol">Snapcast</string>
+    <string name="plugins_updated_disabled_title">Mise à jour des plugins désactivés</string>
+    <string name="plugins_updated_disabled_message">%1$s ont changé depuis que vous les avez activés, ils ont alors été éteints. Vérifiez ce qui a été modifié avant de les réactiver.</string>
+    <string name="nfc_write_port_hint">Port (optionnel)</string>
+    <string name="nfc_write_type_label">Protocole</string>
+    <string name="nfc_write_name_hint">Nom d\'affichage (facultatif)</string>
 </resources>
