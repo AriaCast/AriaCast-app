@@ -1,111 +1,128 @@
 <div align="center">
-  
-  <h1>AriaCast for Android</h1>
-  <p><b><i>Stream any audio from your Android device to any speaker in your home.</i></b></p>
-  
-  <p>
-    <a href="https://github.com/AirPlr/AriaCast-app/releases"><img src="https://img.shields.io/github/downloads/AirPlr/AriaCast-app/latest/total?style=for-the-badge&color=2ea44f" alt="Downloads" /></a>
-    &nbsp;
-    <a href="https://store.colourswift.com/app/com.aria.ariacast"><img src="assets/get-it-on-safehaven.svg" alt="Get it on SafeHaven" height="70" /></a>
-  </p>
+
+# AriaCast for Android
+
+**Stream any audio from your Android device to any speaker in your home.**
+
+[![Total downloads](https://img.shields.io/github/downloads/AriaCast/AriaCast-app/total?style=for-the-badge&color=2ea44f&label=Total%20downloads)](https://github.com/AriaCast/AriaCast-app/releases)
+[![Latest release downloads](https://img.shields.io/github/downloads/AriaCast/AriaCast-app/latest/total?style=for-the-badge&color=1f6feb&label=Latest%20release)](https://github.com/AriaCast/AriaCast-app/releases/latest)
+[![Latest version](https://img.shields.io/github/v/release/AriaCast/AriaCast-app?style=for-the-badge&label=Version)](https://github.com/AriaCast/AriaCast-app/releases/latest)
+[![Translation status](https://hosted.weblate.org/widget/ariacast/ariacast-app/svg-badge.svg)](https://hosted.weblate.org/engage/ariacast/)
+
+<a href="https://store.colourswift.com/app/com.aria.ariacast"><img src="assets/get-it-on-safehaven.svg" alt="Get it on SafeHaven" height="70" /></a>
+
 </div>
 
-<hr />
-
-<h2>📱 Overview</h2>
-<p><b>AriaCast</b> is the ultimate bridge between your Android device and your home audio ecosystem. Instead of relying on proprietary apps, AriaCast captures your system's audio output and routes it to any networked receiver.</p>
-
-<div style="display: flex; justify-content: space-between;">
+<div align="center">
   <img width="32%" alt="UI 1" src="https://github.com/user-attachments/assets/12b44736-e1f7-47c8-b292-c6e9ae8be728" />
   <img width="32%" alt="UI 2" src="https://github.com/user-attachments/assets/682ad335-4ffc-40b7-9f78-7894c13764dd" />
   <img width="32%" alt="UI 3" src="https://github.com/user-attachments/assets/36e14a6d-5c71-4043-9a7b-0cea7949c95d" />
 </div>
 
-<hr />
+---
 
-<h2>🚀 Supported Streaming Protocols</h2>
-<p>We believe in open standards. AriaCast allows you to stream to a wide array of devices:</p>
+## Overview
 
-<ul>
-  <li><b>AriaCast Native:</b> Our high-performance protocol using binary WebSockets for low-latency, high-fidelity audio with rich metadata sync.</li>
-<li><b>AirPlay 1:</b> AirPort Express, Apple TV and any AirPlay speaker/receiver (RAOP): lossless ALAC or PCM, RSA/AES encryption, password and on-screen-code pairing, now-playing text, artwork and progress, receiver remote control and volume sync.</li>
-  <li><b>AirPlay 2:</b> HomePods, Apple TVs, Macs and AirPlay 2 speakers: HomeKit pairing (transient or PIN), encrypted control and audio channels, metadata, artwork and volume sync, with automatic fallback to AirPlay 1 for receivers that need timing Android can't provide.</li>
-  <li><b>Google Cast:</b> Chromecast, Nest speakers/displays and Cast groups, with now-playing metadata and two-way volume and play/pause sync.</li>
-  <li><b>DLNA / UPnP:</b> Universal compatibility with Smart TVs, AV Receivers, and media boxes.</li>
-</ul>
+AriaCast captures your phone's system audio with Android's `MediaProjection` API and sends it to the speakers you already own. It speaks the protocols those speakers understand, so you don't need each vendor's app.
 
-<hr />
+- **Any app, any speaker:** capture is system-wide, and receivers are found automatically.
+- **Several receivers at once**, with one volume level mirrored across all of them.
+- **Rich now-playing info:** title, artist, album, artwork and progress, as far as each protocol allows.
+- **Control from both ends:** hardware volume keys, receiver remotes and Quick Settings.
 
-<h2>✨ Key Features</h2>
-<div style="background-color: #f6f8fa; padding: 15px; border-radius: 8px;">
-  <ul>
-    <li><b>System-Wide Capture:</b> Works with <i>any (No DRM)</i> app.</li>
-    <li><b>Automatic Discovery:</b> Instant detection of AriaCast, AirPlay and DLNA devices on your network.</li>
-    <li><b>Rich Metadata Sync:</b> Pushes track title, artist, and album art to receivers in real-time.</li>
-    <li><b>Quick Settings Tile:</b> Start casting directly from your notification shade.</li>
-    <li><b>JavaScript Plugins:</b> Extend app functionality or add custom server controls without re-building.</li>
-  </ul>
-</div>
-<hr />
+Requires Android 12 (API 31) or newer.
 
+## Supported protocols
 
-<h2>🎵 Audio Source Compatibility</h2>
-<p>
-  AriaCast captures audio at the system level via the <code>MediaProjection</code> API. 
-  While this allows for broad compatibility, please note the following regarding content sources:
-</p>
+| Protocol | Works with | What AriaCast does |
+|---|---|---|
+| **AriaCast Native** | [AriaCast servers](https://github.com/AirPlr/Ariacast-server) and AriaCompanion | Binary WebSockets (`/audio`, `/control`, `/stats`) carrying 48 kHz stereo PCM, with metadata sync and volume control. Discovery uses mDNS (`_audiocast._tcp`) and a UDP broadcast. |
+| **AirPlay 1 (RAOP)** | AirPort Express, Apple TV, AirPlay speakers, shairport-sync | RTSP + RTP with lossless ALAC or L16 PCM, RSA/AES encryption, password (Digest) and on-screen-code pairing, MFi `auth-setup`, retransmission and drift correction. Sends text, artwork and progress metadata. |
+| **AirPlay 2** | HomePod, Apple TV, Mac, AirPlay 2 speakers | HomeKit pairing (transient or PIN, with stored credentials), HAP-encrypted control and event channels, ChaCha20-Poly1305 audio, NTP or PTP timing, and metadata, artwork and volume sync. Falls back to AirPlay 1 for PTP-only receivers when Android can't provide the timing. |
+| **Google Cast** | Chromecast, Nest speakers and displays, Cast groups | Real CastV2 (TLS, protobuf) using the Default Media Receiver. Pushes metadata and artwork, and syncs volume and play/pause both ways. |
+| **DLNA / UPnP** | Smart TVs, AV receivers, WiiM and other media boxes | SSDP discovery and AVTransport/RenderingControl over SOAP. The receiver plays a live WAV stream served by the phone, with DIDL-Lite metadata. |
+| **Snapcast** | Snapserver | JSON-RPC control plus a TCP audio source (48 kHz, 16-bit, stereo). The stream is assigned to your groups and the previous assignment is restored when you stop. |
 
-<div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; border-left: 5px solid #ffc107; color: #856404;">
-  <strong>Note on DRM-Protected Content:</strong> 
-  Some major streaming services (like Spotify, YouTube Music, etc.) implement strict <code>FLAG_SECURE</code> 
-  or DRM protections that prevent system-level audio capture. Consequently, AriaCast may not be able 
-  to stream audio from these specific apps by default.
-  <br><br>
-  <strong>AriaCast shines with:</strong>
-  <ul>
-    <li><b>Local Music Players:</b> Perfect for Poweramp, Musicolet, or any player managing your personal FLAC/MP3 library.</li>
-    <li><b>Podcasts & Audiobooks:</b> Great for AntennaPod or other open-source audio apps.</li>
-    <li><b>Personal Media:</b> Your own voice recordings, local audio files, and non-DRM streaming apps.</li>
-  </ul>
-</div>
+Every protocol can be switched on or off under **Settings → Protocols**.
 
-<p>
-  <i>Advanced users can bypass some restrictions on rooted devices using the <a href="https://github.com/LSPosed/DisableFlagSecure">DisableFlagSecure</a> module with LSPosed/Magisk.</i>
-</p>
+**Receiver remote control (DACP):** AirPlay receivers and their apps can send play/pause, next/previous and volume commands back to the phone.
 
-<hr />
+## Features
 
-<h2>🛠️ Setup & Usage</h2>
-<ol>
-  <li><b>Install:</b> Download the latest <a href="https://github.com/AirPlr/AriaCast-app/releases">APK here</a>.</li>
-  <li>Grant <b>Notification Access</b> (for metadata)</li>
-<li><b>Select</b> your receiver, and <b>ENJOY</b>.</li>
-</ol>
+- **Automatic discovery** over mDNS, SSDP and UDP broadcast.
+- **Manual servers** by host and port, for other VLANs, WireGuard or Tailscale, where multicast discovery can't reach.
+- **Quick Settings tiles** to start and stop casting from the notification shade.
+- **Hardware volume keys** control the receiver's volume.
+- **`ariacast://` deep links and NFC tags** to start or stop casting and to join a Wi-Fi network first. The app can write the NFC tags itself.
+- **AirPlay PIN and password manager** for saved pairings and credentials.
+- **Packet logger** for inspecting protocol traffic when something misbehaves.
+- **JavaScript plugins** (Rhino, sandboxed) that add UI or react to casting events. See the [plugin documentation](https://github.com/AriaCast/AriaCast-android-plugins).
+- **Home Assistant mode:** pick rooms backed by your Home Assistant Areas through the `ariacast_core` add-on.
+- **Localized** into many languages through Weblate.
 
+## AriaCompanion (ESP32 bridge)
 
-<hr />
+Some phones, notably Samsung ones, block `MediaProjection` capture for sideloaded apps. [AriaCompanion](AriaCompanion/README.md) works around this with two ESP32 boards:
 
-<div align="center">
-  <h3>🌍 Help Us Translate</h3>
-  <a href="https://hosted.weblate.org/engage/ariacast/"><img src="https://hosted.weblate.org/widget/ariacast/ariacast-app/multi-auto.svg" alt="Translation Status"></a>
-  <br><br>
-  <a href="https://buymeacoffee.com/AirPlr"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee"></a>
-</div>
+```
+Phone ──Bluetooth A2DP──▶ ESP32 (BT sink) ──I2S──▶ ESP32 (Wi-Fi sender) ──WebSocket──▶ AriaCast receiver
+```
 
-<hr />
+The phone is never in the audio path. AriaCast only selects the target through the sender's REST API. Because the bridge speaks the native protocol, it works with AriaCast receivers only.
 
-<h3>🧪 Protocol tests</h3>
-<p>
-  Unit tests run with <code>./gradlew testDebugUnitTest</code>. The AirPlay clients are also tested end to end against real
-  <a href="https://github.com/mikebrady/shairport-sync">shairport-sync</a> receivers (AirPlay 1, and AirPlay 2 with nqptp): start them with
-  <code>sudo scripts/e2e/start-receivers.sh</code> (see the script for options), then run <code>AIRPLAY_E2E=1 ./gradlew testDebugUnitTest</code>.
-  The tests check the audio the receiver actually decodes, not just the handshakes.
-</p>
+## Audio source compatibility
 
-<hr />
+> **DRM-protected apps:** Some streaming apps (Spotify, YouTube Music and similar) block system audio capture with `FLAG_SECURE` or DRM, so AriaCast may be unable to stream them.
 
-<h3>🔗 Related Projects</h3>
-<ul>
-  <li><a href="https://github.com/AirPlr/Ariacast-server">AriaCast Backend Server</a></li>
-  <li><a href="https://github.com/AriaCast/AriaCast-android-plugins">Plugin Documentation</a></li>
-</ul>
+AriaCast works well with:
+
+- **Local music players:** Poweramp, Musicolet, or any player for your own FLAC/MP3 library.
+- **Podcasts and audiobooks:** AntennaPod and other open-source apps.
+- **Personal media:** voice recordings, local files and non-DRM streaming apps.
+
+On rooted devices, the [DisableFlagSecure](https://github.com/LSPosed/DisableFlagSecure) LSPosed/Magisk module can bypass some of these restrictions.
+
+## Getting started
+
+1. **Install:** get the latest APK from [Releases](https://github.com/AriaCast/AriaCast-app/releases/latest), or from [SafeHaven](https://store.colourswift.com/app/com.aria.ariacast).
+2. **Grant Notification Access** so AriaCast can read track metadata.
+3. **Enable the protocols** you use under **Settings → Protocols**.
+4. **Select your receiver** and start casting.
+
+## Testing
+
+Run the unit tests with:
+
+```sh
+./gradlew testDebugUnitTest
+```
+
+The AirPlay clients are also tested end to end against real [shairport-sync](https://github.com/mikebrady/shairport-sync) receivers (AirPlay 1, and AirPlay 2 with nqptp). The tests check the audio the receiver actually decodes, not just the handshakes.
+
+```sh
+sudo scripts/e2e/start-receivers.sh      # see the script for options
+AIRPLAY_E2E=1 ./gradlew testDebugUnitTest
+```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
+## Contributing and translations
+
+Pull requests are welcome. Help translate AriaCast on [Weblate](https://hosted.weblate.org/engage/ariacast/).
+
+[![Translation status](https://hosted.weblate.org/widget/ariacast/ariacast-app/multi-auto.svg)](https://hosted.weblate.org/engage/ariacast/)
+
+If you enjoy AriaCast, you can support its development:
+
+<a href="https://buymeacoffee.com/AirPlr"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" height="40"></a>
+
+## Related projects
+
+- [AriaCast Server](https://github.com/AirPlr/Ariacast-server): the receiver/backend for the native protocol
+- [Plugin documentation](https://github.com/AriaCast/AriaCast-android-plugins)
+
+## License
+
+See [LICENSE.md](LICENSE.md).
