@@ -309,6 +309,7 @@ class AudioCastService : Service() {
         sharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         securePreferences = getSharedPreferences(SECURE_PREFS_NAME, MODE_PRIVATE)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        _volumePercent.value = receiverVolumePercent()
         
         startMetadataWorker()
         startArtworkServer()
@@ -1419,6 +1420,26 @@ class AudioCastService : Service() {
         videoCodec = null
     }
 
+    private val _volumePercent = MutableStateFlow(50)
+    /** Receiver volume 0-100, shared by every receiver in the session. */
+    val volumePercent: StateFlow<Int> = _volumePercent.asStateFlow()
+
+    private val _artwork = MutableStateFlow<ByteArray?>(null)
+    /** Artwork of what this device is playing (from the media notification). */
+    val artwork: StateFlow<ByteArray?> = _artwork.asStateFlow()
+
+    /** Sets the receiver volume from the UI (0-100). */
+    fun setVolume(percent: Int) {
+        val p = percent.coerceIn(0, 100)
+        volumeProvider?.currentVolume = percentToSteps(p)
+        setReceiverVolumePercent(p)
+    }
+
+    /** Play/pause/next/previous for the app playing on this device, from AriaCast's own UI. */
+    fun sendMediaCommand(command: MediaCommand) {
+        scope.launch { _controlCommands.emit(command) }
+    }
+
     /** Volume up/down from plugins/UI: one step on every receiver. */
     fun sendVolumeCommand(direction: String) {
         adjustReceiverVolumeSteps(if (direction == "up") +1 else -1)
@@ -1455,6 +1476,7 @@ class AudioCastService : Service() {
     private fun setReceiverVolumePercent(percent: Int) {
         val p = percent.coerceIn(0, 100)
         sharedPreferences.edit().putInt(KEY_RECEIVER_VOLUME, p).apply()
+        _volumePercent.value = p
         val dB = AirPlayVolume.percentToDb(p)
         Log.d(TAG, "Setting receiver volume to $p% ($dB dB)")
         scope.launch {
@@ -1493,6 +1515,7 @@ class AudioCastService : Service() {
         val p = percent.coerceIn(0, 100)
         if (p == receiverVolumePercent()) return
         sharedPreferences.edit().putInt(KEY_RECEIVER_VOLUME, p).apply()
+        _volumePercent.value = p
         volumeProvider?.currentVolume = percentToSteps(p)
         PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Receiver volume changed to $p%")
     }
@@ -1532,6 +1555,7 @@ class AudioCastService : Service() {
 
     fun setArtwork(bytes: ByteArray?) {
         currentArtworkBytes = bytes
+        _artwork.value = bytes
     }
 
     fun sendMetadata(metadata: TrackMetadata) {

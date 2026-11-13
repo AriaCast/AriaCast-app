@@ -68,6 +68,8 @@ class GateMonitor(
         _state.value = GateState(false)
     }
 
+    // audioDeviceInfo is deprecated in API 36 with no replacement for third-party apps; it still works.
+    @Suppress("DEPRECATION")
     private fun evaluate(configs: List<AudioPlaybackConfiguration>) {
         val players = configs.map { cfg ->
             val attrs = cfg.audioAttributes

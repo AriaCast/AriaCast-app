@@ -100,6 +100,9 @@ class CastClient(
     @Volatile var volumeLevel: Double = -1.0; private set
     @Volatile var muted: Boolean = false; private set
     @Volatile var playerState: String? = null; private set
+    /** Playback position and length reported by the device (video casting), in seconds. */
+    @Volatile var currentTimeSeconds: Double = 0.0; private set
+    @Volatile var durationSeconds: Double = 0.0; private set
     private var loadedUrl: String? = null
     private var loadedContentType: String? = null
     /** Set while we expect a state change we caused, so it isn't reported as a remote command. */
@@ -223,6 +226,8 @@ class CastClient(
         val status = obj["status"]?.jsonArray?.firstOrNull()?.jsonObject ?: return
         status["mediaSessionId"]?.jsonPrimitive?.intOrNull?.let { mediaSessionId = it }
         status["currentItemId"]?.jsonPrimitive?.intOrNull?.let { currentItemId = it }
+        status["currentTime"]?.jsonPrimitive?.doubleOrNull?.let { currentTimeSeconds = it }
+        status["media"]?.jsonObject?.get("duration")?.jsonPrimitive?.doubleOrNull?.let { durationSeconds = it }
         val state = status.str("playerState") ?: return
         val previous = playerState
         playerState = state
@@ -320,6 +325,57 @@ class CastClient(
             "LOAD_FAILED", "LOAD_CANCELLED", "INVALID_REQUEST" -> throw IOException("LOAD rejected: ${reply.str("type")} ${reply.str("reason") ?: ""}")
         }
         ProtoLog.i(TAG, "$host: loaded $url (mediaSession=$mediaSessionId)")
+    }
+
+    /**
+     * Loads a regular file (e.g. a video served by the phone's media server) with seeking,
+     * and optionally a WebVTT subtitle track that is switched on.
+     */
+    fun loadFile(url: String, contentType: String, title: String, subtitleUrl: String? = null) {
+        val transport = transportId ?: throw IOException("no receiver app")
+        loadedUrl = url
+        loadedContentType = contentType
+        expectedState = "PLAYING"
+        val reply = request(transport, NS_MEDIA, buildJsonObject {
+            put("type", "LOAD")
+            put("media", buildJsonObject {
+                put("contentId", url)
+                put("contentUrl", url)
+                put("contentType", contentType)
+                put("streamType", "BUFFERED")
+                put("metadata", buildJsonObject {
+                    put("metadataType", if (contentType.startsWith("video")) 1 else 3) // Movie / MusicTrack
+                    put("title", title)
+                })
+                if (subtitleUrl != null) put("tracks", buildJsonArray {
+                    add(buildJsonObject {
+                        put("trackId", 1); put("type", "TEXT"); put("subtype", "SUBTITLES")
+                        put("trackContentId", subtitleUrl); put("trackContentType", "text/vtt"); put("name", "Subtitles")
+                    })
+                })
+            })
+            put("autoplay", true)
+            put("currentTime", 0)
+            if (subtitleUrl != null) put("activeTrackIds", buildJsonArray { add(JsonPrimitive(1)) })
+        })
+        when (reply.str("type")) {
+            "LOAD_FAILED", "LOAD_CANCELLED", "INVALID_REQUEST" -> throw IOException("LOAD rejected: ${reply.str("type")} ${reply.str("reason") ?: ""}")
+        }
+    }
+
+    /** Seeks the loaded file to [seconds]. */
+    fun seek(seconds: Double) {
+        val transport = transportId ?: return
+        val session = mediaSessionId ?: return
+        send(transport, NS_MEDIA, buildJsonObject {
+            put("type", "SEEK"); put("requestId", requestId.getAndIncrement()); put("mediaSessionId", session); put("currentTime", seconds)
+        })
+    }
+
+    /** Asks for a fresh MEDIA_STATUS (position/duration). */
+    fun requestMediaStatus() {
+        val transport = transportId ?: return
+        send(transport, NS_MEDIA, buildJsonObject { put("type", "GET_STATUS"); put("requestId", requestId.getAndIncrement()) })
     }
 
     /** Updates the displayed metadata of the running live stream without reloading it. */

@@ -174,6 +174,16 @@ internal object PluginWrapFactory : WrapFactory() {
     }
 }
 
+/**
+ * What a screen hosting plugins provides to them. MainActivity implements this; plugins
+ * started from other screens (e.g. a plugin's config dialog) get no host.
+ */
+interface PluginHost {
+    val discoveryManager: DiscoveryManager
+    val audioCastServiceFlow: kotlinx.coroutines.flow.StateFlow<AudioCastService?>
+    val hostScope: kotlinx.coroutines.CoroutineScope
+}
+
 class PluginManager(private val context: Context) {
 
     private val sharedPreferences = context.getSharedPreferences("plugins_prefs", Context.MODE_PRIVATE)
@@ -191,6 +201,7 @@ class PluginManager(private val context: Context) {
     fun shutdown() {
         runningPluginThreads.values.forEach { it.interrupt() }
         runningPluginThreads.clear()
+        runningPluginIds.forEach { com.aria.ariacast.plugins.PluginUiRegistry.removePlugin(it) }
         runningPluginIds.clear()
     }
 
@@ -248,7 +259,7 @@ class PluginManager(private val context: Context) {
             .apply()
     }
 
-    fun runEnabledPlugins(activity: MainActivity, service: AudioCastService?) {
+    fun runEnabledPlugins(activity: android.app.Activity, service: AudioCastService?) {
         activeService = service
         getPlugins().filter { it.isEnabled }.forEach { plugin ->
             if (!runningPluginIds.contains(plugin.id)) {
@@ -293,7 +304,8 @@ class PluginManager(private val context: Context) {
                 ScriptableObject.putProperty(scope, "context", RhinoContext.javaToJS(context, scope))
                 ScriptableObject.putProperty(scope, "service", RhinoContext.javaToJS(initialService, scope))
                 
-                val discoveryObj = if (activity is MainActivity) activity.discoveryManager else null
+                val host = activity as? PluginHost
+                val discoveryObj = host?.discoveryManager
                 ScriptableObject.putProperty(scope, "discovery", RhinoContext.javaToJS(discoveryObj, scope))
 
                 val uiHelper = object {
@@ -308,33 +320,44 @@ class PluginManager(private val context: Context) {
                             RhinoContext.exit()
                         }
                     }
-                    fun clear() = activity.runOnUiThread { 
-                        if (activity is MainActivity) {
-                            val container = getPluginSubContainer(activity, plugin.id)
-                            container.removeAllViews()
-                            container.visibility = View.GONE
-                            updateMainPluginContainerVisibility(activity)
+                    /** Plugin API v2: draws [spec] (a JSON string or a JS object) as this plugin's panel. */
+                    fun render(spec: Any?) {
+                        if (isConfigOnly || host == null) return
+                        try {
+                            val json = when (spec) {
+                                is String -> spec
+                                is org.mozilla.javascript.Scriptable -> org.mozilla.javascript.NativeJSON.stringify(
+                                    RhinoContext.getCurrentContext(), scope, spec, null, null
+                                ).toString()
+                                else -> spec?.toString() ?: return
+                            }
+                            com.aria.ariacast.plugins.PluginUiRegistry.render(plugin.id, plugin.name,
+                                com.aria.ariacast.plugins.PluginNode.parse(json))
+                        } catch (e: Exception) {
+                            Log.e("PluginUI", "Invalid UI from plugin ${plugin.name}: ${e.message}")
                         }
                     }
-                    fun inflate(layoutName: String): View? {
-                        val id = activity.resources.getIdentifier(layoutName, "layout", activity.packageName)
-                        if (id != 0 && activity is MainActivity) {
-                            return activity.layoutInflater.inflate(id, activity.pluginContainer, false)
-                        }
-                        return null
-                    }
-                    fun findView(parent: View, name: String): View? {
-                        val id = activity.resources.getIdentifier(name, "id", activity.packageName)
-                        return if (id != 0) parent.findViewById(id) else null
-                    }
-                    fun add(view: View) = activity.runOnUiThread {
-                        if (activity is MainActivity) {
-                            val container = getPluginSubContainer(activity, plugin.id)
-                            container.addView(view)
-                            container.visibility = View.VISIBLE
-                            activity.pluginContainer.visibility = View.VISIBLE
+                    /** Plugin API v2: [callback] receives (nodeId, value) when the user interacts with the panel. */
+                    fun onEvent(callback: org.mozilla.javascript.Function) {
+                        com.aria.ariacast.plugins.PluginUiRegistry.setHandler(plugin.id) { id, value ->
+                            Thread {
+                                val cx = enterSandboxedContext()
+                                try {
+                                    cx.optimizationLevel = -1
+                                    callback.call(cx, scope, scope, arrayOf(id, value))
+                                } catch (e: Throwable) {
+                                    Log.e("PluginUI", "Error in onEvent for plugin: ${plugin.name}", e)
+                                } finally { RhinoContext.exit() }
+                            }.start()
                         }
                     }
+                    fun clear() = com.aria.ariacast.plugins.PluginUiRegistry.clear(plugin.id)
+                    // Plugin API v1 view methods: the XML layouts they inflated are gone in 2.0.
+                    fun inflate(layoutName: String): View? { warnV1("inflate"); return null }
+                    fun findView(parent: View?, name: String): View? { warnV1("findView"); return null }
+                    fun add(view: View?) = warnV1("add")
+                    private fun warnV1(method: String) =
+                        Log.w("PluginUI", "${plugin.name}: ui.$method() is Plugin API v1 and no longer draws anything; use ui.render()")
                     fun toast(msg: Any?) = toast(msg, Toast.LENGTH_SHORT)
                     fun toast(msg: Any?, duration: Int) = activity.runOnUiThread {
                         try {
@@ -424,9 +447,9 @@ class PluginManager(private val context: Context) {
 
                 val events = object {
                     fun onServiceConnected(callback: org.mozilla.javascript.Function) {
-                        if (isConfigOnly || activity !is MainActivity) return
-                        activity.lifecycleScope.launch(Dispatchers.IO) {
-                            activity.audioCastServiceFlow.collectLatest { s ->
+                        if (isConfigOnly || host == null) return
+                        host.hostScope.launch(Dispatchers.IO) {
+                            host.audioCastServiceFlow.collectLatest { s ->
                                 activeService = s
                                 if (s != null) {
                                     val cx = enterSandboxedContext()
@@ -441,9 +464,9 @@ class PluginManager(private val context: Context) {
                     }
 
                     fun onStateChanged(callback: org.mozilla.javascript.Function) {
-                        if (isConfigOnly || activity !is MainActivity) return
-                        activity.lifecycleScope.launch(Dispatchers.IO) {
-                            activity.audioCastServiceFlow.filterNotNull().collectLatest { s ->
+                        if (isConfigOnly || host == null) return
+                        host.hostScope.launch(Dispatchers.IO) {
+                            host.audioCastServiceFlow.filterNotNull().collectLatest { s ->
                                 s.state.collectLatest { state ->
                                     val cx = enterSandboxedContext()
                                     try {
@@ -458,9 +481,9 @@ class PluginManager(private val context: Context) {
                     }
 
                     fun onAudioBuffer(callback: org.mozilla.javascript.Function) {
-                        if (isConfigOnly || activity !is MainActivity) return
-                        activity.lifecycleScope.launch(Dispatchers.IO) {
-                            activity.audioCastServiceFlow.filterNotNull().collectLatest { s ->
+                        if (isConfigOnly || host == null) return
+                        host.hostScope.launch(Dispatchers.IO) {
+                            host.audioCastServiceFlow.filterNotNull().collectLatest { s ->
                                 s.audioBufferFlow.collectLatest { buffer ->
                                     val cx = enterSandboxedContext()
                                     try {
@@ -572,35 +595,6 @@ class PluginManager(private val context: Context) {
         }
         runningPluginThreads[plugin.id] = pluginThread
         pluginThread.start()
-    }
-
-    private fun getPluginSubContainer(activity: MainActivity, pluginId: String): LinearLayout {
-        val tag = "plugin_sub_container_$pluginId"
-        var container = activity.pluginContainer.findViewWithTag<LinearLayout>(tag)
-        if (container == null) {
-            container = LinearLayout(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                orientation = LinearLayout.VERTICAL
-                this.tag = tag
-                visibility = View.GONE
-            }
-            activity.pluginContainer.addView(container)
-        }
-        return container
-    }
-
-    private fun updateMainPluginContainerVisibility(activity: MainActivity) {
-        var anyVisible = false
-        for (i in 0 until activity.pluginContainer.childCount) {
-            if (activity.pluginContainer.getChildAt(i).visibility == View.VISIBLE) {
-                anyVisible = true
-                break
-            }
-        }
-        activity.pluginContainer.visibility = if (anyVisible) View.VISIBLE else View.GONE
     }
 
     /**

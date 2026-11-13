@@ -95,6 +95,8 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.ui)
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("androidx.palette:palette-ktx:1.0.0")
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.cio)
     implementation(libs.ktor.server.websockets)
