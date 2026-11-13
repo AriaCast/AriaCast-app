@@ -1,0 +1,52 @@
+name: AriaCompanion firmware and web remote
+
+on:
+  push:
+    paths: [ "AriaCompanion/**", "web-remote/**", ".github/workflows/AriaCompanionAndWeb.yml" ]
+  pull_request:
+    paths: [ "AriaCompanion/**", "web-remote/**" ]
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host-side unit tests
+        run: make -C AriaCompanion/firmware/test
+
+      - name: Install the ARM toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi cmake ninja-build
+
+      - name: Fetch the Pico SDK (2.1.1, with TinyUSB)
+        run: |
+          git clone --depth 1 --branch 2.1.1 https://github.com/raspberrypi/pico-sdk.git "$RUNNER_TEMP/pico-sdk"
+          git -C "$RUNNER_TEMP/pico-sdk" submodule update --init --depth 1 lib/tinyusb
+
+      - name: Build
+        env:
+          PICO_SDK_PATH: ${{ runner.temp }}/pico-sdk
+        run: |
+          cmake -S AriaCompanion/firmware -B build -G Ninja
+          ninja -C build
+          sha256sum build/aria_companion.uf2
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aria_companion-uf2
+          path: build/aria_companion.uf2
+
+  web-remote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-remote/package-lock.json
+      - name: Build
+        working-directory: web-remote
+        run: npm ci && npm run build
+      - name: The committed build is up to date
+        run: git diff --exit-code -- app/src/main/assets/web || (echo "Run 'npm run build' in web-remote/ and commit app/src/main/assets/web" && exit 1)

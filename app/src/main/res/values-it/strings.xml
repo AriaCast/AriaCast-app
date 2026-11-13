@@ -319,4 +319,7 @@
     <string name="web_remote_private">Chiunque abbia questo link può controllare AriaCast. Condividilo solo con persone di cui ti fidi.</string>
     <string name="web_remote_new_link">Crea un nuovo link</string>
     <string name="web_remote_copied">Link copiato</string>
+    <string name="cast_receiver_title">Schermata TV per Google Cast</string>
+    <string name="cast_receiver_desc">Mostra copertina e dettagli del brano sulle TV Chromecast invece della schermata semplice di Google. Serve la pagina ricevitore di AriaCast registrata nella Google Cast Developer Console (vedi cast-receiver/README.md). Lascia vuoto per usare quella predefinita di Google.</string>
+    <string name="cast_receiver_app_id">ID applicazione</string>
 </resources>

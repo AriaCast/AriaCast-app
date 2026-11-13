@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AriaCast</title>
+<!-- Google Cast Application Framework receiver. Host this page over HTTPS and register it
+     as a Custom Receiver in the Google Cast SDK Developer Console (see README.md). -->
+<script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+<style>
+  :root { --accent: #b90063; }
+  html, body { margin: 0; height: 100%; background: #0d0a12; color: #fff; font-family: "Google Sans", Roboto, sans-serif; overflow: hidden; }
+  cast-media-player { display: none; } /* audio-only: we draw our own screen */
+  #bg { position: fixed; inset: -60px; background: center / cover no-repeat; filter: blur(60px) brightness(.45); transform: scale(1.1); transition: background-image 1s; }
+  #stage { position: relative; height: 100%; display: flex; align-items: center; gap: 6vw; padding: 0 8vw; box-sizing: border-box; }
+  #art { width: 34vw; height: 34vw; max-height: 70vh; max-width: 70vh; border-radius: 32px; background: #1e1720 center / cover no-repeat; box-shadow: 0 30px 80px rgba(0,0,0,.5); flex: none; }
+  #meta { min-width: 0; }
+  #title { font-size: 5vw; font-weight: 700; line-height: 1.1; margin: 0 0 1vw; overflow-wrap: anywhere; }
+  #artist { font-size: 2.6vw; opacity: .8; margin: 0; }
+  #album { font-size: 2vw; opacity: .6; margin: .6vw 0 3vw; }
+  #bars { display: flex; gap: .6vw; align-items: flex-end; height: 6vw; }
+  #bars span { width: 1vw; background: #fff; opacity: .85; border-radius: 1vw; animation: bounce 1.2s ease-in-out infinite; }
+  #bars.paused span { animation-play-state: paused; opacity: .3; }
+  @keyframes bounce { 0%, 100% { height: 15%; } 50% { height: 100%; } }
+  #brand { position: fixed; right: 4vw; bottom: 4vh; font-size: 1.6vw; opacity: .5; letter-spacing: .1em; }
+</style>
+</head>
+<body>
+<cast-media-player></cast-media-player>
+<div id="bg"></div>
+<div id="stage">
+  <div id="art"></div>
+  <div id="meta">
+    <h1 id="title">AriaCast</h1>
+    <p id="artist"></p>
+    <p id="album"></p>
+    <div id="bars"></div>
+  </div>
+</div>
+<div id="brand">ARIACAST</div>
+<script>
+  const bars = document.getElementById('bars');
+  for (let i = 0; i < 12; i++) { const s = document.createElement('span'); s.style.animationDelay = (i * 0.11 % 1.2) + 's'; bars.appendChild(s); }
+
+  const context = cast.framework.CastReceiverContext.getInstance();
+  const player = context.getPlayerManager();
+
+  function show(meta) {
+    if (!meta) return;
+    document.getElementById('title').textContent = meta.title || 'AriaCast';
+    document.getElementById('artist').textContent = meta.artist || '';
+    document.getElementById('album').textContent = meta.albumName || '';
+    const img = meta.images && meta.images[0] && meta.images[0].url;
+    const css = img ? `url("${img.replace(/"/g, '%22')}")` : '';
+    document.getElementById('art').style.backgroundImage = css;
+    document.getElementById('bg').style.backgroundImage = css;
+  }
+
+  // LOAD carries the first track's metadata; AriaCast sends QUEUE_UPDATE on every track change.
+  player.setMessageInterceptor(cast.framework.messages.MessageType.LOAD, (req) => {
+    show(req.media && req.media.metadata);
+    return req;
+  });
+  player.setMessageInterceptor(cast.framework.messages.MessageType.QUEUE_UPDATE, (req) => {
+    const item = req.items && req.items[0];
+    show(item && item.media && item.media.metadata);
+    return req;
+  });
+  player.addEventListener(cast.framework.events.EventType.PLAYER_LOAD_COMPLETE, () => {
+    const info = player.getMediaInformation();
+    show(info && info.metadata);
+  });
+  player.addEventListener([cast.framework.events.EventType.PAUSE, cast.framework.events.EventType.PLAYING], (e) => {
+    bars.classList.toggle('paused', e.type === cast.framework.events.EventType.PAUSE);
+  });
+
+  const options = new cast.framework.CastReceiverOptions();
+  options.disableIdleTimeout = true; // a live audio stream may stay quiet between songs
+  options.skipPlayersLoad = false;
+  context.start(options);
+</script>
+</body>
+</html>

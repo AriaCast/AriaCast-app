@@ -41,8 +41,8 @@ android {
         applicationId = "com.aria.ariacast"
         minSdk = 29
         targetSdk = 36
-        versionCode = 17
-        versionName = "1.1.9_hotfix"
+        versionCode = 18
+        versionName = "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -65,6 +65,22 @@ android {
     }
     buildFeatures {
         compose = true
+        resValues = true
+    }
+
+    // "github": releases on GitHub/SafeHaven, with the in-app update check.
+    // "fdroid": no self-update (F-Droid treats it as an anti-feature); updates come from F-Droid.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("github") {
+            dimension = "distribution"
+            isDefault = true
+            resValue("bool", "self_update", "true")
+        }
+        create("fdroid") {
+            dimension = "distribution"
+            resValue("bool", "self_update", "false")
+        }
     }
     kotlinOptions {
         jvmTarget = "1.8"

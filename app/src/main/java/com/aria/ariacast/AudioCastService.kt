@@ -840,7 +840,9 @@ class AudioCastService : Service() {
             try {
                 _state.value = CastState.CONNECTING
                 client.connect()
-                client.launch()
+                // A custom receiver (cast-receiver/) if the user registered one, else Google's default.
+                client.launch(sharedPreferences.getString(KEY_CAST_RECEIVER_APP_ID, null)
+                    ?.trim()?.uppercase()?.takeIf { it.matches(Regex("[0-9A-F]{8}")) } ?: CastClient.DEFAULT_MEDIA_RECEIVER)
                 client.load(streamUrl, "audio/wav", castMetadata(_metadata.value))
                 PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Google Cast: ${dest.name} playing $streamUrl")
             } catch (e: CancellationException) {
@@ -2111,6 +2113,7 @@ class AudioCastService : Service() {
         const val EXTRA_SOURCE = "com.aria.ariacast.EXTRA_SOURCE"
         const val EXTRA_INPUT_DEVICE_ID = "com.aria.ariacast.EXTRA_INPUT_DEVICE_ID"
         const val KEY_CAPTURE_GAMES = "capture_games"
+        const val KEY_CAST_RECEIVER_APP_ID = "cast_receiver_app_id"
         const val ACTION_STOP = "com.aria.ariacast.ACTION_STOP"
         const val EXTRA_MEDIA_PROJECTION_TOKEN = "com.aria.ariacast.EXTRA_MEDIA_PROJECTION_TOKEN"
         const val EXTRA_SERVER_HOST = "com.aria.ariacast.EXTRA_SERVER_HOST"

@@ -31,6 +31,8 @@ class UpdateManager(private val context: Context) {
     }
 
     suspend fun checkForUpdates(manual: Boolean = false) {
+        // F-Droid builds update through F-Droid; checking GitHub releases is an anti-feature there.
+        if (!context.resources.getBoolean(R.bool.self_update)) return
         try {
             val latestRelease: GitHubRelease = client.get("https://api.github.com/repos/AriaCast/AriaCast-app/releases/latest").body()
             val currentVersion = context.getString(R.string.app_version)
