@@ -3,6 +3,61 @@
 All notable changes to AriaCast are documented here. Releases prior to 1.1.8
 are available as [GitHub Releases](https://github.com/AriaCast/AriaCast-app/releases).
 
+## [2.0.0]
+
+AriaCast 2.0 sends **and** receives: any Android phone, tablet or TV can cast to speakers,
+be a speaker, or bridge between protocols. It also adds Sendspin (Music Assistant), video
+casting, a new interface, and AriaCompanion 2.
+
+### Send and receive in one app
+- The AriaCast Receiver app is now part of AriaCast. Turn on **Receive on this device** and
+  other devices see it as a speaker. It plays received audio locally, can **forward** it to
+  other speakers (bridge mode, no screen-capture prompt), and can start at boot.
+- **DLNA/UPnP renderer**: any DLNA app can play music or video on this device; videos play
+  full screen on the Receive screen (e.g. on Android TV).
+- **Sendspin (Music Assistant)**: Music Assistant can play on this device in sync with its
+  other speakers, show what's playing, and use this device's audio as a **Live Input**.
+  Pairing uses a token/QR shown in the app.
+- Full-screen **Receive screen** for tablets and TVs: artwork colors, clock, "scan to cast
+  here" QR code, burn-in protection.
+- **Android TV**: listed in the TV launcher, works with the remote.
+
+### Casting
+- **Audio sources**: other apps (now including games and apps that don't tag their audio),
+  microphone or USB line-in, AriaCompanion, or audio this device is receiving.
+- **Room handoff**: add, remove or move speakers while casting, without a new screen-capture prompt.
+- **Video casting** to Google Cast, DLNA and AirPlay: choose or share a video file or link,
+  with subtitles and seeking.
+- **Custom Google Cast receiver** (optional): artwork and song details on Chromecast TVs.
+
+### New interface (Jetpack Compose)
+- Send and Receive cards, source picker, speaker list with status dots, groups, multiroom
+  delay sliders, add speaker by address.
+- **Now Playing** with controls, volume, visualizer and optional synced lyrics (LRCLIB).
+- **Connection doctor**: checks network, speakers, capture and data flow step by step, and
+  recognizes apps that block audio capture.
+- **Onboarding**, Material You colors on Android 12+, home-screen **widget**.
+
+### Built in, previously plugins
+- Music Assistant player picker, connection doctor, visualizer, add speaker by address.
+- **Plugin API v2**: plugins describe their UI with `ui.render()`; the v1 view methods
+  (`ui.inflate`, `ui.findView`, `ui.add`) no longer draw anything.
+
+### AriaCompanion 2
+- One RP2040 board on the USB-C port (Raspberry Pi Pico or RP2040-Zero) replaces the two
+  ESP32 boards: the phone plays to it as a USB speaker and it sends the audio straight back
+  to AriaCast over a private USB channel. Works with every speaker type, lossless, no
+  screen-capture prompt. Only media is forwarded: calls stay on the phone, notifications
+  and alarms are held back. Firmware updates from the app. The ESP32 version is in
+  `AriaCompanion/legacy/`.
+
+### Also
+- **Web remote**: control AriaCast from any browser on the network (private link).
+- **Automation**: `com.aria.ariacast.action.CAST`, `STOP`, `RECEIVER_START`,
+  `RECEIVER_STOP` for Tasker/MacroDroid (off by default).
+- **F-Droid build flavor** without the in-app update check.
+- Minimum Android version lowered to 10.
+
 ## [1.1.9_hotfix]
 
 ### AirPlay 1 (RAOP) - rewritten

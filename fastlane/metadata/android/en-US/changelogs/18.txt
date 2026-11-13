@@ -1,0 +1,8 @@
+AriaCast 2.0: send and receive in one app.
+• Be a speaker: AriaCast receiver, DLNA renderer (audio + video), Sendspin for Music Assistant
+• Bridge received audio to other speakers
+• Video casting to Cast, DLNA and AirPlay
+• Add, remove or move speakers while casting
+• New interface, Now Playing, lyrics, connection doctor, widget
+• AriaCompanion 2: one RP2040 board, any app, any speaker
+• Android TV, web remote, Android 10+

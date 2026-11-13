@@ -3,6 +3,43 @@
 Status: **draft**, last updated 2026-11-13.
 Nothing here is committed until it lands on the `v2` branch. Items marked **spike** need a short feasibility test before we promise them.
 
+## Status (2026-11-13, branch `v2`)
+
+Everything below builds (both flavors, debug and release with R8) and passes the unit tests,
+but **nothing has run on a real device or emulator yet**. See "Not verified" at the end of
+this section before releasing.
+
+| Area | Status | Notes |
+|---|---|---|
+| Audio sources (apps incl. games/untagged, mic/line-in, AriaCompanion, received audio) | Done | `pipeline/` |
+| Receiver merged (AriaCast protocol), bridge mode, Receive screen, start at boot | Done | `receiver/` |
+| DLNA/UPnP renderer, audio and video | Done | No GENA events sent; controllers poll |
+| Sendspin client: player@v1, source@v1, metadata@v1 | Done | Pairing PSK method only (no CPace code pairing); PCM only |
+| Video casting to Cast, DLNA, AirPlay | Done | AirPlay `/play` fails on Apple TVs that require pairing |
+| Compose UI, onboarding, Now Playing, lyrics, connection doctor, widget, TV launcher | Done | |
+| Built-in Music Assistant picker, doctor, visualizer, add by address | Done | |
+| Plugin API v2 (`ui.render`, `ui.onEvent`) | Done | v1 view methods log a warning |
+| Room handoff (add/remove/move speakers while casting) | Done | |
+| Automation intents, web remote (React + Vite), custom Cast receiver page | Done | Custom receiver needs the Google Cast Console registration |
+| AriaCompanion 2: firmware, app side, in-app firmware update | Done | Firmware built with Pico SDK 2.1.1; host tests pass |
+| F-Droid flavor, CI, minSdk 29, version 2.0.0 | Done | |
+| Service split into sinks | Partial | Sources extracted, one job per destination; protocol code still in `AudioCastService` |
+| One notification for both roles | Partial | Sending and receiving are two services, two notifications |
+| Settings, Plugins, Protocols, Packet log, NFC, AirPlay PINs screens | Partial | Still XML; the accent color picker only affects these |
+| Plugin catalog with signature checks | Not done | The existing GitHub sync with re-consent on change remains |
+| AirPlay receiver (UxPlay via NDK) | Not done | Large native integration |
+| Cast mirroring (libcast), AirPlay mirroring | Not done | |
+| Per-app routing, EQ/loudness, AV sync offset | Not done | Multiroom delay sliders exist |
+| Home Assistant `media_player`, quirk profiles, auto-cast on speaker appearance | Not done | |
+| Ktor 3 | Not done | Client and server on 2.3.8 |
+| Retire the standalone receiver repo | Not done | Needs a final release there pointing to AriaCast |
+
+**Not verified (do before releasing):**
+- AriaCompanion 2 on hardware: the M0 checklist in [ariacompanion-2.md](ariacompanion-2.md), Samsung first.
+- Sendspin against a real Music Assistant 2.10+ (pairing token entry, Live Input, synchronized playback).
+- DLNA renderer with common controllers (BubbleUPnP, Kodi, Windows "Cast to device").
+- Compose screens on a phone, a tablet and Android TV; the widget; the release build at runtime.
+
 ## What 2.0 is
 
 AriaCast 1.x is a sender: it captures your phone's audio and casts it to speakers.

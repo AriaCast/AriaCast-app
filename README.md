@@ -1,7 +1,7 @@
 <div align="center">
   
   <h1>AriaCast for Android</h1>
-  <p><b><i>Stream any audio from your Android device to any speaker in your home.</i></b></p>
+  <p><b><i>Stream any audio from your Android device to any speaker in your home, or turn it into one.</i></b></p>
   
   <p>
     <a href="https://github.com/AirPlr/AriaCast-app/releases"><img src="https://img.shields.io/github/downloads/AirPlr/AriaCast-app/latest/total?style=for-the-badge&color=2ea44f" alt="Downloads" /></a>
@@ -13,7 +13,7 @@
 <hr />
 
 <h2>📱 Overview</h2>
-<p><b>AriaCast</b> is the ultimate bridge between your Android device and your home audio ecosystem. Instead of relying on proprietary apps, AriaCast captures your system's audio output and routes it to any networked receiver.</p>
+<p><b>AriaCast</b> is the bridge between your Android device and your home audio. It captures your device's audio and sends it to any networked speaker, and since 2.0 it can also <b>receive</b>: a phone, tablet or Android TV becomes a speaker for AriaCast, DLNA apps and Music Assistant, or a bridge that forwards what it receives to other speakers.</p>
 
 <div style="display: flex; justify-content: space-between;">
   <img width="32%" alt="UI 1" src="https://github.com/user-attachments/assets/12b44736-e1f7-47c8-b292-c6e9ae8be728" />
@@ -32,6 +32,17 @@
   <li><b>AirPlay 2:</b> HomePods, Apple TVs, Macs and AirPlay 2 speakers: HomeKit pairing (transient or PIN), encrypted control and audio channels, metadata, artwork and volume sync, with automatic fallback to AirPlay 1 for receivers that need timing Android can't provide.</li>
   <li><b>Google Cast:</b> Chromecast, Nest speakers/displays and Cast groups, with now-playing metadata and two-way volume and play/pause sync.</li>
   <li><b>DLNA / UPnP:</b> Universal compatibility with Smart TVs, AV Receivers, and media boxes.</li>
+  <li><b>Snapcast:</b> synchronized multi-room playback through a Snapcast server.</li>
+  <li><b>Sendspin (Music Assistant):</b> this device's audio as a Music Assistant Live Input, encrypted end to end and paired with a token.</li>
+</ul>
+
+<h2>📥 Receive on this device</h2>
+<ul>
+  <li><b>AriaCast receiver:</b> other AriaCast devices see this one as a speaker.</li>
+  <li><b>DLNA renderer:</b> any DLNA app can play music or video here; videos play full screen (great on Android TV).</li>
+  <li><b>Sendspin player:</b> Music Assistant plays here in sync with its other speakers.</li>
+  <li><b>Bridge:</b> forward what this device receives to AirPlay, Cast, DLNA, Snapcast or Sendspin speakers.</li>
+  <li><b>Receive screen</b> for tablets and TVs, with artwork colors, a clock and a "scan to cast here" QR code.</li>
 </ul>
 
 <hr />
@@ -43,7 +54,13 @@
     <li><b>Automatic Discovery:</b> Instant detection of AriaCast, AirPlay and DLNA devices on your network.</li>
     <li><b>Rich Metadata Sync:</b> Pushes track title, artist, and album art to receivers in real-time.</li>
     <li><b>Quick Settings Tile:</b> Start casting directly from your notification shade.</li>
-    <li><b>JavaScript Plugins:</b> Extend app functionality or add custom server controls without re-building.</li>
+    <li><b>Sources:</b> other apps, the microphone or a USB line-in (turntables, mixers), AriaCompanion, or audio this device receives.</li>
+    <li><b>Room handoff:</b> add, remove or move speakers while casting.</li>
+    <li><b>Video casting</b> to Google Cast, DLNA and AirPlay, with subtitles.</li>
+    <li><b>Now Playing</b> with visualizer and optional synced lyrics, <b>connection doctor</b>, home-screen <b>widget</b>, <b>web remote</b>.</li>
+    <li><b>Music Assistant</b> player picker built in.</li>
+    <li><b>Automation:</b> intents for Tasker and MacroDroid (opt-in).</li>
+    <li><b>JavaScript Plugins:</b> extend the app without re-building; plugins draw their UI with <code>ui.render()</code> (Plugin API v2).</li>
   </ul>
 </div>
 <hr />
@@ -69,6 +86,11 @@
   </ul>
 </div>
 
+<p>
+  <b>AriaCompanion 2</b> casts those apps too, without root: a single RP2040 board (Raspberry Pi Pico or RP2040-Zero)
+  on the USB-C port acts as a USB speaker and hands the audio straight back to AriaCast. Calls stay on the phone and
+  notification sounds are held back. See <a href="AriaCompanion/README.md">AriaCompanion</a>.
+</p>
 <p>
   <i>Advanced users can bypass some restrictions on rooted devices using the <a href="https://github.com/LSPosed/DisableFlagSecure">DisableFlagSecure</a> module with LSPosed/Magisk.</i>
 </p>
@@ -96,9 +118,9 @@
 
 <h3>🧪 Protocol tests</h3>
 <p>
-  Unit tests run with <code>./gradlew testDebugUnitTest</code>. The AirPlay clients are also tested end to end against real
+  Unit tests run with <code>./gradlew testGithubDebugUnitTest</code> (AriaCompanion firmware: <code>make -C AriaCompanion/firmware/test</code>). The AirPlay clients are also tested end to end against real
   <a href="https://github.com/mikebrady/shairport-sync">shairport-sync</a> receivers (AirPlay 1, and AirPlay 2 with nqptp): start them with
-  <code>sudo scripts/e2e/start-receivers.sh</code> (see the script for options), then run <code>AIRPLAY_E2E=1 ./gradlew testDebugUnitTest</code>.
+  <code>sudo scripts/e2e/start-receivers.sh</code> (see the script for options), then run <code>AIRPLAY_E2E=1 ./gradlew testGithubDebugUnitTest</code>.
   The tests check the audio the receiver actually decodes, not just the handshakes.
 </p>
 
