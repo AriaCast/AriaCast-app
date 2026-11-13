@@ -590,6 +590,7 @@ private fun ReceiveCard(controller: AppController) {
         com.aria.ariacast.ui.SwitchRow(stringResource(R.string.receive_at_boot), stringResource(R.string.receive_at_boot_desc), startAtBoot, {
             startAtBoot = it; hub.startAtBoot = it
         })
+        if (running) SendspinSection()
     }
     if (forwardDialog) ForwardDialog(controller) { forwardDialog = false }
 }

@@ -71,12 +71,10 @@ import com.aria.ariacast.receiver.ReceiverMetadata
 import com.aria.ariacast.receiver.ReceiverService
 import com.aria.ariacast.ui.AppController
 import com.aria.ariacast.ui.Screen
+import com.aria.ariacast.ui.qrBitmap
 import com.aria.ariacast.ui.nowplaying.KEY_LYRICS
 import com.aria.ariacast.ui.nowplaying.SyncedLyrics
 import com.aria.ariacast.ui.nowplaying.rememberLivePosition
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.EncodeHintType
-import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
 import java.net.URLEncoder
 import java.text.DateFormat
@@ -218,8 +216,4 @@ private fun Playing(hub: ReceiverHub, meta: ReceiverMetadata, bitmap: Bitmap?, o
     }
 }
 
-private fun qrBitmap(text: String, size: Int): Bitmap? = runCatching {
-    val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size, mapOf(EncodeHintType.MARGIN to 1))
-    val pixels = IntArray(size * size) { i -> if (matrix[i % size, i / size]) 0xFF000000.toInt() else 0xFFFFFFFF.toInt() }
-    Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
-}.getOrNull()
+

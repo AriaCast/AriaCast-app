@@ -36,6 +36,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
@@ -62,7 +63,12 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
     override val audioCastServiceFlow: StateFlow<AudioCastService?> get() = service
     override val hostScope: CoroutineScope get() = lifecycleScope
 
-    override val servers: StateFlow<List<Server>> get() = discoveryManager.servers
+    /** Discovered speakers plus, when a Sendspin server offers it, its input as a pseudo-speaker. */
+    override val servers: StateFlow<List<Server>> by lazy {
+        kotlinx.coroutines.flow.combine(discoveryManager.servers, com.aria.ariacast.sendspin.SendspinHub.get(this).sourceTarget) { list, input ->
+            if (input == null) list else list + input
+        }.stateIn(lifecycleScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
+    }
     override val discoveryState: StateFlow<DiscoveryState> get() = discoveryManager.state
 
     private val _groups = MutableStateFlow<List<CastGroup>>(emptyList())

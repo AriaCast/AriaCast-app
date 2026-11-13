@@ -84,6 +84,7 @@ import com.aria.ariacast.pipeline.MicrophoneSource
 import com.aria.ariacast.pipeline.ProjectionCaptureSource
 import com.aria.ariacast.pipeline.SourceKind
 import com.aria.ariacast.receiver.ReceiverHub
+import com.aria.ariacast.sendspin.SendspinHub
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
@@ -592,6 +593,7 @@ class AudioCastService : Service() {
                     "AirPlay" -> launch { startAirPlaySession(dest, airplay2 = false) }
                     "AirPlay2" -> launch { startAirPlaySession(dest, airplay2 = true) }
                     "Snapcast" -> launch { startSnapcastSession(dest) }
+                    SendspinHub.PLATFORM -> launch { startSendspinSourceSession() }
                     else -> {
                         launch { startControlSession(dest) }
                         if (videoEnabled && destinations.size == 1) { 
@@ -1101,6 +1103,22 @@ class AudioCastService : Service() {
         dacpRegistration = null
         dacpServer?.stop()
         dacpServer = null
+    }
+
+    /**
+     * "Casting" to a Sendspin server's input: this device offers its audio as a source@v1
+     * stream; the server (e.g. Music Assistant) decides when to pull it.
+     */
+    private suspend fun startSendspinSourceSession() {
+        val hub = SendspinHub.get(this)
+        hub.setSourceSignal(true)
+        _state.value = CastState.CASTING
+        updateNotification()
+        try {
+            _audioBufferFlow.collect { hub.pushSourceFrame(it) }
+        } finally {
+            hub.setSourceSignal(false)
+        }
     }
 
     private suspend fun startSnapcastSession(dest: CastDestination) = withContext(Dispatchers.IO) {

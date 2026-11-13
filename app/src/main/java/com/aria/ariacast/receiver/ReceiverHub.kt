@@ -115,6 +115,14 @@ class ReceiverHub private constructor(private val app: Context) {
 
     internal fun onSenderConnected(remote: String) { _sender.value = remote }
 
+    /** Another protocol (e.g. Sendspin) is playing on this device: show it on the Receive screen. */
+    fun onExternalSender(name: String) { _sender.value = name }
+
+    fun onExternalSenderGone(name: String) {
+        if (_sender.value == name) _sender.value = null
+        _metadata.value = _metadata.value.copy(isPlaying = false)
+    }
+
     internal fun onSenderDisconnected(remote: String) {
         if (_sender.value == remote) _sender.value = null
         player.stop()
@@ -126,7 +134,7 @@ class ReceiverHub private constructor(private val app: Context) {
         _pcm.tryEmit(data)
     }
 
-    internal fun onMetadata(update: MetadataUpdate) {
+    fun onMetadata(update: MetadataUpdate) {
         val (merged, songChanged) = _metadata.value.merge(update)
         _metadata.value = merged
         server?.broadcastMetadata(merged)
