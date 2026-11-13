@@ -85,7 +85,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         findViewById<View>(R.id.companionLayout).setOnClickListener {
-            startActivity(Intent(this, AriaCompanionActivity::class.java))
+            startActivity(Intent(this, com.aria.ariacast.ui.CompanionActivity::class.java))
         }
 
         findViewById<View>(R.id.protocolsLayout).setOnClickListener {

@@ -165,7 +165,7 @@
 
     <!-- AriaCompanion -->
     <string name="companion">AriaCompanion</string>
-    <string name="companion_desc">Stream via ESP32 Bluetooth bridge</string>
+    <string name="companion_desc">USB loopback: cast apps that block capture</string>
     <string name="companion_device">Companion Device</string>
     <string name="companion_status_searching">Searching for AriaCompanion…</string>
     <string name="companion_status_found">Found: %1$s (%2$s)</string>
@@ -219,4 +219,36 @@
     <string name="nfc_write_too_small">This tag is too small to hold this link</string>
     <string name="nfc_write_unsupported_tag">This tag doesn\'t support writing</string>
     <string name="nfc_write_failed">Couldn\'t write to the tag — hold it steady and try again</string>
+    <string name="back">Back</string>
+    <string name="receiver_channel">Receiver</string>
+    <string name="receiver_notification_title">Receiving as %1$s</string>
+    <string name="receiver_waiting">Waiting for a sender</string>
+    <string name="companion_allow_usb">Allow USB access</string>
+    <string name="companion_signal">Signal</string>
+    <string name="companion_firmware">Firmware</string>
+    <string name="companion_overruns">Dropped audio</string>
+    <string name="companion_received">Received</string>
+    <string name="companion_gate_open">Only media is cast. Nothing is being held back.</string>
+    <string name="companion_gate_closed">Held back: %1$s</string>
+    <string name="companion_auto_cast">Start casting when plugged in</string>
+    <string name="companion_auto_cast_desc">Casts to the last speaker you used</string>
+    <string name="companion_include_games">Include games</string>
+    <string name="companion_include_games_desc">Let game sounds through to the speakers</string>
+    <string name="companion_calls_hint">Allow phone-state access so incoming calls ring on the phone instead of the board.</string>
+    <string name="companion_calls_allow">Allow</string>
+    <string name="companion_firmware_desc">Bundled firmware: %1$s</string>
+    <string name="companion_update_firmware">Update firmware</string>
+    <string name="companion_absent">Plug in AriaCompanion</string>
+    <string name="companion_absent_desc">Connect the RP2040 board to this device\'s USB-C port.</string>
+    <string name="companion_needs_permission">USB access needed</string>
+    <string name="companion_needs_permission_desc">AriaCast needs permission to read the board.</string>
+    <string name="companion_connected">AriaCompanion connected</string>
+    <string name="companion_mode_private">Idle: the phone keeps its own audio.</string>
+    <string name="companion_mode_speaker">Ready: media goes to the board.</string>
+    <string name="companion_mode_streaming">Casting media from this device.</string>
+    <string name="companion_switching">Switching…</string>
+    <string name="companion_switching_desc">The board is reconnecting in its new mode.</string>
+    <string name="companion_bootloader">Update mode</string>
+    <string name="companion_bootloader_desc">The board is waiting for new firmware.</string>
+    <string name="companion_error">Something went wrong</string>
 </resources>

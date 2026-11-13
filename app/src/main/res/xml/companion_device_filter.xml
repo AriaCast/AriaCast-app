@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AriaCompanion 2 is matched by its vendor interface (class 0xFF, subclass 0xAC, protocol 1),
+     so both the development PID and the final Raspberry Pi PID work. -->
+<resources>
+    <usb-device class="255" subclass="172" protocol="1" />
+</resources>

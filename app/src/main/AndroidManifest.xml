@@ -7,6 +7,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- Optional, requested at runtime: keeps calls on the phone while AriaCompanion is attached. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -21,6 +27,12 @@
     <!-- Not required: NfcWriteActivity checks NfcAdapter.getDefaultAdapter() itself and
          shows an unavailable state, so the app stays installable on devices without NFC. -->
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <!-- Android TV: no touchscreen, launched from the TV launcher (leanback). -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:name=".AriaCastApp"
@@ -35,8 +47,38 @@
 
         <service
             android:name=".AudioCastService"
-            android:foregroundServiceType="mediaProjection|connectedDevice"
+            android:foregroundServiceType="mediaProjection|connectedDevice|microphone|mediaPlayback"
             android:exported="false" />
+
+        <service
+            android:name=".receiver.ReceiverService"
+            android:foregroundServiceType="connectedDevice"
+            android:exported="false" />
+
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- AriaCompanion 2: Android starts this when the board is plugged in. -->
+        <activity
+            android:name=".companion.UsbAttachActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/companion_device_filter" />
+        </activity>
+        <activity android:name=".ui.CompanionActivity" android:exported="false" />
 
         <service
             android:name=".CastTileService"
@@ -85,7 +127,6 @@
         <activity android:name=".NfcWriteActivity" android:exported="false" />
         <activity android:name=".PacketLogActivity" android:exported="false" />
         <activity android:name=".PluginsActivity" android:exported="false" />
-        <activity android:name=".AriaCompanionActivity" android:exported="false" />
 
     </application>
 

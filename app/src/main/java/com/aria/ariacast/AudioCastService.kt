@@ -77,6 +77,13 @@ import com.aria.ariacast.cast.CastListener
 import com.aria.ariacast.cast.CastMetadata
 import com.aria.ariacast.raop.AudioResampler
 import com.aria.ariacast.raop.RaopClient
+import com.aria.ariacast.companion.CompanionHub
+import com.aria.ariacast.pipeline.AudioSource
+import com.aria.ariacast.pipeline.FgsTypes
+import com.aria.ariacast.pipeline.MicrophoneSource
+import com.aria.ariacast.pipeline.ProjectionCaptureSource
+import com.aria.ariacast.pipeline.SourceKind
+import com.aria.ariacast.receiver.ReceiverHub
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
@@ -116,7 +123,6 @@ class AudioCastService : Service() {
 
     private lateinit var mediaProjectionManager: MediaProjectionManager
     private var mediaProjection: MediaProjection? = null
-    private var audioRecord: AudioRecord? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var videoCodec: MediaCodec? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -250,6 +256,20 @@ class AudioCastService : Service() {
     private val _stats = MutableStateFlow(CastingStats())
     val stats: StateFlow<CastingStats> = _stats.asStateFlow()
 
+    private val _sourceKind = MutableStateFlow<SourceKind?>(null)
+    /** Which source is feeding the audio bus, or null when not casting. */
+    val sourceKind: StateFlow<SourceKind?> = _sourceKind.asStateFlow()
+
+    private val _sourceSilent = MutableStateFlow<Boolean?>(null)
+    /** True while the source produces only silence (used by the connection doctor). */
+    val sourceSilent: StateFlow<Boolean?> = _sourceSilent.asStateFlow()
+
+    private val _lastError = MutableStateFlow<String?>(null)
+    /** Human-readable reason for the last ERROR state. */
+    val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+    private var mutedForSource = false
+
     private val _metadata = MutableStateFlow<TrackMetadata?>(null)
     val metadata: StateFlow<TrackMetadata?> = _metadata.asStateFlow()
 
@@ -358,12 +378,6 @@ class AudioCastService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START_COMPANION -> {
-                cleanupSession()
-                val destinations = parseDestinations(intent)
-                if (destinations.isNotEmpty()) startCastingWithCompanion(destinations)
-                return START_STICKY
-            }
             ACTION_START -> {
                 cleanupSession()
 
@@ -376,7 +390,24 @@ class AudioCastService : Service() {
 
                 val destinations = parseDestinations(intent)
                 if (mediaProjectionToken != null && destinations.isNotEmpty()) {
-                    startCasting(mediaProjectionToken, destinations)
+                    startCasting(projectionSourceFactory(mediaProjectionToken), FgsTypes.MEDIA_PROJECTION, destinations)
+                }
+                return START_STICKY
+            }
+            ACTION_START_SOURCE -> {
+                // Sources that need no screen-capture consent: microphone / line-in,
+                // the AriaCompanion USB loopback, and audio this device is receiving.
+                cleanupSession()
+                val kind = SourceKind.fromId(intent.getStringExtra(EXTRA_SOURCE))
+                val factory = kind?.let { sourceFactoryFor(it, intent) }
+                val destinations = parseDestinations(intent)
+                if (factory != null && destinations.isNotEmpty()) {
+                    val fgsType = when (kind) {
+                        SourceKind.MICROPHONE -> FgsTypes.MICROPHONE
+                        SourceKind.COMPANION_USB -> FgsTypes.CONNECTED_DEVICE
+                        else -> FgsTypes.MEDIA_PLAYBACK
+                    }
+                    startCasting(factory, fgsType, destinations)
                 }
                 return START_STICKY
             }
@@ -418,201 +449,48 @@ class AudioCastService : Service() {
         return destinations
     }
 
-    // AriaCompanion streams straight from the ESP32 WiFi sender board to a
-    // real AriaCast Receiver (native protocol only — that's all the board
-    // speaks); the phone is never in the audio path. This service's only
-    // job is to point the board at the chosen receiver via its REST API.
-    @SuppressLint("MissingPermission")
-    private fun startCastingWithCompanion(destinations: List<CastDestination>) {
-        val receiver = destinations.firstOrNull()
-        if (receiver == null) {
-            Log.e(TAG, "No AriaCast receiver selected for AriaCompanion")
-            _state.value = CastState.ERROR
-            return
-        }
-        if (destinations.size > 1) {
-            Log.w(TAG, "AriaCompanion streams to a single receiver; ignoring ${destinations.size - 1} extra destination(s)")
-        }
-
-        sessionJob?.cancel()
-        _activeDestinations.value = listOf(receiver)
-        _state.value = CastState.CONNECTING
-        sessionJob = SupervisorJob()
-        val sessionScope = CoroutineScope(Dispatchers.IO + sessionJob!!)
-
-        originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
-
-        with(sharedPreferences.edit()) {
-            putString(KEY_LAST_SERVER_HOST, receiver.host)
-            putInt(KEY_LAST_SERVER_PORT, receiver.port)
-            putString(KEY_LAST_SERVER_NAME, receiver.name)
-            putString(KEY_LAST_SERVER_PLATFORM, receiver.platform)
-            apply()
-        }
-
-        try {
-            val notification = createNotification()
-            val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-            } else 0
-            startForeground(NOTIFICATION_ID, notification, serviceType)
-        } catch (e: Exception) {
-            if (e is ForegroundServiceStartNotAllowedException) {
-                Log.e(TAG, "Foreground service start not allowed", e)
-                _state.value = CastState.ERROR
-                return
-            } else {
-                throw e
-            }
-        }
-
-        acquireWakeLock()
-        startVolumeSession()
-
-        val companionIp = sharedPreferences.getString(AriaCompanionActivity.KEY_COMPANION_IP, null)
-        val companionPort = sharedPreferences.getInt(AriaCompanionActivity.KEY_COMPANION_PORT, COMPANION_API_PORT)
-
-        if (companionIp.isNullOrEmpty()) {
-            Log.e(TAG, "No companion IP configured")
-            _state.value = CastState.ERROR
-            return
-        }
-
-        // Set before launching so performMetadataUpdate already routes
-        // through the board for the initial send below and the refresh loop.
-        companionApiHost = companionIp
-        companionApiPort = companionPort
-
-        sessionScope.launch {
-            startMetadataRefreshLoop()
-            _metadata.value?.let { sendMetadata(it) }
-            startCompanionRelay(companionIp, companionPort, receiver)
-        }
+    /** Builds the [AudioSource] for a start request; runs after the service is in the foreground. */
+    private fun interface SourceFactory {
+        fun create(): AudioSource?
     }
 
-    private var companionApiHost: String? = null
-    private var companionApiPort: Int = 0
-
-    private suspend fun startCompanionRelay(apiHost: String, apiPort: Int, receiver: CastDestination) {
-        val pointed = withContext(Dispatchers.IO) {
-            setCompanionReceiverTarget(apiHost, apiPort, receiver.host, receiver.port)
-        }
-        if (!pointed) {
-            Log.e(TAG, "Companion: failed to reach AriaCompanion REST API at $apiHost:$apiPort")
-            _state.value = CastState.ERROR
-            return
-        }
-
-        Log.i(TAG, "Companion: told $apiHost:$apiPort to stream to ${receiver.host}:${receiver.port}")
-
-        // The board now streams directly to the receiver on its own; poll its
-        // status just to reflect the real connection state in the app instead
-        // of optimistically showing CASTING the instant the REST call succeeds.
-        var consecutiveFailures = 0
-        var lastLoggedState: String? = null
-        while (currentCoroutineContext().isActive) {
-            val boardState = withContext(Dispatchers.IO) { fetchCompanionReceiverState(apiHost, apiPort) }
-            if (boardState != null) {
-                if (consecutiveFailures > 0) {
-                    PacketLogger.log(PacketDirection.IN, PacketType.STATS, "AriaCompanion contact restored ($apiHost:$apiPort)")
-                }
-                consecutiveFailures = 0
-                if (boardState != lastLoggedState) {
-                    PacketLogger.log(PacketDirection.IN, PacketType.STATS, "AriaCompanion state: $boardState")
-                    lastLoggedState = boardState
-                }
-                _state.value = if (boardState == "streaming") CastState.CASTING else CastState.CONNECTING
-                updateNotification()
-            } else {
-                consecutiveFailures++
-                if (consecutiveFailures == 3) {
-                    Log.e(TAG, "Companion: lost contact with $apiHost:$apiPort")
-                    PacketLogger.log(PacketDirection.IN, PacketType.STATS, "Lost contact with AriaCompanion ($apiHost:$apiPort)")
-                    _state.value = CastState.ERROR
-                    updateNotification()
-                }
-            }
-            delay(3000)
-        }
-    }
-
-    private fun fetchCompanionReceiverState(apiHost: String, apiPort: Int): String? {
-        val url = URL("http://$apiHost:$apiPort/api/status")
-        val conn = url.openConnection() as HttpURLConnection
-        return try {
-            conn.requestMethod = "GET"
-            conn.connectTimeout = 3000
-            conn.readTimeout = 3000
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            JSONObject(body).optJSONObject("receiver")?.optString("state")
-        } catch (e: Exception) {
+    private fun projectionSourceFactory(mediaProjectionToken: Intent) = SourceFactory {
+        // MediaProjection token is single-use on Android 14+; obtain it exactly once.
+        val projection = mediaProjectionManager.getMediaProjection(Activity.RESULT_OK, mediaProjectionToken)
+        if (projection == null) {
+            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "MediaProjection permission was not granted")
             null
-        } finally {
-            conn.disconnect()
+        } else {
+            mediaProjection = projection
+            projection.registerCallback(mediaProjectionCallback, null)
+            ProjectionCaptureSource(projection, sharedPreferences.getBoolean(KEY_CAPTURE_GAMES, true))
         }
     }
 
-    private fun setCompanionReceiverTarget(apiHost: String, apiPort: Int, receiverHost: String, receiverPort: Int): Boolean {
-        return try {
-            val url = URL("http://$apiHost:$apiPort/api/receiver")
-            val body = JSONObject().apply {
-                put("host", receiverHost)
-                put("port", receiverPort)
-            }.toString()
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                doOutput = true
-                connectTimeout = 5000
-                readTimeout = 5000
-                setRequestProperty("Content-Type", "application/json")
-            }
-            OutputStreamWriter(conn.outputStream).use { it.write(body) }
-            val responseCode = conn.responseCode
-            conn.disconnect()
-            val ok = responseCode == 200
-            if (ok) {
-                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "AriaCompanion ($apiHost:$apiPort) told to stream to $receiverHost:$receiverPort")
-            } else {
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "AriaCompanion setReceiver returned HTTP $responseCode")
-            }
-            ok
-        } catch (e: Exception) {
-            Log.e(TAG, "Companion: setReceiver failed: ${e.message}")
-            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "AriaCompanion setReceiver failed: ${e.message ?: e.javaClass.simpleName}")
-            false
+    private fun sourceFactoryFor(kind: SourceKind, intent: Intent): SourceFactory? = when (kind) {
+        SourceKind.MICROPHONE -> SourceFactory {
+            val inputId = intent.getIntExtra(EXTRA_INPUT_DEVICE_ID, -1).takeIf { it >= 0 }
+            MicrophoneSource(this, inputId)
         }
+        SourceKind.COMPANION_USB -> SourceFactory { CompanionHub.get(this).createSource() }
+        SourceKind.RECEIVER -> SourceFactory { ReceiverHub.get(this).createBridgeSource() }
+        SourceKind.SYSTEM_CAPTURE -> null // needs a MediaProjection token, see ACTION_START
     }
 
-    private fun clearCompanionReceiverTarget(apiHost: String, apiPort: Int) {
-        try {
-            val url = URL("http://$apiHost:$apiPort/api/receiver")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "DELETE"
-                connectTimeout = 3000
-                readTimeout = 3000
-            }
-            conn.responseCode
-            conn.disconnect()
-            PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "AriaCompanion ($apiHost:$apiPort) receiver cleared")
-        } catch (e: Exception) {
-            Log.w(TAG, "Companion: clearReceiver failed: ${e.message}")
-            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "AriaCompanion clearReceiver failed: ${e.message ?: e.javaClass.simpleName}")
-        }
-    }
-
+    private var currentSource: AudioSource? = null
 
     @SuppressLint("MissingPermission")
-    private fun startCasting(mediaProjectionToken: Intent, destinations: List<CastDestination>) {
+    private fun startCasting(
+        sourceFactory: SourceFactory,
+        foregroundType: Int,
+        destinations: List<CastDestination>,
+    ) {
         sessionJob?.cancel()
-        
+
         _activeDestinations.value = destinations
         _state.value = CastState.CONNECTING
         sessionJob = SupervisorJob()
         val sessionScope = CoroutineScope(Dispatchers.IO + sessionJob!!)
-
-        originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
 
         if (destinations.size == 1) {
             with(sharedPreferences.edit()) {
@@ -624,21 +502,9 @@ class AudioCastService : Service() {
             }
         }
 
-        try {
-            val notification = createNotification()
-            val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            } else 0
-            startForeground(NOTIFICATION_ID, notification, serviceType)
-        } catch (e: Exception) {
-            if (e is ForegroundServiceStartNotAllowedException) {
-                Log.e(TAG, "Foreground service start not allowed", e)
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Foreground service start not allowed: ${e.message}")
-                _state.value = CastState.ERROR
-                return
-            } else {
-                throw e
-            }
+        if (!enterForeground(foregroundType)) {
+            _state.value = CastState.ERROR
+            return
         }
 
         acquireWakeLock()
@@ -655,71 +521,31 @@ class AudioCastService : Service() {
             ptpMaster = PtpMaster.tryCreate()
         }
 
-        // MediaProjection token is single-use on Android 14+; obtain it once before any retries.
-        val projection = mediaProjectionManager.getMediaProjection(Activity.RESULT_OK, mediaProjectionToken)
-        if (projection == null) {
-            Log.e(TAG, "MediaProjection is null")
-            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "MediaProjection permission was not granted")
+        val source = sourceFactory.create()
+        if (source == null) {
             stopVolumeSession()
             releaseWakeLock()
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, originalVolume, 0)
             sessionJob?.cancel()
             sessionJob = null
             _state.value = CastState.ERROR
             return
         }
-        mediaProjection = projection
-        projection.registerCallback(mediaProjectionCallback, null)
+        currentSource = source
+        _sourceKind.value = source.kind
+        if (source.muteLocalPlayback) {
+            // Playback capture happens before the volume is applied, so muting the phone
+            // avoids hearing everything twice without silencing the capture.
+            originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+            mutedForSource = true
+        }
 
         sessionScope.launch {
-            val config = AudioPlaybackCaptureConfiguration.Builder(projection)
-                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                .build()
-
-            var attempt = 0
-            var initialized = false
-
-            while (attempt < 3 && !initialized && isActive) {
-                if (attempt > 0) delay(400)
-                attempt++
-
-                try {
-                    // Always capture at SAMPLE_RATE (48 kHz).  AirPlay 1 (RAOP) needs
-                    // 44100 Hz, but that resampling is done per-destination inside
-                    // performRaopHandshake so other receivers in a multiroom group
-                    // are not affected.
-                    val minBufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
-                    val bufferSize = (FRAME_SIZE * 4).coerceAtLeast(minBufSize)
-
-                    val recorder = AudioRecord.Builder()
-                        .setAudioFormat(
-                            AudioFormat.Builder()
-                                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                                .setSampleRate(SAMPLE_RATE)
-                                .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
-                                .build()
-                        )
-                        .setAudioPlaybackCaptureConfig(config)
-                        .setBufferSizeInBytes(bufferSize)
-                        .build()
-
-                    if (recorder.state == AudioRecord.STATE_INITIALIZED) {
-                        audioRecord = recorder
-                        initialized = true
-                    } else {
-                        Log.e(TAG, "AudioRecord not initialized, attempt $attempt")
-                        PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AudioRecord not initialized (attempt $attempt)")
-                        recorder.release()
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "AudioRecord initialization attempt $attempt failed: ${e.message}")
-                    PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AudioRecord init failed (attempt $attempt): ${e.message}")
-                }
-            }
-
-            if (!initialized) {
-                Log.e(TAG, "Failed to initialize AudioRecord after $attempt attempts")
-                PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AudioRecord failed to initialize after $attempt attempts — check Microphone permission for AriaCast")
+            val failure = source.open()
+            if (failure != null) {
+                Log.e(TAG, "Source ${source.kind} failed to open: $failure")
+                PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, failure)
+                _lastError.value = failure
                 _state.value = CastState.ERROR
                 return@launch
             }
@@ -733,33 +559,28 @@ class AudioCastService : Service() {
 
             launch {
                 try {
-                    audioRecord?.startRecording()
-                    PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AudioRecord capture started")
-                    val audioBuffer = ByteBuffer.allocate(FRAME_SIZE)
                     var lastFrameWasSilent: Boolean? = null
-                    while (isActive) {
-                        val readResult = audioRecord?.read(audioBuffer.array(), 0, FRAME_SIZE) ?: 0
-                        if (readResult == FRAME_SIZE) {
-                            val frame = audioBuffer.array().copyOf()
-                            val isSilent = frame.all { it == 0.toByte() }
-                            if (isSilent != lastFrameWasSilent) {
-                                lastFrameWasSilent = isSilent
-                                PacketLogger.log(
-                                    PacketDirection.IN, PacketType.AUDIO,
-                                    if (isSilent) "Capture is silent — no audio signal detected (check DRM/FLAG_SECURE source, or that something is actually playing)"
-                                    else "Capture is producing a real audio signal"
-                                )
-                            }
-                            _audioBufferFlow.emit(frame)
-                        } else if (readResult < 0) {
-                            Log.e(TAG, "AudioRecord read error: $readResult")
-                            PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AudioRecord read error: $readResult")
-                            break
+                    source.run { frame ->
+                        val isSilent = frame.all { it == 0.toByte() }
+                        if (isSilent != lastFrameWasSilent) {
+                            lastFrameWasSilent = isSilent
+                            _sourceSilent.value = isSilent
+                            PacketLogger.log(
+                                PacketDirection.IN, PacketType.AUDIO,
+                                if (isSilent) "Source is silent — no audio signal detected (check DRM/FLAG_SECURE source, or that something is actually playing)"
+                                else "Source is producing a real audio signal"
+                            )
                         }
+                        _audioBufferFlow.emit(frame)
                     }
+                    PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "Source ${source.kind.id} ended")
+                    // The source finished on its own (e.g. AriaCompanion unplugged): stop casting.
+                    withContext(Dispatchers.Main) { stopCasting() }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    Log.e(TAG, "Audio recording loop failed", e)
-                    PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "Audio recording loop crashed: ${e.message}")
+                    Log.e(TAG, "Audio source loop failed", e)
+                    PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "Audio source loop crashed: ${e.message}")
                 }
             }
 
@@ -1740,31 +1561,6 @@ class AudioCastService : Service() {
             }
         }
 
-        val companionHost = companionApiHost
-        if (companionHost != null) {
-            // AriaCompanion: the ESP32 board owns the connection to the
-            // receiver, so relay metadata through its REST API instead of
-            // posting straight to the receiver like the branches below do.
-            try {
-                client.post {
-                    url {
-                        protocol = URLProtocol.HTTP
-                        host = companionHost
-                        port = companionApiPort
-                        path("api", "metadata")
-                    }
-                    contentType(ContentType.Application.Json)
-                    setBody(mapOf("data" to finalMetadata))
-                    timeout { requestTimeoutMillis = 5000 }
-                }
-                PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata relayed via AriaCompanion ($companionHost:$companionApiPort)")
-            } catch (e: Exception) {
-                Log.w(TAG, "Companion: metadata relay failed: ${e.message}")
-                PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata relay to AriaCompanion failed: ${e.message ?: e.javaClass.simpleName}")
-            }
-            return
-        }
-
         val metadataKey = "${finalMetadata.title}-${finalMetadata.artist}"
 
         // Paused on the phone: AirPlay receivers would otherwise keep playing the ~2 s
@@ -1980,6 +1776,26 @@ class AudioCastService : Service() {
         }
     }
 
+    /**
+     * Moves the service to the foreground with [type]. Types Android doesn't know yet are
+     * dropped (the microphone type only exists from Android 11). Returns false if Android
+     * refused, e.g. because the app was in the background.
+     */
+    private fun enterForeground(type: Int): Boolean {
+        val effectiveType = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && type == FgsTypes.MICROPHONE) 0 else type
+        return try {
+            startForeground(NOTIFICATION_ID, createNotification(), effectiveType)
+            true
+        } catch (e: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e is ForegroundServiceStartNotAllowedException) {
+                Log.e(TAG, "Foreground service start not allowed", e)
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Foreground service start not allowed: ${e.message}")
+                _lastError.value = "Android did not allow AriaCast to start in the background"
+                false
+            } else throw e
+        }
+    }
+
     private fun stopCasting() {
         cleanupSession()
         @Suppress("DEPRECATION")
@@ -1993,17 +1809,19 @@ class AudioCastService : Service() {
         releaseWakeLock()
         stopVolumeSession()
 
-        // Restore volume only if the user didn't change it during casting
-        val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        if (currentVolume == 0) {
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, originalVolume, 0)
+        // Restore volume only if we muted it and the user didn't change it during casting
+        if (mutedForSource) {
+            val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            if (currentVolume == 0) {
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, originalVolume, 0)
+            }
+            mutedForSource = false
         }
         
-        try {
-            audioRecord?.stop()
-            audioRecord?.release()
-        } catch (e: Exception) {}
-        audioRecord = null
+        currentSource?.release()
+        currentSource = null
+        _sourceKind.value = null
+        _sourceSilent.value = null
 
         try {
             mediaProjection?.unregisterCallback(mediaProjectionCallback)
@@ -2023,11 +1841,6 @@ class AudioCastService : Service() {
         try { artworkServerSocket?.close() } catch (e: Exception) {}
         artworkServerSocket = null
 
-        companionApiHost?.let { host ->
-            val port = companionApiPort
-            scope.launch(Dispatchers.IO) { clearCompanionReceiverTarget(host, port) }
-        }
-        companionApiHost = null
 
         controlSessions.clear()
         // Close the sockets only after giving the TEARDOWN/stop sends launched by
@@ -2200,7 +2013,10 @@ class AudioCastService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val NOTIFICATION_CHANNEL_ID = "AudioCastChannel"
         const val ACTION_START = "com.aria.ariacast.ACTION_START"
-        const val ACTION_START_COMPANION = "com.aria.ariacast.ACTION_START_COMPANION"
+        const val ACTION_START_SOURCE = "com.aria.ariacast.ACTION_START_SOURCE"
+        const val EXTRA_SOURCE = "com.aria.ariacast.EXTRA_SOURCE"
+        const val EXTRA_INPUT_DEVICE_ID = "com.aria.ariacast.EXTRA_INPUT_DEVICE_ID"
+        const val KEY_CAPTURE_GAMES = "capture_games"
         const val ACTION_STOP = "com.aria.ariacast.ACTION_STOP"
         const val EXTRA_MEDIA_PROJECTION_TOKEN = "com.aria.ariacast.EXTRA_MEDIA_PROJECTION_TOKEN"
         const val EXTRA_SERVER_HOST = "com.aria.ariacast.EXTRA_SERVER_HOST"
@@ -2223,11 +2039,6 @@ class AudioCastService : Service() {
 
         const val SAMPLE_RATE = 48000
         const val FRAME_SIZE = 3840
-        // REST API port on the AriaCompanion WiFi sender board (renamed from
-        // the old raw-TCP COMPANION_STREAM_PORT=7001 now that the board
-        // streams straight to a chosen AriaCast Receiver instead of to a
-        // bespoke TCP port on the phone).
-        const val COMPANION_API_PORT = 8081
 
         // Secure-prefs keys for AirPlay secrets (excluded from backup, see SECURE_PREFS_NAME).
         const val KEY_AIRPLAY_PASSWORD_PREFIX = "airplay_password_"

@@ -186,6 +186,8 @@ class DiscoveryManager(private val context: Context) {
             }
         } else if (serviceInfo.serviceType.contains("_audiocast")) {
             platform = "AriaCast"
+            // Our own receiver: never offer casting to ourselves.
+            if (attrString("device_id") == DeviceIdentity.id(context)) return
         } else if (serviceInfo.serviceType.contains("_snapcast")) {
             platform = "Snapcast"
         }
@@ -515,6 +517,7 @@ class DiscoveryManager(private val context: Context) {
                         }
                         try {
                             val json = JSONObject(String(resp.data, 0, resp.length))
+                            if (json.optString("device_id") == DeviceIdentity.id(context)) continue
                             val server = Server(name = json.optString("server_name"), host = resp.address.hostAddress ?: "", port = json.optInt("port"), version = "1.0", codecs = listOf("pcm"), sampleRate = 48000, channels = 2, platform = "AriaCast")
                             synchronized(discoveredServers) {
                                 discoveredServers[server.name] = server
