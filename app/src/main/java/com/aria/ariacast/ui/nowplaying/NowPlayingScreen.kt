@@ -114,6 +114,7 @@ fun NowPlayingScreen(controller: AppController) {
             }
 
             s?.let { Visualizer(it, Modifier.fillMaxWidth().height(96.dp)) }
+            s?.let { SpeakersInCast(controller, it) }
             LyricsCard(m, position)
             Spacer(Modifier.height(24.dp))
         }

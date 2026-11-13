@@ -303,4 +303,14 @@
     <string name="sendspin_forget">Dimentica</string>
     <string name="dlna_renderer">Renderer DLNA (audio e video)</string>
     <string name="dlna_renderer_desc">Qualsiasi app DLNA può riprodurre musica e video qui.</string>
+    <string name="cast_speakers">In riproduzione su</string>
+    <string name="cast_add_speaker">Aggiungi un altoparlante</string>
+    <string name="cast_move">Sposta su…</string>
+    <string name="cast_no_other_speakers">Nessun altro altoparlante trovato.</string>
+    <string name="widget_description">Avvia o ferma la trasmissione all\'ultimo altoparlante con un tocco</string>
+    <string name="widget_pick_speaker">Prima scegli un altoparlante nell\'app</string>
+    <string name="widget_tap_cast">Tocca per trasmettere</string>
+    <string name="widget_tap_stop">Tocca per fermare</string>
+    <string name="automation_allow">Consenti le app di automazione</string>
+    <string name="automation_disabled">L\'automazione è disattivata. Attiva \"Consenti le app di automazione\" nel menu di AriaCast.</string>
 </resources>

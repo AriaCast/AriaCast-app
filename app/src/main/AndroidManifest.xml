@@ -81,6 +81,41 @@
         </activity>
         <activity android:name=".ui.CompanionActivity" android:exported="false" />
 
+        <!-- One-tap casting: widget, shortcuts, and automation apps (com.aria.ariacast.action.CAST). -->
+        <activity
+            android:name=".automation.CastShortcutActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="com.aria.ariacast.action.CAST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".automation.AutomationReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.aria.ariacast.action.STOP" />
+                <action android:name="com.aria.ariacast.action.RECEIVER_START" />
+                <action android:name="com.aria.ariacast.action.RECEIVER_STOP" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".automation.AriaWidgetReceiver"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/aria_widget_info" />
+        </receiver>
+
         <!-- Video casting: open from the menu, or share a video / link to AriaCast. -->
         <activity
             android:name=".video.VideoCastActivity"

@@ -311,6 +311,13 @@ class AudioCastService : Service() {
         securePreferences = getSharedPreferences(SECURE_PREFS_NAME, MODE_PRIVATE)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         _volumePercent.value = receiverVolumePercent()
+        // Keep the home-screen widget in step with the cast state.
+        scope.launch {
+            kotlinx.coroutines.flow.combine(_state, _activeDestinations) { st, d -> st to d }.collect { (st, d) ->
+                com.aria.ariacast.automation.WidgetStatus.update(this@AudioCastService, st == CastState.CASTING,
+                    d.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name })
+            }
+        }
         
         startMetadataWorker()
         startArtworkServer()
@@ -586,28 +593,70 @@ class AudioCastService : Service() {
                 }
             }
 
-            destinations.forEach { dest ->
-                when (dest.platform) {
-                    "DLNA" -> launch { startDlnaSession(dest) }
-                    "Google Cast" -> launch { startGoogleCastSession(dest) }
-                    "AirPlay" -> launch { startAirPlaySession(dest, airplay2 = false) }
-                    "AirPlay2" -> launch { startAirPlaySession(dest, airplay2 = true) }
-                    "Snapcast" -> launch { startSnapcastSession(dest) }
-                    SendspinHub.PLATFORM -> launch { startSendspinSourceSession() }
-                    else -> {
-                        launch { startControlSession(dest) }
-                        if (videoEnabled && destinations.size == 1) { 
-                            launch { startVideoSession(dest) }
-                        }
-                        launch { startAudioSession(dest) }
-                        launch { startStatsSession(dest) }
-                    }
-                }
-            }
+            destinations.forEach { dest -> launchDestination(this, dest, videoEnabled && destinations.size == 1) }
             
             startMetadataRefreshLoop()
             _metadata.value?.let { sendMetadata(it) }
         }
+    }
+
+    /** One job per destination, so speakers can be added or removed while casting. */
+    private val destinationJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
+    private fun destKey(d: CastDestination) = "${d.platform}|${d.host}|${d.port}"
+
+    private fun launchDestination(scope: CoroutineScope, dest: CastDestination, withVideo: Boolean) {
+        destinationJobs[destKey(dest)] = scope.launch {
+            when (dest.platform) {
+                "DLNA" -> startDlnaSession(dest)
+                "Google Cast" -> startGoogleCastSession(dest)
+                "AirPlay" -> startAirPlaySession(dest, airplay2 = false)
+                "AirPlay2" -> startAirPlaySession(dest, airplay2 = true)
+                "Snapcast" -> startSnapcastSession(dest)
+                SendspinHub.PLATFORM -> startSendspinSourceSession()
+                else -> {
+                    launch { startControlSession(dest) }
+                    if (withVideo) launch { startVideoSession(dest) }
+                    launch { startAudioSession(dest) }
+                    launch { startStatsSession(dest) }
+                }
+            }
+        }
+    }
+
+    /**
+     * Adds a speaker to the running cast without restarting the source (so no new
+     * screen-capture prompt): room handoff and growing a group on the fly.
+     */
+    fun addDestination(dest: CastDestination) {
+        val job = sessionJob ?: return
+        if (_activeDestinations.value.any { destKey(it) == destKey(dest) }) return
+        val scope = CoroutineScope(Dispatchers.IO + job)
+        if ((dest.platform == "DLNA" || dest.platform == "Google Cast") && dlnaHttpServerJob?.isActive != true) {
+            startDlnaHttpServer(); startArtworkServer()
+        }
+        if ((dest.platform == "AirPlay" || dest.platform == "AirPlay2") && dacpServer == null) startDacpServer()
+        _activeDestinations.value = _activeDestinations.value + dest
+        launchDestination(scope, dest, withVideo = false)
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Added ${dest.name} to the cast")
+        _metadata.value?.let { sendMetadata(it) }
+        updateNotification()
+    }
+
+    /** Removes one speaker from the running cast; the others keep playing. */
+    fun removeDestination(dest: CastDestination) {
+        val remaining = _activeDestinations.value.filter { destKey(it) != destKey(dest) }
+        if (remaining.isEmpty()) { stopCasting(); return }
+        val teardown = stopRemoteSessions(listOf(dest))
+        scope.launch {
+            withTimeoutOrNull(3000) { teardown.joinAll() }
+            destinationJobs.remove(destKey(dest))?.cancel()
+            synchronized(airplayStreamers) { airplayStreamers.remove(dest.host) }?.let { runCatching { it.close() } }
+            synchronized(castClients) { castClients.remove(dest.host) }?.let { runCatching { it.close() } }
+            controlSessions.remove(dest.host)
+        }
+        _activeDestinations.value = remaining
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Removed ${dest.name} from the cast")
+        updateNotification()
     }
 
     private var dlnaHttpServerJob: Job? = null
@@ -1907,6 +1956,7 @@ class AudioCastService : Service() {
             ptp?.stop()
         }
         _activeDestinations.value = emptyList()
+        destinationJobs.clear()
         sessionJob?.cancel()
         sessionJob = null
         _state.value = CastState.OFF

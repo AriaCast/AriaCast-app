@@ -201,6 +201,14 @@ private fun HomeActions(controller: AppController) {
             ).forEach { (label, cls) ->
                 DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = { menu = false; controller.openActivity(cls) })
             }
+            val context = LocalContext.current
+            val prefs = remember { context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE) }
+            var automation by remember { mutableStateOf(prefs.getBoolean(com.aria.ariacast.automation.CastShortcutActivity.KEY_AUTOMATION, false)) }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_allow)) },
+                trailingIcon = { Checkbox(checked = automation, onCheckedChange = null) },
+                onClick = { automation = !automation; prefs.edit().putBoolean(com.aria.ariacast.automation.CastShortcutActivity.KEY_AUTOMATION, automation).apply() },
+            )
         }
     }
 }

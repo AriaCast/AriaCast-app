@@ -396,4 +396,14 @@
     <string name="sendspin_forget">Forget</string>
     <string name="dlna_renderer">DLNA renderer (audio and video)</string>
     <string name="dlna_renderer_desc">Any DLNA app can play music and videos here.</string>
+    <string name="cast_speakers">Playing on</string>
+    <string name="cast_add_speaker">Add a speaker</string>
+    <string name="cast_move">Move to…</string>
+    <string name="cast_no_other_speakers">No other speakers found.</string>
+    <string name="widget_description">Start or stop casting to your last speaker in one tap</string>
+    <string name="widget_pick_speaker">Pick a speaker in the app first</string>
+    <string name="widget_tap_cast">Tap to cast</string>
+    <string name="widget_tap_stop">Tap to stop</string>
+    <string name="automation_allow">Allow automation apps</string>
+    <string name="automation_disabled">Automation is off. Turn on \"Allow automation apps\" in AriaCast\'s menu.</string>
 </resources>
