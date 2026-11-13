@@ -590,7 +590,15 @@ private fun ReceiveCard(controller: AppController) {
         com.aria.ariacast.ui.SwitchRow(stringResource(R.string.receive_at_boot), stringResource(R.string.receive_at_boot_desc), startAtBoot, {
             startAtBoot = it; hub.startAtBoot = it
         })
-        if (running) SendspinSection()
+        if (running) {
+            var dlnaOn by remember { mutableStateOf(context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE).getBoolean(com.aria.ariacast.dlna.DlnaRenderer.KEY_ENABLED, true)) }
+            com.aria.ariacast.ui.SwitchRow(stringResource(R.string.dlna_renderer), stringResource(R.string.dlna_renderer_desc), dlnaOn, {
+                dlnaOn = it
+                context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE).edit().putBoolean(com.aria.ariacast.dlna.DlnaRenderer.KEY_ENABLED, it).apply()
+                if (it) com.aria.ariacast.dlna.DlnaRenderer.get(context).start(hub.name) else com.aria.ariacast.dlna.DlnaRenderer.get(context).stop()
+            })
+            SendspinSection()
+        }
     }
     if (forwardDialog) ForwardDialog(controller) { forwardDialog = false }
 }

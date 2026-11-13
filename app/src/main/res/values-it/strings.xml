@@ -301,4 +301,6 @@
     <string name="sendspin_unpaired_desc">Qualsiasi server sulla rete può riprodurre qui senza abbinamento (meno sicuro).</string>
     <string name="sendspin_paired_servers">Server abbinati</string>
     <string name="sendspin_forget">Dimentica</string>
+    <string name="dlna_renderer">Renderer DLNA (audio e video)</string>
+    <string name="dlna_renderer_desc">Qualsiasi app DLNA può riprodurre musica e video qui.</string>
 </resources>

@@ -118,7 +118,13 @@ fun ReceiveScreen(controller: AppController) {
             }
         }
         Box(Modifier.fillMaxSize().offset(drift.first.dp, drift.second.dp).padding(32.dp), contentAlignment = Alignment.Center) {
+            val dlna = remember { com.aria.ariacast.dlna.DlnaRenderer.get(context) }
+            val video by dlna.isVideo.collectAsState()
             when {
+                video && dlna.player != null -> androidx.compose.ui.viewinterop.AndroidView(
+                    factory = { ctx -> androidx.media3.ui.PlayerView(ctx).apply { player = dlna.player; useController = true } },
+                    modifier = Modifier.fillMaxSize(),
+                )
                 !running -> NotRunning(hub, onBg)
                 sender == null -> Idle(hub, onBg)
                 else -> Playing(hub, meta, bitmap, onBg)

@@ -18,6 +18,7 @@ import com.aria.ariacast.DeviceIdentity
 import com.aria.ariacast.R
 import com.aria.ariacast.pipeline.FgsTypes
 import com.aria.ariacast.sendspin.SendspinHub
+import com.aria.ariacast.dlna.DlnaRenderer
 import com.aria.ariacast.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -99,6 +100,9 @@ class ReceiverService : Service() {
         registerNsd()
         startUdpResponder()
         SendspinHub.get(this).let { if (it.enabled) it.start(hub.name) }
+        if (getSharedPreferences(com.aria.ariacast.AudioCastService.PREFS_NAME, MODE_PRIVATE).getBoolean(DlnaRenderer.KEY_ENABLED, true)) {
+            DlnaRenderer.get(this).start(hub.name)
+        }
         scope.launch {
             combine(hub.sender, hub.metadata) { s, m -> s to m }.collect { (s, m) ->
                 getSystemService(NotificationManager::class.java)
@@ -177,6 +181,7 @@ class ReceiverService : Service() {
 
     private fun shutdown() {
         SendspinHub.get(this).stop()
+        DlnaRenderer.get(this).stop()
         nsdRegistration?.let { runCatching { getSystemService(NsdManager::class.java).unregisterService(it) } }
         nsdRegistration = null
         try { udpSocket?.close() } catch (_: Exception) {}

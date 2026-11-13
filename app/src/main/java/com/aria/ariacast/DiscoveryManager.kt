@@ -451,6 +451,8 @@ class DiscoveryManager(private val context: Context) {
             connection.readTimeout = 3000
             val xml = connection.inputStream.use { readBounded(it, MAX_DEVICE_DESCRIPTION_BYTES) }
             val friendlyName = xml.substringAfter("<friendlyName>", "").substringBefore("</friendlyName>")
+            // Our own DLNA renderer: never offer casting to ourselves.
+            if (xml.substringAfter("<UDN>", "").substringBefore("</UDN>").trim() == com.aria.ariacast.dlna.DlnaRenderer.get(context).udn) return@withContext
             
             if (friendlyName.isNotEmpty()) {
                 var avTransportUrl = ""
