@@ -313,4 +313,10 @@
     <string name="widget_tap_stop">Tocca per fermare</string>
     <string name="automation_allow">Consenti le app di automazione</string>
     <string name="automation_disabled">L\'automazione è disattivata. Attiva \"Consenti le app di automazione\" nel menu di AriaCast.</string>
+    <string name="web_remote">Telecomando web</string>
+    <string name="web_remote_desc">Controlla AriaCast da qualsiasi browser su questa rete: cosa suona, volume, stanze e ricevitore.</string>
+    <string name="web_remote_on">Attiva il telecomando web</string>
+    <string name="web_remote_private">Chiunque abbia questo link può controllare AriaCast. Condividilo solo con persone di cui ti fidi.</string>
+    <string name="web_remote_new_link">Crea un nuovo link</string>
+    <string name="web_remote_copied">Link copiato</string>
 </resources>

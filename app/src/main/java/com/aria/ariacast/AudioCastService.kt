@@ -311,6 +311,7 @@ class AudioCastService : Service() {
         securePreferences = getSharedPreferences(SECURE_PREFS_NAME, MODE_PRIVATE)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         _volumePercent.value = receiverVolumePercent()
+        com.aria.ariacast.webremote.WebRemote.service = this
         // Keep the home-screen widget in step with the cast state.
         scope.launch {
             kotlinx.coroutines.flow.combine(_state, _activeDestinations) { st, d -> st to d }.collect { (st, d) ->
@@ -2097,6 +2098,7 @@ class AudioCastService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (com.aria.ariacast.webremote.WebRemote.service === this) com.aria.ariacast.webremote.WebRemote.service = null
         job.cancel()
     }
 

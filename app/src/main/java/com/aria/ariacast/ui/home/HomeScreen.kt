@@ -185,6 +185,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.sendItems(controller:
 @Composable
 private fun HomeActions(controller: AppController) {
     var menu by remember { mutableStateOf(false) }
+    var webRemote by remember { mutableStateOf(false) }
+    if (webRemote) WebRemoteDialog { webRemote = false }
     IconButton(onClick = { controller.navigate(Screen.DOCTOR) }) { Icon(Icons.Outlined.HealthAndSafety, stringResource(R.string.doctor_title)) }
     IconButton(onClick = { controller.openSettings() }) { Icon(Icons.Filled.Settings, stringResource(R.string.settings)) }
     Box {
@@ -201,6 +203,7 @@ private fun HomeActions(controller: AppController) {
             ).forEach { (label, cls) ->
                 DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = { menu = false; controller.openActivity(cls) })
             }
+            DropdownMenuItem(text = { Text(stringResource(R.string.web_remote)) }, onClick = { menu = false; webRemote = true })
             val context = LocalContext.current
             val prefs = remember { context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE) }
             var automation by remember { mutableStateOf(prefs.getBoolean(com.aria.ariacast.automation.CastShortcutActivity.KEY_AUTOMATION, false)) }

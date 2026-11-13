@@ -1,0 +1,34 @@
+:root {
+  --bg: #fffbff; --surface: #f6eef0; --text: #201a1b; --muted: #6f5f62; --primary: #b90063; --on-primary: #fff; --dot: #d9534f; --on: #2e9d57;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #171213; --surface: #261e20; --text: #ece0e0; --muted: #b9a8ab; --primary: #ffb1c2; --on-primary: #65002f; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 560px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+header { display: flex; gap: 8px; align-items: baseline; padding: 8px 4px; }
+.logo { font-weight: 800; font-size: 22px; color: var(--primary); }
+.card { background: var(--surface); border-radius: 24px; padding: 20px; display: grid; gap: 14px; }
+.now { text-align: center; }
+.art { width: min(280px, 70vw); aspect-ratio: 1; margin: 0 auto; border-radius: 20px; background: var(--bg) center / cover no-repeat; display: grid; place-items: center; font-size: 64px; color: var(--muted); }
+h1 { font-size: 22px; margin: 4px 0; overflow-wrap: anywhere; }
+h2 { font-size: 16px; margin: 0; }
+.status { font-size: 13px; color: var(--muted); }
+.muted { color: var(--muted); margin: 0; }
+.controls { display: flex; justify-content: center; gap: 20px; align-items: center; }
+button { font: inherit; border: 0; border-radius: 999px; padding: 10px 16px; background: var(--bg); color: var(--text); cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.controls button { width: 52px; height: 52px; padding: 0; font-size: 22px; }
+.controls .big { width: 72px; height: 72px; background: var(--primary); color: var(--on-primary); font-size: 30px; }
+.volume { display: flex; gap: 12px; align-items: center; }
+.volume input { flex: 1; accent-color: var(--primary); }
+.num { width: 2.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.stop { background: var(--primary); color: var(--on-primary); justify-self: center; }
+.row { display: flex; gap: 10px; align-items: center; }
+.grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ghost { background: transparent; border: 1px solid var(--muted); padding: 6px 14px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--dot); flex: none; }
+.dot.on { background: var(--on); }
+.error { color: #d9534f; text-align: center; }
