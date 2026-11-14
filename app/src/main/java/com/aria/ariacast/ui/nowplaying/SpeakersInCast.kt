@@ -32,7 +32,10 @@ import com.aria.ariacast.CastDestination
 import com.aria.ariacast.R
 import com.aria.ariacast.Server
 import com.aria.ariacast.ui.AppController
-import com.aria.ariacast.ui.SectionCard
+import com.aria.ariacast.ui.LeadingIcon
+import com.aria.ariacast.ui.ListGroup
+import com.aria.ariacast.ui.ListRow
+import androidx.compose.material.icons.filled.SwapHoriz
 import com.aria.ariacast.ui.home.platformIcon
 import com.aria.ariacast.ui.home.platformLabel
 
@@ -45,18 +48,17 @@ fun SpeakersInCast(controller: AppController, service: AudioCastService) {
     val servers by controller.servers.collectAsState()
     var picker by remember { mutableStateOf<Boolean?>(null) } // true = move, false = add
     if (active.isEmpty()) return
-    SectionCard(title = stringResource(R.string.cast_speakers)) {
+    ListGroup(title = stringResource(R.string.cast_speakers)) {
         active.forEach { d ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(platformIcon(d.platform), null)
-                Text("${d.name} · ${platformLabel(d.platform)}", Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.bodyMedium)
-                if (active.size > 1) IconButton(onClick = { service.removeDestination(d) }) { Icon(Icons.Filled.Close, stringResource(R.string.remove)) }
-            }
+            ListRow(
+                headline = d.name,
+                supporting = platformLabel(d.platform),
+                leading = { LeadingIcon(platformIcon(d.platform), active = true) },
+                trailing = if (active.size > 1) { { IconButton(onClick = { service.removeDestination(d) }) { Icon(Icons.Filled.Close, stringResource(R.string.remove)) } } } else null,
+            )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { picker = false }) { Icon(Icons.Filled.Add, null); Text(stringResource(R.string.cast_add_speaker)) }
-            OutlinedButton(onClick = { picker = true }) { Text(stringResource(R.string.cast_move)) }
-        }
+        ListRow(stringResource(R.string.cast_add_speaker), leading = { LeadingIcon(Icons.Filled.Add) }) { picker = false }
+        ListRow(stringResource(R.string.cast_move), leading = { LeadingIcon(Icons.Filled.SwapHoriz) }) { picker = true }
     }
     picker?.let { move ->
         val candidates = servers.filter { s -> active.none { it.host == s.host && it.platform == s.platform } }

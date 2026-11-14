@@ -46,6 +46,30 @@ make -C firmware/test                    # host-side unit tests
 Copy the new `aria_companion.uf2` to `app/src/main/assets/companion/`, regenerate
 `aria_companion.uf2.sha256` with `sha256sum`, and bump `version.txt`.
 
+## Wireless: AriaCompanion BT (ESP32)
+
+A second firmware, in [firmware-bt/](firmware-bt/), turns a single **classic ESP32**
+(ESP32-WROOM-32 / WROVER; S2/S3/C3/C6 lack Classic Bluetooth) into the same thing without the
+cable. The phone sees an ordinary **Bluetooth speaker**; the board forwards the SBC audio it
+receives, untouched, back to AriaCast over a Bluetooth serial (SPP) channel. It registers no
+hands-free profile, so calls never go to it, and the app sends it back to idle during a call.
+See [docs/ariacompanion-bt.md](../docs/ariacompanion-bt.md).
+
+1. Build and flash from a computer (ESP-IDF 5.5 or newer):
+   ```sh
+   . $IDF_PATH/export.sh
+   idf.py -C AriaCompanion/firmware-bt set-target esp32
+   idf.py -C AriaCompanion/firmware-bt build flash monitor
+   ```
+   CI also publishes the binaries as the `aria_companion_bt` artifact.
+2. On the phone, pair **AriaCompanion BT** in Android's Bluetooth settings. Android will try to
+   use it as a speaker straight away; the board hangs up until AriaCast asks for it.
+3. In AriaCast, **Settings → AriaCompanion → Bluetooth board**, allow Bluetooth access and pick
+   the board. The **AriaCompanion** source then appears on the Send screen.
+
+The LED on GPIO 2: slow blink idle, double blink linked to the app, solid while it is the
+phone's speaker, fast blink when frames are dropped.
+
 ## Version 1 (two ESP32 boards)
 
 The Bluetooth + Wi-Fi bridge from AriaCast 1.x is in [legacy/](legacy/). It no longer receives fixes.

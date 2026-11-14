@@ -29,24 +29,4 @@
         <item name="colorOnSurfaceVariant">@color/md_theme_onSurfaceVariant</item>
         <item name="colorOutline">@color/md_theme_outline</item>
     </style>
-
-    <style name="Theme.AriaCast.Blue" parent="Theme.AriaCast">
-        <item name="colorPrimary">@color/accent_blue</item>
-    </style>
-
-    <style name="Theme.AriaCast.Purple" parent="Theme.AriaCast">
-        <item name="colorPrimary">@color/accent_purple</item>
-    </style>
-
-    <style name="Theme.AriaCast.Green" parent="Theme.AriaCast">
-        <item name="colorPrimary">@color/accent_green</item>
-    </style>
-
-    <style name="Theme.AriaCast.Orange" parent="Theme.AriaCast">
-        <item name="colorPrimary">@color/accent_orange</item>
-    </style>
-
-    <style name="Theme.AriaCast.Pink" parent="Theme.AriaCast">
-        <item name="colorPrimary">@color/accent_pink</item>
-    </style>
 </resources>

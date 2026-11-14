@@ -45,20 +45,13 @@
     <string name="about">このアプリについて</string>
     <string name="version_format">バージョン %1$s</string>
     <string name="select_appearance">外観を選択</string>
-    <string name="select_accent_color">アクセントカラーを選択</string>
     <string name="theme_light">ライト</string>
     <string name="theme_dark">ダーク</string>
     <string name="theme_follow_system">システムに従う</string>
-    <string name="accent_blue">ブルー</string>
-    <string name="accent_purple">パープル</string>
-    <string name="accent_green">グリーン</string>
-    <string name="accent_orange">オレンジ</string>
-    <string name="accent_pink">ピンク</string>
     <string name="secret_logs_one_tap">あと 1 回タップしてシークレットログを表示…</string>
     <string name="secret_logs_multiple_taps">あと %1$d 回タップしてシークレットログを表示…</string>
     <string name="server_cleared">最後のサーバー接続がクリアされました</string>
     <string name="appearance">外観</string>
-    <string name="accent_color">アクセントカラー</string>
     <string name="language">言語</string>
     <string name="select_language">言語を選択</string>
     <string name="language_default">システムデフォルト</string>
@@ -132,4 +125,6 @@
     <string name="group_name">グループ名</string>
     <string name="select_devices">デバイスの選択</string>
     <string name="save">保存</string>
+    <string name="nav_send">送信</string>
+    <string name="nav_receive">受信</string>
 </resources>

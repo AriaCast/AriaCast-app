@@ -11,6 +11,13 @@ sealed interface CompanionEvent {
     data class Stream(val active: Boolean) : CompanionEvent
     data class Overrun(val droppedBytes: Long) : CompanionEvent
     data class Mode(val mode: Int) : CompanionEvent
+    /** Bluetooth board: the SBC configuration A2DP negotiated. */
+    data class SbcConfig(val sampleRate: Int, val channelMode: Int, val blocks: Int, val subbands: Int, val bitpoolMax: Int) : CompanionEvent
+    /** Bluetooth board: SBC frames as the phone sent them over A2DP. */
+    class SbcAudio(val seq: Long, val timestamp: Long, val frames: Int, val data: ByteArray) : CompanionEvent
+    /** Bluetooth board: reply to GET_INFO / GET_STATS (USB answers these on EP0 instead). */
+    data class Info(val info: CompanionInfo) : CompanionEvent
+    data class Stats(val stats: CompanionStats) : CompanionEvent
 }
 
 /**
@@ -85,6 +92,21 @@ class ChunkParser {
         CompanionProtocol.CHUNK_STREAM -> if (payload < 1) null else CompanionEvent.Stream(buf[p].toInt() != 0)
         CompanionProtocol.CHUNK_OVERRUN -> if (payload < 4) null else CompanionEvent.Overrun(readU32(p))
         CompanionProtocol.CHUNK_MODE -> if (payload < 1) null else CompanionEvent.Mode(buf[p].toInt() and 0xFF)
+        CompanionProtocol.CHUNK_SBC_CONFIG -> if (payload < CompanionProtocol.SBC_CONFIG_BYTES) null else CompanionEvent.SbcConfig(
+            sampleRate = readU32(p).toInt(),
+            channelMode = buf[p + 4].toInt() and 0xFF,
+            blocks = buf[p + 5].toInt() and 0xFF,
+            subbands = buf[p + 6].toInt() and 0xFF,
+            bitpoolMax = buf[p + 9].toInt() and 0xFF,
+        )
+        CompanionProtocol.CHUNK_SBC_AUDIO -> if (payload < CompanionProtocol.SBC_AUDIO_PREFIX) null else CompanionEvent.SbcAudio(
+            seq = seq,
+            timestamp = readU32(p),
+            frames = (buf[p + 4].toInt() and 0xFF) or ((buf[p + 5].toInt() and 0xFF) shl 8),
+            data = buf.copyOfRange(p + CompanionProtocol.SBC_AUDIO_PREFIX, p + payload),
+        )
+        CompanionProtocol.CHUNK_INFO -> CompanionInfo.parse(buf.copyOfRange(p, p + payload))?.let(CompanionEvent::Info)
+        CompanionProtocol.CHUNK_STATS -> CompanionStats.parse(buf.copyOfRange(p, p + payload))?.let(CompanionEvent::Stats)
         else -> null
     }
 
@@ -100,6 +122,7 @@ class ChunkParser {
         val KNOWN_TYPES = setOf(
             CompanionProtocol.CHUNK_AUDIO, CompanionProtocol.CHUNK_FORMAT, CompanionProtocol.CHUNK_STREAM,
             CompanionProtocol.CHUNK_OVERRUN, CompanionProtocol.CHUNK_MODE,
+            CompanionProtocol.CHUNK_SBC_CONFIG, CompanionProtocol.CHUNK_SBC_AUDIO, CompanionProtocol.CHUNK_INFO, CompanionProtocol.CHUNK_STATS,
         )
     }
 }

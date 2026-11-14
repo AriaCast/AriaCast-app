@@ -49,20 +49,13 @@
     <string name="about">À propos</string>
     <string name="version_format">Version %1$s</string>
     <string name="select_appearance">Sélectionner l\'apparence</string>
-    <string name="select_accent_color">Sélectionner la couleur d\'accentuation</string>
     <string name="theme_light">Clair</string>
     <string name="theme_dark">Sombre</string>
     <string name="theme_follow_system">Suivre le système</string>
-    <string name="accent_blue">Bleu</string>
-    <string name="accent_purple">Violet</string>
-    <string name="accent_green">Vert</string>
-    <string name="accent_orange">Orange</string>
-    <string name="accent_pink">Rose</string>
     <string name="secret_logs_one_tap">Encore une pression pour accéder aux journaux secrets…</string>
     <string name="secret_logs_multiple_taps">Encore %1$d pressions pour accéder aux journaux secrets…</string>
     <string name="server_cleared">Dernière connexion au serveur effacée</string>
     <string name="appearance">Apparence</string>
-    <string name="accent_color">Couleur d\'accentuation</string>
     <string name="language">Langue</string>
     <string name="select_language">Sélectionner la langue</string>
     <string name="language_default">Par défaut du système</string>
@@ -182,4 +175,6 @@
     <string name="nfc_write_port_hint">Port (optionnel)</string>
     <string name="nfc_write_type_label">Protocole</string>
     <string name="nfc_write_name_hint">Nom d\'affichage (facultatif)</string>
+    <string name="nav_send">Envoyer</string>
+    <string name="nav_receive">Recevoir</string>
 </resources>

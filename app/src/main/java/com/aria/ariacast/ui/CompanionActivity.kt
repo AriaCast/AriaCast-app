@@ -48,6 +48,27 @@ import com.aria.ariacast.companion.CompanionHub
 import com.aria.ariacast.companion.CompanionStatus
 import com.aria.ariacast.companion.FirmwareUpdater
 import com.aria.ariacast.ui.theme.AriaTheme
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothManager
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.BluetoothConnected
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import com.aria.ariacast.companion.CompanionBt
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.fillMaxWidth
 
 /** AriaCompanion 2 status and settings (docs/ariacompanion-2.md §6.6). */
 class CompanionActivity : ComponentActivity() {
@@ -76,77 +97,161 @@ fun CompanionScreen(onBack: () -> Unit) {
     val requestPhone = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { phonePermission = it }
     val updateMessage by FirmwareUpdater.progress.collectAsStateWithLifecycle()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.companion)) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
-            )
-        }
-    ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            SectionCard(title = null) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Icon(
-                        if (status is CompanionStatus.Connected) Icons.Filled.Usb else Icons.Filled.UsbOff,
-                        contentDescription = null, modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text(statusTitle(status), style = MaterialTheme.typography.titleLarge)
-                        Text(statusSubtitle(status), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    SubScreenScaffold(title = stringResource(R.string.companion), onBack = onBack) { padding ->
+        ScreenList(Modifier.padding(padding)) {
+            item {
+                val connectedNow = status is CompanionStatus.Connected
+                Surface(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    color = if (connectedNow) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+                ) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            LeadingIcon(
+                                when {
+                                    (status as? CompanionStatus.Connected)?.bluetooth == true -> Icons.Filled.BluetoothConnected
+                                    connectedNow -> Icons.Filled.Usb
+                                    else -> Icons.Filled.UsbOff
+                                },
+                                active = connectedNow,
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(statusTitle(status), style = MaterialTheme.typography.titleLarge)
+                                Text(statusSubtitle(status), style = MaterialTheme.typography.bodyMedium, color = LocalContentColor.current.copy(alpha = 0.8f))
+                            }
+                        }
+                        if (status is CompanionStatus.NeedsPermission) {
+                            Button(onClick = { hub.rescan() }) { Text(stringResource(R.string.companion_allow_usb)) }
+                        }
                     }
-                }
-                if (status is CompanionStatus.NeedsPermission) {
-                    Button(onClick = { hub.rescan() }) { Text(stringResource(R.string.companion_allow_usb)) }
                 }
             }
 
             val connected = status as? CompanionStatus.Connected
             if (connected != null) {
-                SectionCard(title = stringResource(R.string.companion_signal)) {
-                    val s = stats
-                    val peak = maxOf(s?.peakLeft ?: 0, s?.peakRight ?: 0) / 32767f
-                    LevelMeter(peak)
-                    KeyValueRow(stringResource(R.string.companion_firmware), connected.info.firmwareVersionString)
-                    KeyValueRow(stringResource(R.string.companion_overruns), (s?.overruns ?: 0).toString())
-                    KeyValueRow(stringResource(R.string.companion_received), "%.1f MB".format((s?.bulkBytes ?: 0) / 1_048_576f))
-                    Text(
-                        if (gate.blocked) stringResource(R.string.companion_gate_closed, gate.reason ?: "") else stringResource(R.string.companion_gate_open),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (gate.blocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            SectionCard(title = stringResource(R.string.settings)) {
-                SwitchRow(stringResource(R.string.companion_auto_cast), stringResource(R.string.companion_auto_cast_desc), autoCast, {
-                    autoCast = it; prefs.edit().putBoolean(CompanionHub.KEY_AUTO_CAST, it).apply()
-                }, Icons.Filled.Usb)
-                SwitchRow(stringResource(R.string.companion_include_games), stringResource(R.string.companion_include_games_desc), includeGames, {
-                    includeGames = it; prefs.edit().putBoolean(CompanionHub.KEY_INCLUDE_GAMES, it).apply()
-                }, Icons.Filled.SportsEsports)
-                if (!phonePermission) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Icon(Icons.Filled.Call, null)
-                        Text(stringResource(R.string.companion_calls_hint), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    }
-                    OutlinedButton(onClick = { requestPhone.launch(Manifest.permission.READ_PHONE_STATE) }) {
-                        Text(stringResource(R.string.companion_calls_allow))
+                item {
+                    ListGroup(title = stringResource(R.string.companion_signal)) {
+                        val s = stats
+                        val peak = maxOf(s?.peakLeft ?: 0, s?.peakRight ?: 0) / 32767f
+                        ListBlock {
+                            LevelMeter(peak)
+                            KeyValueRow(stringResource(R.string.companion_firmware), connected.info.firmwareVersionString)
+                            KeyValueRow(stringResource(R.string.companion_overruns), (s?.overruns ?: 0).toString())
+                            KeyValueRow(stringResource(R.string.companion_received), "%.1f MB".format((s?.bulkBytes ?: 0) / 1_048_576f))
+                        }
+                        ListRow(
+                            headline = if (gate.blocked) stringResource(R.string.companion_gate_closed, gate.reason ?: "") else stringResource(R.string.companion_gate_open),
+                            leading = { LeadingIcon(if (gate.blocked) Icons.Filled.Block else Icons.Filled.MusicNote, active = !gate.blocked) },
+                        )
                     }
                 }
             }
 
-            SectionCard(title = stringResource(R.string.companion_firmware)) {
-                Text(stringResource(R.string.companion_firmware_desc, FirmwareUpdater.bundledVersion(context) ?: "—"), style = MaterialTheme.typography.bodyMedium)
-                OutlinedButton(
-                    enabled = connected != null || status is CompanionStatus.Bootloader,
-                    onClick = { FirmwareUpdater.start(context) },
-                ) { Text(stringResource(R.string.companion_update_firmware)) }
-                updateMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            item {
+                ListGroup(title = stringResource(R.string.settings)) {
+                    SwitchListRow(stringResource(R.string.companion_auto_cast), stringResource(R.string.companion_auto_cast_desc), autoCast, {
+                        autoCast = it; prefs.edit().putBoolean(CompanionHub.KEY_AUTO_CAST, it).apply()
+                    }, Icons.Filled.Usb)
+                    SwitchListRow(stringResource(R.string.companion_include_games), stringResource(R.string.companion_include_games_desc), includeGames, {
+                        includeGames = it; prefs.edit().putBoolean(CompanionHub.KEY_INCLUDE_GAMES, it).apply()
+                    }, Icons.Filled.SportsEsports)
+                    if (!phonePermission) {
+                        ListRow(
+                            headline = stringResource(R.string.companion_calls_hint),
+                            leading = { LeadingIcon(Icons.Filled.Call) },
+                            trailing = { TextButton(onClick = { requestPhone.launch(Manifest.permission.READ_PHONE_STATE) }) { Text(stringResource(R.string.companion_calls_allow)) } },
+                        )
+                    }
+                }
+            }
+
+            item { BluetoothBoard(hub, status) }
+
+            item {
+                ListGroup(title = stringResource(R.string.companion_firmware)) {
+                    if (connected?.bluetooth == true) {
+                        ListRow(
+                            headline = connected.info.firmwareVersionString,
+                            supporting = stringResource(R.string.companion_bt_firmware),
+                            leading = { LeadingIcon(Icons.Filled.SystemUpdate) },
+                        )
+                    } else {
+                        ListRow(
+                            headline = stringResource(R.string.companion_update_firmware),
+                            supporting = updateMessage ?: stringResource(R.string.companion_firmware_desc, FirmwareUpdater.bundledVersion(context) ?: "—"),
+                            leading = { LeadingIcon(Icons.Filled.SystemUpdate) },
+                            enabled = connected != null || status is CompanionStatus.Bootloader,
+                            onClick = { FirmwareUpdater.start(context) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The ESP32 board: permission, which paired board to use, pairing a new one, link state. */
+@SuppressLint("MissingPermission")
+@Composable
+private fun BluetoothBoard(hub: CompanionHub, status: CompanionStatus) {
+    val context = LocalContext.current
+    var allowed by remember { mutableStateOf(hub.canUseBluetooth()) }
+    val askPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        allowed = granted
+        if (granted) hub.startBluetooth()
+    }
+    var address by remember { mutableStateOf(hub.bluetoothAddress) }
+    var picker by remember { mutableStateOf(false) }
+    val connecting by hub.bluetoothConnecting.collectAsStateWithLifecycle()
+    val adapter = remember { context.getSystemService(BluetoothManager::class.java)?.adapter }
+    val linked = (status as? CompanionStatus.Connected)?.bluetooth == true
+
+    ListGroup(title = stringResource(R.string.companion_bt_title)) {
+        if (!allowed) {
+            ListRow(
+                stringResource(R.string.companion_bt_permission), supporting = stringResource(R.string.companion_bt_permission_desc),
+                leading = { LeadingIcon(Icons.Filled.Bluetooth) },
+            ) { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) askPermission.launch(Manifest.permission.BLUETOOTH_CONNECT) }
+        } else {
+            val name = address?.let { a -> runCatching { adapter?.getRemoteDevice(a)?.name }.getOrNull() ?: a }
+            ListRow(
+                headline = name ?: stringResource(R.string.companion_bt_choose),
+                supporting = when {
+                    address == null -> stringResource(R.string.companion_bt_choose_desc)
+                    linked -> stringResource(R.string.companion_bt_linked)
+                    status is CompanionStatus.Connected -> stringResource(R.string.companion_bt_usb_priority)
+                    connecting -> stringResource(R.string.companion_bt_searching)
+                    else -> stringResource(R.string.companion_bt_offline)
+                },
+                leading = { LeadingIcon(if (linked) Icons.Filled.BluetoothConnected else Icons.Filled.Bluetooth, active = linked) },
+                trailing = if (connecting) { { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) } } else null,
+                selected = linked,
+            ) { picker = true }
+            ListRow(
+                stringResource(R.string.companion_bt_pair), supporting = stringResource(R.string.companion_bt_pair_desc),
+                leading = { LeadingIcon(Icons.Filled.Add) },
+            ) { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+            if (address != null) {
+                ListRow(stringResource(R.string.companion_bt_forget), leading = { LeadingIcon(Icons.Filled.LinkOff) }) {
+                    address = null; hub.setBluetoothDevice(null)
+                }
+            }
+        }
+    }
+
+    if (picker) {
+        val boards = remember { runCatching { adapter?.bondedDevices?.filter(CompanionBt::looksLikeCompanion) }.getOrNull().orEmpty() }
+        com.aria.ariacast.ui.settings.ChoiceDialog(
+            title = stringResource(R.string.companion_bt_choose),
+            options = boards.map { it.address to (it.name ?: it.address) },
+            selected = address ?: "",
+            onSelect = { a -> picker = false; address = a; hub.setBluetoothDevice(a) },
+            onDismiss = { picker = false },
+        )
+        if (boards.isEmpty()) {
+            LaunchedEffect(Unit) {
+                android.widget.Toast.makeText(context, context.getString(R.string.companion_bt_none_paired), android.widget.Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -164,9 +269,9 @@ private fun statusTitle(s: CompanionStatus): String = when (s) {
 
 @Composable
 private fun statusSubtitle(s: CompanionStatus): String = when (s) {
-    CompanionStatus.Absent -> stringResource(R.string.companion_absent_desc)
+    CompanionStatus.Absent -> stringResource(R.string.companion_absent_desc_bt)
     CompanionStatus.NeedsPermission -> stringResource(R.string.companion_needs_permission_desc)
-    is CompanionStatus.Connected -> when {
+    is CompanionStatus.Connected -> stringResource(if (s.bluetooth) R.string.companion_via_bluetooth else R.string.companion_via_usb) + " · " + when {
         s.streaming -> stringResource(R.string.companion_mode_streaming)
         s.speaker -> stringResource(R.string.companion_mode_speaker)
         else -> stringResource(R.string.companion_mode_private)

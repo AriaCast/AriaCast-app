@@ -344,8 +344,15 @@ class AudioCastService : Service() {
         }
     }
 
+    /**
+     * Serves the current artwork at http://<phone>:[ARTWORK_PORT]/artwork.jpg for receivers that
+     * fetch it by URL (AriaCast, DLNA, Google Cast, ...). It lives as long as the service: it used
+     * to be closed by every [cleanupSession] (which also runs at the start of each cast) and only
+     * restarted for DLNA/Google Cast, so every other receiver got an artwork URL nobody answered.
+     */
+    @Synchronized
     private fun startArtworkServer() {
-        artworkServerJob?.cancel()
+        if (artworkServerJob?.isActive == true) return
         try { artworkServerSocket?.close() } catch (e: Exception) {}
         artworkServerJob = scope.launch(Dispatchers.IO) {
             try {
@@ -354,7 +361,8 @@ class AudioCastService : Service() {
                 serverSocket.bind(java.net.InetSocketAddress(ARTWORK_PORT))
                 artworkServerSocket = serverSocket
                 while (isActive) {
-                    val clientSocket = try { serverSocket.accept() } catch (e: Exception) { null } ?: continue
+                    // A closed socket would otherwise spin here forever and keep the job "active".
+                    val clientSocket = try { serverSocket.accept() } catch (e: Exception) { if (serverSocket.isClosed) break else null } ?: continue
                     launch {
                         try {
                             clientSocket.soTimeout = 10000
@@ -364,7 +372,7 @@ class AudioCastService : Service() {
                             val bytes = currentArtworkBytes
                             if (bytes != null) {
                                 output.write("HTTP/1.1 200 OK\r\n".toByteArray())
-                                output.write("Content-Type: image/jpeg\r\n".toByteArray())
+                                output.write("Content-Type: ${artworkMimeType(bytes)}\r\n".toByteArray())
                                 output.write("Content-Length: ${bytes.size}\r\n".toByteArray())
                                 output.write("Cache-Control: no-cache\r\n".toByteArray())
                                 output.write("Connection: close\r\n\r\n".toByteArray())
@@ -385,6 +393,13 @@ class AudioCastService : Service() {
             }
         }
     }
+
+    private fun artworkMimeType(bytes: ByteArray): String =
+        if (bytes.size > 3 && bytes[0] == 0x89.toByte() && bytes[1] == 'P'.code.toByte()) "image/png" else "image/jpeg"
+
+    /** URL of the current artwork; the version query changes with the image so receivers don't show a cached one. */
+    private fun artworkUrl(myIp: String, art: ByteArray): String =
+        "http://$myIp:$ARTWORK_PORT/artwork.jpg?v=${art.contentHashCode().toUInt()}"
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -888,7 +903,7 @@ class AudioCastService : Service() {
         val myIp = getLocalIpAddress()
         val art = currentArtworkBytes
         val imageUrl = when {
-            art != null && myIp != null -> "http://$myIp:$ARTWORK_PORT/artwork.jpg?v=${art.contentHashCode().toUInt()}"
+            art != null && myIp != null -> artworkUrl(myIp, art)
             else -> metadata?.artworkUrl?.takeIf { it.startsWith("http") }
         }
         return CastMetadata(metadata?.title, metadata?.artist, metadata?.album, imageUrl)
@@ -1095,8 +1110,11 @@ class AudioCastService : Service() {
             "playpause", "toggleplaypause", "toggle" -> MediaCommand.TOGGLE
             "nextitem", "nexttrack", "next" -> MediaCommand.NEXT
             "previtem", "previoustrack", "previous" -> MediaCommand.PREVIOUS
-            "stop" -> MediaCommand.STOP
+            // A receiver's "stop" (Music Assistant sends it for pause on a live input) must not
+            // stop() the phone's music app, which drops its queue: pause it instead.
+            "stop" -> MediaCommand.PAUSE
             else -> MediaCommand.entries.find { it.name.equals(command, ignoreCase = true) }
+                ?.let { if (it == MediaCommand.STOP) MediaCommand.PAUSE else it }
         } ?: return
         PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Remote command from receiver: $command")
         scope.launch { _controlCommands.emit(cmd) }
@@ -1648,10 +1666,12 @@ class AudioCastService : Service() {
         if (destinations.isEmpty()) return
 
         var finalMetadata = metadata
-        if (currentArtworkBytes != null) {
+        val art = currentArtworkBytes
+        if (art != null) {
             val myIp = getLocalIpAddress()
             if (myIp != null) {
-                finalMetadata = metadata.copy(artworkUrl = "http://$myIp:$ARTWORK_PORT/artwork.jpg")
+                startArtworkServer() // no-op while it runs; restarts it if it died
+                finalMetadata = metadata.copy(artworkUrl = artworkUrl(myIp, art))
             }
         }
 
@@ -1927,13 +1947,10 @@ class AudioCastService : Service() {
         
         dlnaHttpServerJob?.cancel()
         dlnaHttpServerJob = null
-        artworkServerJob?.cancel()
-        artworkServerJob = null
-        
+        // The artwork server is left running: it belongs to the service, not the session.
+
         try { streamServerSocket?.close() } catch (e: Exception) {}
         streamServerSocket = null
-        try { artworkServerSocket?.close() } catch (e: Exception) {}
-        artworkServerSocket = null
 
 
         controlSessions.clear()
@@ -1999,11 +2016,29 @@ class AudioCastService : Service() {
 
         session.setPlaybackState(PlaybackState.Builder()
             .setState(PlaybackState.STATE_PLAYING, 0, 1f)
-            .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE)
+            .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
+                PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS)
             .build())
 
+        // This session exists for volume-key routing, but while the music app is paused the
+        // system promotes it to media-button target too (headset keys, lock screen, quick
+        // settings). Forward everything to the app that is actually playing; never stop the cast.
         session.setCallback(object : MediaSession.Callback() {
-            // Empty callback — needed to claim media button routing
+            override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
+                @Suppress("DEPRECATION")
+                val event = mediaButtonIntent.getParcelableExtra<android.view.KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                if (event?.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+                    (event.keyCode == android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || event.keyCode == android.view.KeyEvent.KEYCODE_HEADSETHOOK)) {
+                    sendMediaCommand(MediaCommand.TOGGLE)
+                    return true
+                }
+                return super.onMediaButtonEvent(mediaButtonIntent)
+            }
+            override fun onPlay() = sendMediaCommand(MediaCommand.PLAY)
+            override fun onPause() = sendMediaCommand(MediaCommand.PAUSE)
+            override fun onStop() = sendMediaCommand(MediaCommand.PAUSE)
+            override fun onSkipToNext() = sendMediaCommand(MediaCommand.NEXT)
+            override fun onSkipToPrevious() = sendMediaCommand(MediaCommand.PREVIOUS)
         })
 
         // Receiver volume in VOLUME_STEPS steps (AirPlay: 1 dB per step over -30..0 dB,
@@ -2101,6 +2136,8 @@ class AudioCastService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         if (com.aria.ariacast.webremote.WebRemote.service === this) com.aria.ariacast.webremote.WebRemote.service = null
+        artworkServerJob?.cancel()
+        try { artworkServerSocket?.close() } catch (e: Exception) {}
         job.cancel()
     }
 

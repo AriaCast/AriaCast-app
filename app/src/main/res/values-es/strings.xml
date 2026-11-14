@@ -45,20 +45,13 @@
     <string name="about">Acerca de</string>
     <string name="version_format">Versión %1$s</string>
     <string name="select_appearance">Seleccionar apariencia</string>
-    <string name="select_accent_color">Seleccionar color de acento</string>
     <string name="theme_light">Claro</string>
     <string name="theme_dark">Oscuro</string>
     <string name="theme_follow_system">Seguir sistema</string>
-    <string name="accent_blue">Azul</string>
-    <string name="accent_purple">Púrpura</string>
-    <string name="accent_green">Verde</string>
-    <string name="accent_orange">Naranja</string>
-    <string name="accent_pink">Rosa</string>
     <string name="secret_logs_one_tap">Un toque más para entrar en registros secretos…</string>
     <string name="secret_logs_multiple_taps">%1$d toques más para entrar en registros secretos…</string>
     <string name="server_cleared">Última conexión al servidor borrada</string>
     <string name="appearance">Apariencia</string>
-    <string name="accent_color">Color de acento</string>
     <string name="language">Idioma</string>
     <string name="select_language">Seleccionar idioma</string>
     <string name="language_default">Predeterminado del sistema</string>
@@ -163,4 +156,6 @@
     <string name="airplay2_protocol">AirPlay 2</string>
     <string name="companion_configure_ok">Credenciales enviadas — ESP32 es está reiniciando</string>
     <string name="companion_configure_fail">No pudo alcanzar la página de configuración de ESP32</string>
+    <string name="nav_send">Enviar</string>
+    <string name="nav_receive">Recibir</string>
 </resources>

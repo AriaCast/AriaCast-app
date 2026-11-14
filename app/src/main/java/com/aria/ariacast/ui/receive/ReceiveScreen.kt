@@ -70,7 +70,6 @@ import com.aria.ariacast.receiver.ReceiverHub
 import com.aria.ariacast.receiver.ReceiverMetadata
 import com.aria.ariacast.receiver.ReceiverService
 import com.aria.ariacast.ui.AppController
-import com.aria.ariacast.ui.Screen
 import com.aria.ariacast.ui.qrBitmap
 import com.aria.ariacast.ui.nowplaying.KEY_LYRICS
 import com.aria.ariacast.ui.nowplaying.SyncedLyrics
@@ -87,7 +86,7 @@ import kotlin.random.Random
  * and a "Scan to cast here" QR code. Content drifts a little every minute against burn-in.
  */
 @Composable
-fun ReceiveScreen(controller: AppController) {
+fun ReceiveScreen(controller: AppController, onBack: () -> Unit) {
     val context = LocalContext.current
     val hub = remember { ReceiverHub.get(context) }
     val running by hub.running.collectAsState()
@@ -113,7 +112,7 @@ fun ReceiveScreen(controller: AppController) {
 
     Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(c1, c2)))) {
         if (!controller.isTv) {
-            IconButton(onClick = { controller.navigate(Screen.HOME) }, modifier = Modifier.statusBarsPadding().padding(8.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.statusBarsPadding().padding(8.dp)) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), tint = onBg)
             }
         }

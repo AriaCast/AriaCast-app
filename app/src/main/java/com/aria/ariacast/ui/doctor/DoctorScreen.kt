@@ -49,8 +49,17 @@ import com.aria.ariacast.companion.CompanionStatus
 import com.aria.ariacast.pipeline.SourceKind
 import com.aria.ariacast.ui.AppController
 import com.aria.ariacast.ui.CompanionActivity
-import com.aria.ariacast.ui.Screen
-import com.aria.ariacast.ui.SectionCard
+import com.aria.ariacast.ui.LeadingIcon
+import com.aria.ariacast.ui.ListBlock
+import com.aria.ariacast.ui.ListGroup
+import com.aria.ariacast.ui.ListRow
+import com.aria.ariacast.ui.ScreenList
+import com.aria.ariacast.ui.SubScreenScaffold
+import com.aria.ariacast.ui.theme.StatusColors
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.layout.fillMaxWidth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -67,7 +76,7 @@ data class Check(val title: String, val status: CheckStatus, val detail: String,
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DoctorScreen(controller: AppController) {
+fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
     val context = LocalContext.current
     val service by controller.service.collectAsState()
     val servers by controller.servers.collectAsState()
@@ -148,41 +157,46 @@ fun DoctorScreen(controller: AppController) {
         }
     }
 
-    Scaffold(topBar = {
-        TopAppBar(title = { Text(stringResource(R.string.doctor_title)) },
-            navigationIcon = { IconButton(onClick = { controller.navigate(Screen.HOME) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } })
-    }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.doctor_desc), style = MaterialTheme.typography.bodyMedium)
-            SectionCard(title = null) {
-                checks.forEach { c ->
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    SubScreenScaffold(title = stringResource(R.string.doctor_title), onBack = onBack) { padding ->
+        ScreenList(Modifier.padding(padding)) {
+            item {
+                Text(stringResource(R.string.doctor_desc), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            }
+            item {
+                ListGroup {
+                    if (checks.isEmpty()) ListBlock { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                    checks.forEach { c ->
                         val (icon, tint) = when (c.status) {
-                            CheckStatus.OK -> Icons.Filled.CheckCircle to Color(0xFF2E9D57)
-                            CheckStatus.WARN -> Icons.Filled.Warning to Color(0xFFE0A100)
+                            CheckStatus.OK -> Icons.Filled.CheckCircle to StatusColors.Connected
+                            CheckStatus.WARN -> Icons.Filled.Warning to StatusColors.Warning
                             CheckStatus.FAIL -> Icons.Filled.Error to MaterialTheme.colorScheme.error
                             CheckStatus.PENDING -> Icons.Filled.RadioButtonUnchecked to MaterialTheme.colorScheme.outline
                         }
-                        Icon(icon, c.status.name, tint = tint)
-                        Column(Modifier.weight(1f)) {
-                            Text(c.title, style = MaterialTheme.typography.titleSmall)
-                            Text(c.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        c.fix?.let { (label, action) -> TextButton(onClick = action) { Text(label) } }
+                        ListRow(
+                            headline = c.title,
+                            supporting = c.detail,
+                            leading = { Icon(icon, c.status.name, tint = tint, modifier = Modifier.padding(8.dp)) },
+                            trailing = c.fix?.let { (label, action) -> { TextButton(onClick = action) { Text(label) } } },
+                        )
                     }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
-                    val report = buildString {
-                        appendLine("AriaCast connection report")
-                        checks.forEach { appendLine("[${it.status}] ${it.title}: ${it.detail}") }
-                        service?.let { appendLine(it.getStatsJson()) }
+            item {
+                ListGroup(Modifier.padding(top = 8.dp)) {
+                    ListRow(stringResource(R.string.doctor_copy), leading = { LeadingIcon(Icons.Filled.ContentCopy) }) {
+                        val report = buildString {
+                            appendLine("AriaCast connection report")
+                            checks.forEach { appendLine("[${it.status}] ${it.title}: ${it.detail}") }
+                            service?.let { appendLine(it.getStatsJson()) }
+                        }
+                        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AriaCast report", report))
+                        Toast.makeText(context, context.getString(R.string.doctor_copied), Toast.LENGTH_SHORT).show()
                     }
-                    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AriaCast report", report))
-                    Toast.makeText(context, context.getString(R.string.doctor_copied), Toast.LENGTH_SHORT).show()
-                }) { Text(stringResource(R.string.doctor_copy)) }
-                OutlinedButton(onClick = { controller.openActivity(PacketLogActivity::class.java) }) { Text(stringResource(R.string.packet_exchange)) }
+                    ListRow(stringResource(R.string.packet_exchange), leading = { LeadingIcon(Icons.AutoMirrored.Filled.ReceiptLong) }) {
+                        controller.openActivity(PacketLogActivity::class.java)
+                    }
+                }
             }
         }
     }

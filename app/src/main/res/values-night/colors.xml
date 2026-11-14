@@ -25,11 +25,6 @@
     <color name="md_theme_outline">#9E8C8E</color>
 
     <!-- Accents (Dark versions) -->
-    <color name="accent_blue">#2979FF</color>
-    <color name="accent_purple">#D0BCFF</color>
-    <color name="accent_green">#B4F1A0</color>
-    <color name="accent_orange">#FFB870</color>
-    <color name="accent_pink">#FF4081</color>
 
     <!-- UI Colors used in MainActivity -->
     <color name="light_grey">#404040</color>

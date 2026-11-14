@@ -22,28 +22,31 @@ class CompanionUsb private constructor(
     private val connection: UsbDeviceConnection,
     private val iface: UsbInterface,
     private val bulkIn: UsbEndpoint,
-) {
+) : CompanionLink {
+    override val kind = CompanionLink.Kind.USB
+    override val id: String get() = device.deviceName
+
     @Volatile private var reading = false
     private var readerThread: Thread? = null
 
     private val ifaceIndex: Int get() = iface.id
 
-    fun getInfo(): CompanionInfo? {
+    override fun getInfo(): CompanionInfo? {
         val buf = ByteArray(CompanionProtocol.INFO_BYTES)
         val n = connection.controlTransfer(CompanionProtocol.REQTYPE_IN, CompanionProtocol.REQ_GET_INFO, 0, ifaceIndex, buf, buf.size, TIMEOUT_MS)
         return if (n >= CompanionProtocol.INFO_BYTES) CompanionInfo.parse(buf) else null
     }
 
-    fun getStats(): CompanionStats? {
+    override fun getStats(): CompanionStats? {
         val buf = ByteArray(CompanionProtocol.STATS_BYTES)
         val n = connection.controlTransfer(CompanionProtocol.REQTYPE_IN, CompanionProtocol.REQ_GET_STATS, 0, ifaceIndex, buf, buf.size, TIMEOUT_MS)
         return if (n >= CompanionProtocol.STATS_BYTES) CompanionStats.parse(buf) else null
     }
 
-    fun setMode(mode: Int): Boolean = command(CompanionProtocol.REQ_SET_MODE, mode)
-    fun heartbeat(timeoutSeconds: Int): Boolean = command(CompanionProtocol.REQ_HEARTBEAT, timeoutSeconds.coerceIn(1, 10))
+    override fun setMode(mode: Int): Boolean = command(CompanionProtocol.REQ_SET_MODE, mode)
+    override fun heartbeat(timeoutSeconds: Int): Boolean = command(CompanionProtocol.REQ_HEARTBEAT, timeoutSeconds.coerceIn(1, 10))
     fun rebootToBootloader(): Boolean = command(CompanionProtocol.REQ_REBOOT_BOOTLOADER, 0)
-    fun resetStats(): Boolean = command(CompanionProtocol.REQ_RESET_STATS, 0)
+    override fun resetStats(): Boolean = command(CompanionProtocol.REQ_RESET_STATS, 0)
 
     private fun command(request: Int, value: Int): Boolean =
         connection.controlTransfer(CompanionProtocol.REQTYPE_OUT, request, value, ifaceIndex, null, 0, TIMEOUT_MS) >= 0
@@ -53,7 +56,7 @@ class CompanionUsb private constructor(
      * with a buffer that is only valid during the call. [onError] fires once if the device
      * goes away (e.g. it re-enumerated or was unplugged).
      */
-    fun startReading(onBytes: (ByteArray, Int) -> Unit, onError: (String) -> Unit) {
+    override fun startReading(onBytes: (ByteArray, Int) -> Unit, onError: (String) -> Unit) {
         if (reading) return
         reading = true
         readerThread = Thread({
@@ -96,7 +99,7 @@ class CompanionUsb private constructor(
         readerThread = null
     }
 
-    fun close() {
+    override fun close() {
         stopReading()
         try { connection.releaseInterface(iface) } catch (_: Exception) {}
         try { connection.close() } catch (_: Exception) {}

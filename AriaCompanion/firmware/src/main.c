@@ -224,6 +224,14 @@ bool tud_audio_set_itf_close_EP_cb(uint8_t rhport, tusb_control_request_t const 
     (void)rhport;
     uint8_t itf = tu_u16_low(tu_le16toh(p_request->wIndex));
     uint8_t alt = tu_u16_low(tu_le16toh(p_request->wValue));
+    if (itf == ARIA_ITF_AUDIO_STREAMING) {
+        /* On RP2040/RP2350 TinyUSB never closes an ISO endpoint (TUP_DCD_EDPT_ISO_ALLOC), so the
+         * OUT buffer it armed for the old stream keeps its AVAIL bit. The next SET_INTERFACE alt 1
+         * re-arms it, TinyUSB panics with "ep 01 was already available" and the watchdog reboots
+         * the board. Android opens and closes the stream several times while probing, so this
+         * hit on (nearly) every playback start. Disarm the buffer before the new alt is applied. */
+        usb_dpram->ep_buf_ctrl[ARIA_EP_AUDIO_OUT & 0x0F].out = 0;
+    }
     if (itf == ARIA_ITF_AUDIO_STREAMING && alt == 0) {
         stream_active = false;
         stream_changed = true;

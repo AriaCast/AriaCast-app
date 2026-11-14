@@ -2,91 +2,101 @@ package com.aria.ariacast.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.sp
+import com.aria.ariacast.ThemeUtils
 
-// AriaCast brand palette (same values as res/values/colors.xml), used when dynamic color
-// is unavailable (Android 10-11) or turned off.
-private val BrandLight = lightColorScheme(
-    primary = Color(0xFFB90063), onPrimary = Color.White,
-    primaryContainer = Color(0xFFFFD9DF), onPrimaryContainer = Color(0xFF3E001D),
-    secondary = Color(0xFF77565A), onSecondary = Color.White,
-    secondaryContainer = Color(0xFFFFD9DF), onSecondaryContainer = Color(0xFF2C1518),
-    tertiary = Color(0xFF7A592D), onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFFDDB4), onTertiaryContainer = Color(0xFF2A1900),
-    background = Color(0xFFFFFBFF), onBackground = Color(0xFF201A1B),
-    surface = Color(0xFFFFFBFF), onSurface = Color(0xFF201A1B),
-    surfaceVariant = Color(0xFFF4DDDF), onSurfaceVariant = Color(0xFF524345),
-    outline = Color(0xFF847375),
+// Static fallback for Android 10-11, where Material You is unavailable. Everywhere else the
+// scheme is derived from the user's wallpaper; AriaCast does not impose a brand color.
+private val FallbackLight = lightColorScheme(
+    primary = Color(0xFF3F5F90), onPrimary = Color.White,
+    primaryContainer = Color(0xFFD6E3FF), onPrimaryContainer = Color(0xFF001B3D),
+    secondary = Color(0xFF555F71), onSecondary = Color.White,
+    secondaryContainer = Color(0xFFD9E3F8), onSecondaryContainer = Color(0xFF121C2B),
+    tertiary = Color(0xFF6E5676), onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFF7D8FF), onTertiaryContainer = Color(0xFF27132F),
+    background = Color(0xFFF9F9FF), onBackground = Color(0xFF191C20),
+    surface = Color(0xFFF9F9FF), onSurface = Color(0xFF191C20),
+    surfaceVariant = Color(0xFFE0E2EC), onSurfaceVariant = Color(0xFF44474E),
+    surfaceContainerLowest = Color(0xFFFFFFFF), surfaceContainerLow = Color(0xFFF3F3FA),
+    surfaceContainer = Color(0xFFEDEDF4), surfaceContainerHigh = Color(0xFFE7E8EE),
+    surfaceContainerHighest = Color(0xFFE2E2E9),
+    outline = Color(0xFF74777F), outlineVariant = Color(0xFFC4C6D0),
 )
 
-private val BrandDark = darkColorScheme(
-    primary = Color(0xFFFFB1C2), onPrimary = Color(0xFF65002F),
-    primaryContainer = Color(0xFF8E0049), onPrimaryContainer = Color(0xFFFFD9DF),
-    secondary = Color(0xFFE5BDC1), onSecondary = Color(0xFF43292D),
-    secondaryContainer = Color(0xFF5D3F43), onSecondaryContainer = Color(0xFFFFD9DF),
-    tertiary = Color(0xFFECC08C), onTertiary = Color(0xFF452B04),
-    tertiaryContainer = Color(0xFF5F4118), onTertiaryContainer = Color(0xFFFFDDB4),
-    background = Color(0xFF201A1B), onBackground = Color(0xFFECE0E0),
-    surface = Color(0xFF201A1B), onSurface = Color(0xFFECE0E0),
-    surfaceVariant = Color(0xFF524345), onSurfaceVariant = Color(0xFFD7C1C3),
-    outline = Color(0xFF9F8C8E),
+private val FallbackDark = darkColorScheme(
+    primary = Color(0xFFA8C8FF), onPrimary = Color(0xFF07305F),
+    primaryContainer = Color(0xFF254777), onPrimaryContainer = Color(0xFFD6E3FF),
+    secondary = Color(0xFFBDC7DC), onSecondary = Color(0xFF273141),
+    secondaryContainer = Color(0xFF3E4758), onSecondaryContainer = Color(0xFFD9E3F8),
+    tertiary = Color(0xFFDABDE2), onTertiary = Color(0xFF3D2845),
+    tertiaryContainer = Color(0xFF553F5D), onTertiaryContainer = Color(0xFFF7D8FF),
+    background = Color(0xFF111318), onBackground = Color(0xFFE2E2E9),
+    surface = Color(0xFF111318), onSurface = Color(0xFFE2E2E9),
+    surfaceVariant = Color(0xFF44474E), onSurfaceVariant = Color(0xFFC4C6D0),
+    surfaceContainerLowest = Color(0xFF0C0E13), surfaceContainerLow = Color(0xFF191C20),
+    surfaceContainer = Color(0xFF1D2024), surfaceContainerHigh = Color(0xFF282A2F),
+    surfaceContainerHighest = Color(0xFF33353A),
+    outline = Color(0xFF8E9099), outlineVariant = Color(0xFF44474E),
 )
 
-/** Status colors for receiver dots (Discussion #11): connected, available, offline. */
+/** Semantic status colors that must not follow the wallpaper (success/warning read the same everywhere). */
 object StatusColors {
     val Connected = Color(0xFF2E9D57)
-    val Available = Color(0xFFD9534F)
+    val Available = Color(0xFF8E9099)
+    val Warning = Color(0xFFE0A100)
 }
 
-private val AriaShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(28.dp),
-    extraLarge = RoundedCornerShape(36.dp),
-)
-
+// Material type scale on the system face. Titles and headlines take one weight step up for a
+// firmer hierarchy; nothing is hand-sized per screen.
 private val AriaTypography = Typography().let { t ->
+    val trim = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
     t.copy(
-        displaySmall = t.displaySmall.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
-        headlineMedium = t.headlineMedium.copy(fontWeight = FontWeight.Bold),
-        headlineSmall = t.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
-        titleLarge = t.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-        titleMedium = t.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-        labelLarge = t.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+        displaySmall = t.displaySmall.copy(fontWeight = FontWeight.Normal, lineHeightStyle = trim),
+        headlineLarge = t.headlineLarge.copy(fontWeight = FontWeight.Normal),
+        headlineMedium = t.headlineMedium.copy(fontWeight = FontWeight.Normal),
+        headlineSmall = t.headlineSmall.copy(fontWeight = FontWeight.Medium),
+        titleLarge = t.titleLarge.copy(fontWeight = FontWeight.Medium),
+        titleMedium = t.titleMedium.copy(fontWeight = FontWeight.Medium),
+        titleSmall = t.titleSmall.copy(fontWeight = FontWeight.Medium),
+        labelLarge = t.labelLarge.copy(fontWeight = FontWeight.Medium),
     )
 }
 
 @Composable
 fun AriaTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
+    val mode by ThemeUtils.mode.collectAsState()
+    val darkTheme = when (mode) {
+        ThemeUtils.MODE_NIGHT_YES -> true
+        ThemeUtils.MODE_NIGHT_NO -> false
+        else -> isSystemInDarkTheme()
+    }
     val context = LocalContext.current
     val scheme: ColorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        darkTheme -> BrandDark
-        else -> BrandLight
+        darkTheme -> FallbackDark
+        else -> FallbackLight
     }
-    MaterialTheme(colorScheme = scheme, shapes = AriaShapes, typography = AriaTypography, content = content)
+    MaterialTheme(colorScheme = scheme, typography = AriaTypography, content = content)
 }
 
-/** Monospace-ish numeric style for live stats. */
-val StatTextStyle = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp, letterSpacing = 0.sp)
+/** Tabular figures for live numbers (volume, delay, counters) so they don't jitter. */
+val StatTextStyle = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp, fontFeatureSettings = "tnum")

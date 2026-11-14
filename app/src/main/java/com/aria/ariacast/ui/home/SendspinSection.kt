@@ -41,10 +41,17 @@ import androidx.compose.ui.unit.dp
 import com.aria.ariacast.R
 import com.aria.ariacast.receiver.ReceiverHub
 import com.aria.ariacast.sendspin.SendspinHub
-import com.aria.ariacast.ui.SwitchRow
+import com.aria.ariacast.ui.LeadingIcon
+import com.aria.ariacast.ui.ListGroup
+import com.aria.ariacast.ui.ListRow
+import com.aria.ariacast.ui.SwitchListRow
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.SpeakerGroup
 import com.aria.ariacast.ui.qrBitmap
 
-/** Sendspin (Music Assistant) part of the Receive card. */
+/** Sendspin (Music Assistant) group of the Receive destination. */
 @Composable
 fun SendspinSection() {
     val context = LocalContext.current
@@ -56,32 +63,33 @@ fun SendspinSection() {
     var pairDialog by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
 
-    HorizontalDivider()
-    SwitchRow(stringResource(R.string.sendspin_title), stringResource(R.string.sendspin_desc), enabled, {
-        enabled = it; hub.enabled = it
-        if (it) hub.start(receiver.name) else hub.stop()
-    })
-    if (!enabled) return
-    Text(
-        when {
-            status.serverName == null -> stringResource(R.string.sendspin_waiting)
-            status.sourceStreaming -> stringResource(R.string.sendspin_source_streaming, status.serverName!!)
-            status.playing -> stringResource(R.string.sendspin_playing, status.serverName!!)
-            else -> stringResource(if (status.paired) R.string.sendspin_connected_paired else R.string.sendspin_connected_unpaired, status.serverName!!)
-        },
-        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    OutlinedButton(onClick = { pairDialog = true }) { Text(stringResource(R.string.sendspin_pair)) }
-    SwitchRow(stringResource(R.string.sendspin_unpaired), stringResource(R.string.sendspin_unpaired_desc), unpaired, {
-        unpaired = it; hub.identity.unpairedAccess = it
-    })
-    val paired = remember(refresh, status) { hub.identity.pairedServers() }
-    if (paired.isNotEmpty()) {
-        Text(stringResource(R.string.sendspin_paired_servers), style = MaterialTheme.typography.labelLarge)
-        paired.forEach { p ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(p.name, Modifier.weight(1f))
-                IconButton(onClick = { hub.forgetServer(p.serverId); refresh++ }) { Icon(Icons.Filled.Delete, stringResource(R.string.sendspin_forget)) }
+    ListGroup(title = stringResource(R.string.ma_title)) {
+        SwitchListRow(stringResource(R.string.sendspin_title), stringResource(R.string.sendspin_desc), enabled, {
+            enabled = it; hub.enabled = it
+            if (it) hub.start(receiver.name) else hub.stop()
+        }, Icons.Filled.SpeakerGroup)
+        if (enabled) {
+            ListRow(
+                headline = when {
+                    status.serverName == null -> stringResource(R.string.sendspin_waiting)
+                    status.sourceStreaming -> stringResource(R.string.sendspin_source_streaming, status.serverName!!)
+                    status.playing -> stringResource(R.string.sendspin_playing, status.serverName!!)
+                    else -> stringResource(if (status.paired) R.string.sendspin_connected_paired else R.string.sendspin_connected_unpaired, status.serverName!!)
+                },
+                leading = { LeadingIcon(Icons.Filled.Link, active = status.serverName != null) },
+                trailing = { TextButton(onClick = { pairDialog = true }) { Text(stringResource(R.string.sendspin_pair)) } },
+            )
+            SwitchListRow(stringResource(R.string.sendspin_unpaired), stringResource(R.string.sendspin_unpaired_desc), unpaired, {
+                unpaired = it; hub.identity.unpairedAccess = it
+            }, Icons.Filled.LockOpen)
+            val paired = remember(refresh, status) { hub.identity.pairedServers() }
+            paired.forEach { p ->
+                ListRow(
+                    headline = p.name,
+                    supporting = stringResource(R.string.sendspin_paired_servers),
+                    leading = { LeadingIcon(Icons.Filled.Lock) },
+                    trailing = { IconButton(onClick = { hub.forgetServer(p.serverId); refresh++ }) { Icon(Icons.Filled.Delete, stringResource(R.string.sendspin_forget)) } },
+                )
             }
         }
     }

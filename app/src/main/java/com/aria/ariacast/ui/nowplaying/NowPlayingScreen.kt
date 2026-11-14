@@ -61,8 +61,26 @@ import com.aria.ariacast.TrackMetadata
 import com.aria.ariacast.lyrics.LrcLib
 import com.aria.ariacast.lyrics.Lyrics
 import com.aria.ariacast.ui.AppController
-import com.aria.ariacast.ui.Screen
-import com.aria.ariacast.ui.SectionCard
+import com.aria.ariacast.ui.ListBlock
+import com.aria.ariacast.ui.ListGroup
+import com.aria.ariacast.ui.SwitchListRow
+import com.aria.ariacast.ui.theme.StatTextStyle
+import com.aria.ariacast.CastState
+import android.graphics.BitmapFactory
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.VolumeDown
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.compositeOver
+import androidx.palette.graphics.Palette
 import com.aria.ariacast.ui.home.Artwork
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,52 +89,113 @@ import kotlin.math.sqrt
 
 const val KEY_LYRICS = "lyrics_enabled"
 
+/**
+ * Full-screen Now Playing, opened from the mini-player. The background takes a soft tint from
+ * the artwork; below the transport sit volume, the speakers in the cast, sync and lyrics.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NowPlayingScreen(controller: AppController) {
+fun NowPlayingScreen(controller: AppController, onClose: () -> Unit) {
     val service by controller.service.collectAsState()
     val s = service
     val metadata by (s?.metadata ?: remember { MutableStateFlow<TrackMetadata?>(null) }).collectAsState()
     val artwork by (s?.artwork ?: remember { MutableStateFlow<ByteArray?>(null) }).collectAsState()
     val volume by (s?.volumePercent ?: remember { MutableStateFlow(50) }).collectAsState()
 
-    Scaffold(topBar = {
-        TopAppBar(title = { Text(stringResource(R.string.now_playing)) },
-            navigationIcon = { IconButton(onClick = { controller.navigate(Screen.HOME) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } })
-    }) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Artwork(artwork, Modifier.widthIn(max = 360.dp).fillMaxWidth().aspectRatio(1f))
-            val m = metadata
-            Text(m?.title ?: stringResource(R.string.nothing_playing), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(listOfNotNull(m?.artist, m?.album).joinToString(" · "), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+    val bitmap = remember(artwork) { artwork?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() } }
+    val swatch = remember(bitmap) { bitmap?.let { Palette.from(it).generate().let { p -> p.vibrantSwatch ?: p.dominantSwatch } } }
+    val surface = MaterialTheme.colorScheme.surface
+    val tint by animateColorAsState(swatch?.let { Color(it.rgb).copy(alpha = 0.35f).compositeOver(surface) } ?: surface, tween(600), label = "tint")
 
-            val position = rememberLivePosition(m)
-            m?.durationMs?.takeIf { it > 0 }?.let { d ->
-                LinearProgressIndicator(progress = { (position.toFloat() / d).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                IconButton(onClick = { s?.sendMediaCommand(MediaCommand.PREVIOUS) }) { Icon(Icons.Filled.SkipPrevious, stringResource(R.string.previous), Modifier.size(36.dp)) }
-                FilledIconButton(onClick = { s?.sendMediaCommand(MediaCommand.TOGGLE) }, modifier = Modifier.size(72.dp)) {
-                    Icon(if (m?.isPlaying == true) Icons.Filled.Pause else Icons.Filled.PlayArrow, stringResource(R.string.play_pause), Modifier.size(40.dp))
+    Scaffold(
+        containerColor = Color.Transparent,
+        modifier = Modifier.background(Brush.verticalGradient(0f to tint, 0.7f to surface)),
+        topBar = {
+            TopAppBar(
+                title = {},
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.back)) } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            )
+        },
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+            Column(
+                Modifier.widthIn(max = 560.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Artwork(artwork, Modifier.fillMaxWidth().aspectRatio(1f).shadow(16.dp, RoundedCornerShape(28.dp)), corner = 28.dp)
+                val m = metadata
+                Column {
+                    Text(m?.title ?: stringResource(R.string.nothing_playing), style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    val sub = listOfNotNull(m?.artist, m?.album).joinToString(" · ")
+                    if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                IconButton(onClick = { s?.sendMediaCommand(MediaCommand.NEXT) }) { Icon(Icons.Filled.SkipNext, stringResource(R.string.next), Modifier.size(36.dp)) }
-            }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.AutoMirrored.Filled.VolumeUp, null)
-                var dragging by remember { mutableStateOf<Float?>(null) }
-                Slider(value = dragging ?: volume.toFloat(), valueRange = 0f..100f, onValueChange = { dragging = it },
-                    onValueChangeFinished = { dragging?.let { s?.setVolume(it.toInt()) }; dragging = null }, modifier = Modifier.padding(start = 8.dp))
-            }
+                val position = rememberLivePosition(m)
+                m?.durationMs?.takeIf { it > 0 }?.let { d ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LinearProgressIndicator(progress = { (position.toFloat() / d).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), drawStopIndicator = {})
+                        Row {
+                            Text(formatTime(position), style = StatTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.weight(1f))
+                            Text("-" + formatTime((d - position).coerceAtLeast(0)), style = StatTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
 
-            s?.let { Visualizer(it, Modifier.fillMaxWidth().height(96.dp)) }
-            s?.let { SpeakersInCast(controller, it) }
-            LyricsCard(m, position)
-            Spacer(Modifier.height(24.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly) {
+                    IconButton(onClick = { s?.sendMediaCommand(MediaCommand.PREVIOUS) }, modifier = Modifier.size(56.dp)) {
+                        Icon(Icons.Filled.SkipPrevious, stringResource(R.string.previous), Modifier.size(36.dp))
+                    }
+                    FilledIconButton(onClick = { s?.sendMediaCommand(MediaCommand.TOGGLE) }, modifier = Modifier.size(80.dp)) {
+                        Icon(if (m?.isPlaying == true) Icons.Filled.Pause else Icons.Filled.PlayArrow, stringResource(R.string.play_pause), Modifier.size(40.dp))
+                    }
+                    IconButton(onClick = { s?.sendMediaCommand(MediaCommand.NEXT) }, modifier = Modifier.size(56.dp)) {
+                        Icon(Icons.Filled.SkipNext, stringResource(R.string.next), Modifier.size(36.dp))
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.VolumeDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    var dragging by remember { mutableStateOf<Float?>(null) }
+                    Slider(value = dragging ?: volume.toFloat(), valueRange = 0f..100f, onValueChange = { dragging = it },
+                        onValueChangeFinished = { dragging?.let { s?.setVolume(it.toInt()) }; dragging = null }, modifier = Modifier.weight(1f))
+                    Icon(Icons.AutoMirrored.Filled.VolumeUp, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                s?.let { Visualizer(it, Modifier.fillMaxWidth().height(40.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) }
+                s?.let { SpeakersInCast(controller, it) }
+                s?.let { MultiroomSync(it) }
+                LyricsSection(m, position)
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+private fun formatTime(ms: Long): String {
+    val total = ms / 1000
+    return "%d:%02d".format(total / 60, total % 60)
+}
+
+/** Per-speaker delay so rooms line up; only while two or more speakers play. */
+@Composable
+private fun MultiroomSync(service: AudioCastService) {
+    val destinations by service.activeDestinations.collectAsState()
+    val state by service.state.collectAsState()
+    if (state != CastState.CASTING || destinations.size < 2) return
+    ListGroup(title = stringResource(R.string.multiroom_sync)) {
+        ListBlock { Text(stringResource(R.string.multiroom_sync_desc), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        destinations.forEach { dest ->
+            ListBlock {
+                var value by remember(dest.host) { mutableFloatStateOf(dest.delayMs.toFloat()) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(dest.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${value.toInt()} ms", style = StatTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Slider(value = value, onValueChange = { value = it }, valueRange = 0f..2000f, steps = 99,
+                    onValueChangeFinished = { service.setDelay(dest.host, value.toInt()) })
+            }
         }
     }
 }
@@ -169,7 +248,7 @@ fun barLevels(pcm: ByteArray, bars: Int, previous: FloatArray): FloatArray {
 }
 
 @Composable
-private fun LyricsCard(m: TrackMetadata?, position: Long) {
+private fun LyricsSection(m: TrackMetadata?, position: Long) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE) }
     var enabled by remember { mutableStateOf(prefs.getBoolean(KEY_LYRICS, false)) }
@@ -180,16 +259,19 @@ private fun LyricsCard(m: TrackMetadata?, position: Long) {
         lyrics = null
         if (enabled && !title.isNullOrBlank() && !artist.isNullOrBlank()) lyrics = LrcLib.fetch(title, artist, m.album, m.durationMs)
     }
-    SectionCard(title = stringResource(R.string.lyrics)) {
-        FilterChip(selected = enabled, onClick = { enabled = !enabled; prefs.edit().putBoolean(KEY_LYRICS, enabled).apply() },
-            label = { Text(stringResource(if (enabled) R.string.lyrics_on else R.string.lyrics_off)) })
-        if (!enabled) Text(stringResource(R.string.lyrics_privacy), style = MaterialTheme.typography.bodySmall)
-        val l = lyrics
-        when {
-            !enabled -> {}
-            l == null -> Text(stringResource(R.string.lyrics_none), style = MaterialTheme.typography.bodyMedium)
-            l.synced.isNotEmpty() -> SyncedLyrics(l, position)
-            else -> Text(l.plain ?: "", style = MaterialTheme.typography.bodyMedium)
+    ListGroup(title = stringResource(R.string.lyrics)) {
+        SwitchListRow(stringResource(R.string.lyrics_off), if (enabled) null else stringResource(R.string.lyrics_privacy), enabled, {
+            enabled = it; prefs.edit().putBoolean(KEY_LYRICS, it).apply()
+        }, Icons.Filled.Lyrics)
+        if (enabled) {
+            ListBlock {
+                val l = lyrics
+                when {
+                    l == null -> Text(stringResource(R.string.lyrics_none), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    l.synced.isNotEmpty() -> SyncedLyrics(l, position)
+                    else -> Text(l.plain ?: "", style = MaterialTheme.typography.bodyLarge)
+                }
+            }
         }
     }
 }

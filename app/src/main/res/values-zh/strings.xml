@@ -45,20 +45,13 @@
     <string name="about">关于</string>
     <string name="version_format">版本 %1$s</string>
     <string name="select_appearance">选择外观</string>
-    <string name="select_accent_color">选择强调色</string>
     <string name="theme_light">浅色</string>
     <string name="theme_dark">深色</string>
     <string name="theme_follow_system">跟随系统</string>
-    <string name="accent_blue">蓝色</string>
-    <string name="accent_purple">紫色</string>
-    <string name="accent_green">绿色</string>
-    <string name="accent_orange">橙色</string>
-    <string name="accent_pink">粉色</string>
     <string name="secret_logs_one_tap">再点一次进入秘密日志…</string>
     <string name="secret_logs_multiple_taps">再点 %1$d 次进入秘密日志…</string>
     <string name="server_cleared">已清除上次服务器连接</string>
     <string name="appearance">外观</string>
-    <string name="accent_color">强调色</string>
     <string name="language">语言</string>
     <string name="select_language">选择语言</string>
     <string name="language_default">系统默认</string>
@@ -132,4 +125,6 @@
     <string name="group_name">组名</string>
     <string name="select_devices">选择设备</string>
     <string name="save">保存</string>
+    <string name="nav_send">发送</string>
+    <string name="nav_receive">接收</string>
 </resources>

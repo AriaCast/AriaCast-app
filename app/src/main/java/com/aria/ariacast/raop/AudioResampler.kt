@@ -50,8 +50,10 @@ class AudioResampler(
 
     fun resample(input: ByteArray): ByteArray {
         val inputSamples = input.size / (2 * channels)
-        val outputSamples = (inputSamples.toLong() * l / m).toInt()
-        val output = ByteArray(outputSamples * 2 * channels)
+        // The phase carried over from the previous call can add one output sample beyond
+        // in*l/m (always when upsampling); size for it and grow if ever needed.
+        val outputSamples = (inputSamples.toLong() * l / m).toInt() + 2
+        var output = ByteArray(outputSamples * 2 * channels)
 
         var outIdx = 0
         var inIdx = 0
@@ -66,6 +68,7 @@ class AudioResampler(
             }
 
             while (phase < l) {
+                if (outIdx + 2 * channels > output.size) output = output.copyOf(output.size * 2)
                 for (c in 0 until channels) {
                     var sum = 0f
                     for (i in 0 until tapsPerPhase) {
@@ -76,7 +79,6 @@ class AudioResampler(
                     output[outIdx++] = (outSample.toInt() shr 8).toByte()
                 }
                 phase += m
-                if (outIdx >= output.size) break
             }
 
             phase -= l

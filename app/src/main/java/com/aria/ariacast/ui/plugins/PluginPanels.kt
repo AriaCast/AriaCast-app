@@ -3,6 +3,7 @@ package com.aria.ariacast.ui.plugins
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -33,7 +34,8 @@ import com.aria.ariacast.ui.SectionCard
 @Composable
 fun PluginPanels() {
     val panels by PluginUiRegistry.panels.collectAsState()
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    if (panels.isEmpty()) return
+    Column(Modifier.padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         panels.values.sortedBy { it.title }.forEach { panel ->
             SectionCard(title = panel.title) {
                 PluginNodeView(panel.root) { id, value -> PluginUiRegistry.dispatch(panel.pluginId, id, value) }

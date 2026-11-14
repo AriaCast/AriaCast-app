@@ -37,6 +37,31 @@ class CompanionProtocolTest {
         pairs.forEach { (name, value) -> assertEquals(name, h(name), value.toLong()) }
     }
 
+    private val btHeader: Map<String, Long> by lazy {
+        val f = listOf("../AriaCompanion/firmware-bt/main/aria_bt_proto.h", "AriaCompanion/firmware-bt/main/aria_bt_proto.h")
+            .map(::File).first { it.exists() }
+        Regex("""#define\s+(ARIA_\w+)\s+(\(1u << \d+\)|0x[0-9A-Fa-f]+|\d+)""").findAll(f.readText()).associate {
+            val v = it.groupValues[2]
+            it.groupValues[1] to (Regex("""\(1u << (\d+)\)""").find(v)?.let { m -> 1L shl m.groupValues[1].toInt() } ?: java.lang.Long.decode(v))
+        }
+    }
+
+    @Test fun bluetoothConstantsMatchFirmwareHeader() {
+        val p = CompanionProtocol
+        fun b(name: String) = btHeader[name] ?: error("$name missing from aria_bt_proto.h")
+        mapOf(
+            "ARIA_BT_PROTOCOL_VERSION" to p.BT_PROTOCOL_VERSION, "ARIA_MAGIC" to p.MAGIC, "ARIA_HEADER_BYTES" to p.HEADER_BYTES,
+            "ARIA_MAX_PAYLOAD" to p.MAX_PAYLOAD, "ARIA_CHUNK_STREAM" to p.CHUNK_STREAM, "ARIA_CHUNK_OVERRUN" to p.CHUNK_OVERRUN,
+            "ARIA_CHUNK_MODE" to p.CHUNK_MODE, "ARIA_CHUNK_SBC_CONFIG" to p.CHUNK_SBC_CONFIG, "ARIA_CHUNK_SBC_AUDIO" to p.CHUNK_SBC_AUDIO,
+            "ARIA_CHUNK_INFO" to p.CHUNK_INFO, "ARIA_CHUNK_STATS" to p.CHUNK_STATS, "ARIA_SBC_CONFIG_BYTES" to p.SBC_CONFIG_BYTES,
+            "ARIA_SBC_AUDIO_PREFIX" to p.SBC_AUDIO_PREFIX, "ARIA_INFO_BYTES" to p.INFO_BYTES, "ARIA_STATS_BYTES" to p.STATS_BYTES,
+            "ARIA_CMD_BYTES" to p.CMD_BYTES, "ARIA_CMD_GET_INFO" to p.CMD_GET_INFO, "ARIA_CMD_SET_MODE" to p.CMD_SET_MODE,
+            "ARIA_CMD_HEARTBEAT" to p.CMD_HEARTBEAT, "ARIA_CMD_GET_STATS" to p.CMD_GET_STATS, "ARIA_CMD_RESET_STATS" to p.CMD_RESET_STATS,
+            "ARIA_MODE_PRIVATE" to p.MODE_PRIVATE, "ARIA_MODE_SPEAKER" to p.MODE_SPEAKER,
+            "ARIA_CAP_LED" to p.CAP_LED, "ARIA_CAP_BLUETOOTH" to p.CAP_BLUETOOTH,
+        ).forEach { (name, value) -> assertEquals(name, b(name), value.toLong()) }
+    }
+
     @Test fun infoAndStatsParse() {
         val info = CompanionInfo.parse(byteArrayOf(1, 1, 0x00, 0x02, 0x08, 0, 64, 0))!!
         assertEquals(1, info.protocolVersion)

@@ -38,6 +38,27 @@ class ChunkParserTest {
         assertEquals(0L, p.seqGaps)
     }
 
+    @Test fun parsesBluetoothChunks() {
+        val p = ChunkParser()
+        val cfg = byteArrayOf(0x44, 0xAC.toByte(), 0, 0, 3, 16, 8, 0, 2, 53, 0, 0) // 44100 Hz, joint, 16 blocks, 8 subbands
+        val sbc = byteArrayOf(0x9C.toByte(), 0x31, 0x35, 0x00)
+        val prefix = byteArrayOf(0x10, 0, 0, 0, 2, 0, 0, 0) // timestamp 16, 2 frames
+        val info = byteArrayOf(1, 1, 0x00, 0x01, 0x18, 0, 48, 0)
+        val ev = p.feed(
+            chunk(CompanionProtocol.CHUNK_SBC_CONFIG, cfg) +
+                chunk(CompanionProtocol.CHUNK_SBC_AUDIO, prefix + sbc) +
+                chunk(CompanionProtocol.CHUNK_INFO, info)
+        )
+        assertEquals(CompanionEvent.SbcConfig(44100, 3, 16, 8, 53), ev[0])
+        val a = ev[1] as CompanionEvent.SbcAudio
+        assertEquals(16L, a.timestamp)
+        assertEquals(2, a.frames)
+        assertArrayEquals(sbc, a.data)
+        val i = (ev[2] as CompanionEvent.Info).info
+        assertEquals("1.0", i.firmwareVersionString)
+        assertTrue(i.capabilities and CompanionProtocol.CAP_BLUETOOTH != 0)
+    }
+
     @Test fun handlesChunksSplitAcrossTransfers() {
         val p = ChunkParser()
         val bytes = audio(5, ByteArray(384) { it.toByte() }) + audio(7, ByteArray(384))

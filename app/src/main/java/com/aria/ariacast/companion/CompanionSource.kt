@@ -1,6 +1,13 @@
 package com.aria.ariacast.companion
 
 import com.aria.ariacast.pipeline.AudioSource
+import com.aria.ariacast.raop.AudioResampler
+import android.util.Log
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import com.aria.ariacast.pipeline.FgsTypes
 import com.aria.ariacast.pipeline.FrameChunker
 import com.aria.ariacast.pipeline.PcmFormat
@@ -32,8 +39,8 @@ class CompanionSource internal constructor(private val hub: CompanionHub) : Audi
         }
         hub.events = channel
         hub.setCasting(true)
-        // The board re-enumerates as a speaker; give it a few seconds.
-        val ok = withTimeoutOrNull(8000) { hub.speakerActive.first { it } }
+        // The USB board re-enumerates as a speaker; the Bluetooth one connects A2DP. Both take a few seconds.
+        val ok = withTimeoutOrNull(12_000) { hub.speakerActive.first { it } }
         return if (ok == null) "AriaCompanion did not switch to speaker mode" else null
     }
 
@@ -43,6 +50,10 @@ class CompanionSource internal constructor(private val hub: CompanionHub) : Audi
         val envelope = GateEnvelope(PcmFormat.SAMPLE_RATE, PcmFormat.CHANNELS, delayMs = DELAY_FRAMES * 20L)
         val delayLine = ArrayDeque<ByteArray>(DELAY_FRAMES + 1)
         var formatOk = true
+        // Bluetooth board: SBC frames, decoded here and brought to 48 kHz stereo.
+        val sbc = SbcDecoder()
+        var resampler: AudioResampler? = null
+        var resamplerRate = 0
 
         suspend fun onFrame(frame: ByteArray) {
             delayLine.addLast(frame)
@@ -55,14 +66,41 @@ class CompanionSource internal constructor(private val hub: CompanionHub) : Audi
             }
         }
 
-        for (event in channel) {
+        // Bluetooth board only: frames go through a jitter buffer played on a fixed 20 ms clock.
+        val jitter = JitterBuffer(PcmFormat.FRAME_BYTES)
+        var pacer: Job? = null
+        var lastArrival = 0L
+        var maxGapMs = 0L
+        var lastReport = System.currentTimeMillis()
+
+        coroutineScope {
+        fun startPacer() {
+            if (pacer != null) return
+            pacer = launch {
+                val frameNs = 20_000_000L
+                var next = System.nanoTime()
+                while (isActive) {
+                    jitter.next()?.let { onFrame(it) }
+                    next += frameNs
+                    val wait = next - System.nanoTime()
+                    if (wait > 0) delay(wait / 1_000_000L) else if (wait < -200_000_000L) next = System.nanoTime() // fell far behind: resync
+                    val now = System.currentTimeMillis()
+                    if (now - lastReport >= 10_000) {
+                        Log.d(TAG, "BT link: max gap ${maxGapMs} ms, queue ${jitter.size}, underruns ${jitter.underruns}, drops ${jitter.drops}")
+                        maxGapMs = 0; lastReport = now
+                    }
+                }
+            }
+        }
+
+        try { for (event in channel) {
             when (event) {
                 is CompanionEvent.Format -> {
                     formatOk = event.sampleRate == PcmFormat.SAMPLE_RATE && event.bits == 16 &&
                         event.subslotBytes == 2 && event.channels == 2
                     gaps.reset(); chunker.reset()
                 }
-                is CompanionEvent.Stream -> if (!event.active) { gaps.reset(); chunker.reset() }
+                is CompanionEvent.Stream -> if (!event.active) { gaps.reset(); chunker.reset(); jitter.clear() }
                 is CompanionEvent.Audio -> if (formatOk) {
                     val silence = gaps.silenceBefore(event.sofFrame, event.pcm.size)
                     if (silence > 0) {
@@ -75,9 +113,44 @@ class CompanionSource internal constructor(private val hub: CompanionHub) : Audi
                     chunker.push(event.pcm) { frames.add(it) }
                     for (f in frames) onFrame(f)
                 }
+                is CompanionEvent.SbcConfig -> { chunker.reset(); resampler = null; resamplerRate = 0 }
+                is CompanionEvent.SbcAudio -> {
+                    var pcm = sbc.decode(event.data, event.frames)
+                    if (pcm.isEmpty()) continue
+                    if (sbc.channels == 1) pcm = monoToStereo(pcm)
+                    val rate = sbc.sampleRate
+                    if (rate != PcmFormat.SAMPLE_RATE) {
+                        if (resamplerRate != rate) {
+                            resampler = if (rate == 44_100) AudioResampler(l = 160, m = 147, channels = 2) else null
+                            resamplerRate = rate
+                        }
+                        pcm = resampler?.resample(pcm) ?: continue // only 44.1 and 48 kHz are negotiated
+                    }
+                    val now = System.currentTimeMillis()
+                    if (lastArrival != 0L) maxGapMs = maxOf(maxGapMs, now - lastArrival)
+                    lastArrival = now
+                    chunker.push(pcm) { jitter.push(it) }
+                    startPacer()
+                }
                 else -> {}
             }
+        } } finally {
+            pacer?.cancel()
+            sbc.close()
         }
+        }
+    }
+
+    /** Duplicates each 16-bit sample into left and right. */
+    private fun monoToStereo(mono: ByteArray): ByteArray {
+        val out = ByteArray(mono.size * 2)
+        var o = 0
+        var i = 0
+        while (i + 1 < mono.size) {
+            out[o] = mono[i]; out[o + 1] = mono[i + 1]; out[o + 2] = mono[i]; out[o + 3] = mono[i + 1]
+            o += 4; i += 2
+        }
+        return out
     }
 
     override fun release() {
@@ -87,6 +160,7 @@ class CompanionSource internal constructor(private val hub: CompanionHub) : Audi
     }
 
     private companion object {
+        const val TAG = "CompanionSource"
         /** 5 × 20 ms = the gate's 100 ms look-back. */
         const val DELAY_FRAMES = 5
     }

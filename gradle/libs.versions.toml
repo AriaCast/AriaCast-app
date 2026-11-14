@@ -15,7 +15,7 @@ lifecycleCompose = "2.10.0"
 glance = "1.1.1"
 tvMaterial = "1.0.1"
 media3 = "1.10.1"
-ktor = "2.3.8"
+ktor = "2.3.13"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

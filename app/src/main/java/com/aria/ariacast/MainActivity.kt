@@ -158,7 +158,7 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
         if (servers.isEmpty()) return
         pendingServers = servers
         // With an AriaCompanion board in speaker-capable state, screen capture is never needed.
-        val effective = if (source == SourceKind.SYSTEM_CAPTURE && CompanionHub.get(this).isAttached) SourceKind.COMPANION_USB else source
+        val effective = if (source == SourceKind.SYSTEM_CAPTURE && CompanionHub.get(this).isUsbAttached) SourceKind.COMPANION_USB else source
         val missing = neededPermissions(effective)
         if (missing.isNotEmpty()) {
             pendingSource = if (effective == SourceKind.SYSTEM_CAPTURE) null else effective to inputDeviceId
@@ -194,12 +194,15 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
         updateManager = UpdateManager(this)
         loadGroups()
 
-        // First run: onboarding. TVs and receivers already running open on the Receive screen.
+        // First run: onboarding. A TV opens on the full-screen receiver, a phone that is
+        // already receiving on the Receive destination, everything else on Send.
         _screen.value = when {
             !prefs.getBoolean(KEY_ONBOARDED, false) -> Screen.ONBOARDING
-            isTv || ReceiverHub.get(this).running.value -> Screen.RECEIVE
+            isTv -> Screen.RECEIVER_DISPLAY
+            ReceiverHub.get(this).running.value -> Screen.RECEIVE
             else -> Screen.HOME
         }
+        screenFromIntent(intent)?.let { _screen.value = it }
 
         setContent {
             AriaTheme { AriaApp(this) }
@@ -212,7 +215,17 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        screenFromIntent(intent)?.let { _screen.value = it }
         handleDeepLink(intent)
+    }
+
+    private fun screenFromIntent(intent: Intent?): Screen? =
+        intent?.getStringExtra(EXTRA_SCREEN)?.let { name -> Screen.entries.firstOrNull { it.name == name } }
+            ?.takeIf { _screen.value != Screen.ONBOARDING }
+
+    override fun setMultiroomEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(SettingsActivity.KEY_MULTIROOM_ENABLED, enabled).apply()
+        _multiroom.value = enabled
     }
 
     override fun onStart() {
@@ -278,13 +291,17 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
     }
 
-    override fun openSettings() = startActivity(Intent(this, SettingsActivity::class.java))
+    override fun openSettings() = navigate(Screen.SETTINGS)
 
     override fun openActivity(cls: Class<*>) = startActivity(Intent(this, cls))
 
     override fun finishOnboarding() {
         prefs.edit().putBoolean(KEY_ONBOARDED, true).apply()
-        _screen.value = if (isTv || ReceiverHub.get(this).running.value) Screen.RECEIVE else Screen.HOME
+        _screen.value = when {
+            isTv -> Screen.RECEIVER_DISPLAY
+            ReceiverHub.get(this).running.value -> Screen.RECEIVE
+            else -> Screen.HOME
+        }
     }
 
     // ---------------------------------------------------------------- deep links
@@ -374,6 +391,7 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
 
     companion object {
         const val KEY_ONBOARDED = "onboarding_done_v2"
+        const val EXTRA_SCREEN = "com.aria.ariacast.EXTRA_SCREEN"
         const val KEY_GROUPS = "saved_groups"
 
         fun platformForDeepLinkType(type: String?): String = when (type?.lowercase()) {

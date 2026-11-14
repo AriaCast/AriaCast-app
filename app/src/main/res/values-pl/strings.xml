@@ -40,20 +40,13 @@
     <string name="about">O</string>
     <string name="version_format">Wersja %1$s</string>
     <string name="select_appearance">Wybierz wygląd</string>
-    <string name="select_accent_color">Wybierz kolor akcentu</string>
     <string name="theme_light">Jasny</string>
     <string name="theme_dark">Ciemny</string>
     <string name="theme_follow_system">Systemowy</string>
-    <string name="accent_blue">Niebieski</string>
-    <string name="accent_purple">Fioletowy</string>
-    <string name="accent_green">Zielony</string>
-    <string name="accent_orange">Pomarańczowy</string>
-    <string name="accent_pink">Różowy</string>
     <string name="secret_logs_one_tap">Jeszcze jedno stuknięcie, aby przejść do tajnych logów…</string>
     <string name="secret_logs_multiple_taps">%1$d więcej stuknięć, aby uzyskać dostęp do tajnych logów…</string>
     <string name="server_cleared">Ostatnie połączenie z serwerem zostało zakończone</string>
     <string name="appearance">Wygląd</string>
-    <string name="accent_color">Kolor akcentu</string>
     <string name="language">Język</string>
     <string name="select_language">Wybierz język</string>
     <string name="language_default">Domyślny systemu</string>
@@ -154,4 +147,6 @@
     <string name="plugin_folder">Folder wtyczek</string>
     <string name="ariacast_protocol_desc">Natywny protokół przesyłania hi-fi</string>
     <string name="companion_saved">Zapisanych: %1$s</string>
+    <string name="nav_send">Wysyłaj</string>
+    <string name="nav_receive">Odbieraj</string>
 </resources>

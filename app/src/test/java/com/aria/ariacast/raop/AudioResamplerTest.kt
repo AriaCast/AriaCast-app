@@ -24,4 +24,29 @@ class AudioResamplerTest {
         // 882 samples * 4 bytes/sample = 3528 bytes
         assertEquals(3528, output.size)
     }
+
+    @Test
+    fun upsamples44kTo48kAcrossIrregularBlocks() {
+        // AriaCompanion BT: SBC decodes 44.1 kHz in blocks of 128 samples per frame, several
+        // frames per packet. Upsampling used to write past the output buffer.
+        val resampler = AudioResampler(l = 160, m = 147, channels = 2)
+        var inSamples = 0L
+        var outSamples = 0L
+        repeat(500) { i ->
+            val frames = 1 + i % 7
+            val input = ByteArray(frames * 128 * 4)
+            inSamples += frames * 128
+            outSamples += resampler.resample(input).size / 4
+        }
+        val expected = inSamples * 160 / 147
+        assertTrue("got $outSamples, expected ~$expected", kotlin.math.abs(outSamples - expected) <= 2)
+    }
+
+    @Test
+    fun downsampleKeepsLongRunRate() {
+        val resampler = AudioResampler(channels = 2)
+        var out = 0L
+        repeat(1000) { out += resampler.resample(ByteArray(3840)).size / 4 }
+        assertEquals(882_000L, out)
+    }
 }

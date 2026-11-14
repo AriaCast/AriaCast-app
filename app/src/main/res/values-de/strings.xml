@@ -45,20 +45,13 @@
     <string name="about">Über</string>
     <string name="version_format">Version %1$s</string>
     <string name="select_appearance">Erscheinungsbild wählen</string>
-    <string name="select_accent_color">Akzentfarbe wählen</string>
     <string name="theme_light">Hell</string>
     <string name="theme_dark">Dunkel</string>
     <string name="theme_follow_system">System folgen</string>
-    <string name="accent_blue">Blau</string>
-    <string name="accent_purple">Lila</string>
-    <string name="accent_green">Grün</string>
-    <string name="accent_orange">Orange</string>
-    <string name="accent_pink">Rosa</string>
     <string name="secret_logs_one_tap">Noch einmal tippen für geheime Protokolle…</string>
     <string name="secret_logs_multiple_taps">Noch %1$d Mal tippen für geheime Protokolle…</string>
     <string name="server_cleared">Letzte Serververbindung gelöscht</string>
     <string name="appearance">Erscheinungsbild</string>
-    <string name="accent_color">Akzentfarbe</string>
     <string name="language">Sprache</string>
     <string name="select_language">Sprache wählen</string>
     <string name="language_default">Systemstandard</string>
@@ -153,4 +146,6 @@
     <string name="companion_setup">Ersteinrichtung</string>
     <string name="companion_setup_desc">Verbinden Sie Ihr Telefon mit dem WLAN-Netzwerk „AriaCast-Setup“, das der ESP32 bereitstellt, und geben Sie anschließend unten die Zugangsdaten für Ihr Heim-WLAN ein.</string>
     <string name="companion_wifi_ssid">WLAN-SSID für zu Hause</string>
+    <string name="nav_send">Senden</string>
+    <string name="nav_receive">Empfangen</string>
 </resources>

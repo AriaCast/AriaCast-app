@@ -36,6 +36,27 @@ jobs:
           name: aria_companion-uf2
           path: build/aria_companion.uf2
 
+  firmware-bt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the ESP32 Bluetooth firmware (ESP-IDF 5.5)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5
+          target: esp32
+          path: AriaCompanion/firmware-bt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aria_companion_bt
+          path: |
+            AriaCompanion/firmware-bt/build/aria_companion_bt.bin
+            AriaCompanion/firmware-bt/build/bootloader/bootloader.bin
+            AriaCompanion/firmware-bt/build/partition_table/partition-table.bin
+            AriaCompanion/firmware-bt/build/flasher_args.json
+
   web-remote:
     runs-on: ubuntu-latest
     steps:

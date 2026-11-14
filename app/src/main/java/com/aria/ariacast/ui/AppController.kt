@@ -7,8 +7,17 @@ import com.aria.ariacast.Server
 import com.aria.ariacast.pipeline.SourceKind
 import kotlinx.coroutines.flow.StateFlow
 
-/** Screens the app can show. Kept as a simple state, no navigation library needed. */
-enum class Screen { HOME, NOW_PLAYING, RECEIVE, DOCTOR, ONBOARDING }
+/**
+ * Screens the app can show. Kept as a simple state, no navigation library needed.
+ * HOME, RECEIVE and SETTINGS are the three navigation destinations; the rest are pushed
+ * over them and return to the destination they were opened from.
+ */
+enum class Screen {
+    HOME, RECEIVE, SETTINGS,
+    NOW_PLAYING, RECEIVER_DISPLAY, DOCTOR, ONBOARDING;
+
+    val isDestination: Boolean get() = this == HOME || this == RECEIVE || this == SETTINGS
+}
 
 /** Everything the Compose UI needs from MainActivity. */
 interface AppController {
@@ -30,6 +39,7 @@ interface AppController {
     fun saveGroup(name: String, hosts: List<String>)
     fun deleteGroup(group: CastGroup)
     fun requestNotificationAccess()
+    fun setMultiroomEnabled(enabled: Boolean)
     fun openSettings()
     fun openActivity(cls: Class<*>)
     fun finishOnboarding()

@@ -155,7 +155,11 @@ class MediaNotificationListener : NotificationListenerService() {
     private fun getActiveMediaControllers(): List<MediaController> {
         val componentName = ComponentName(this, MediaNotificationListener::class.java)
         return try {
-            mediaSessionManager.getActiveSessions(componentName)
+            // Skip AriaCast's own session (the one that carries the receiver volume and the
+            // notification controls): it is always "playing" while casting, so it used to win
+            // the pick below - track info came back empty, and play/pause from the app or a
+            // receiver reached that session and stopped the cast instead of pausing the music.
+            mediaSessionManager.getActiveSessions(componentName).filter { it.packageName != packageName }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get active media sessions", e)
             emptyList()

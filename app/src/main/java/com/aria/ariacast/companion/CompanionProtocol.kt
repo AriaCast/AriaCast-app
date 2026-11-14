@@ -59,6 +59,31 @@ object CompanionProtocol {
 
     /** USB frames (SOF) are 1 ms apart and the counter is 11 bits wide. */
     const val SOF_MODULO = 2048
+
+    // ---- Bluetooth board (ESP32), docs/ariacompanion-bt.md; mirrors firmware-bt/main/aria_bt_proto.h
+
+    const val BT_PROTOCOL_VERSION = 1
+    /** The app offers bonded devices whose name starts with this. */
+    const val BT_NAME_PREFIX = "AriaCompanion"
+    /** Standard SPP service UUID; the board's server is registered under it. */
+    const val SPP_UUID = "00001101-0000-1000-8000-00805F9B34FB"
+
+    const val CHUNK_SBC_CONFIG = 0x06
+    const val CHUNK_SBC_AUDIO = 0x07
+    const val CHUNK_INFO = 0x08
+    const val CHUNK_STATS = 0x09
+    const val SBC_CONFIG_BYTES = 12
+    const val SBC_AUDIO_PREFIX = 8
+
+    /** App -> board command: u8 magic, u8 command, u16 value. Codes are the USB request numbers. */
+    const val CMD_BYTES = 4
+    const val CMD_GET_INFO = REQ_GET_INFO
+    const val CMD_SET_MODE = REQ_SET_MODE
+    const val CMD_HEARTBEAT = REQ_HEARTBEAT
+    const val CMD_GET_STATS = REQ_GET_STATS
+    const val CMD_RESET_STATS = REQ_RESET_STATS
+
+    const val CAP_BLUETOOTH = 1 shl 4
 }
 
 data class CompanionInfo(

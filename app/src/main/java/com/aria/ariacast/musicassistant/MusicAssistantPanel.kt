@@ -1,5 +1,7 @@
 package com.aria.ariacast.musicassistant
 
+import androidx.compose.foundation.layout.padding
+
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,7 +33,13 @@ import com.aria.ariacast.CastDestination
 import com.aria.ariacast.CastState
 import com.aria.ariacast.R
 import com.aria.ariacast.ui.AppController
-import com.aria.ariacast.ui.SectionCard
+import com.aria.ariacast.ui.LeadingIcon
+import com.aria.ariacast.ui.ListBlock
+import com.aria.ariacast.ui.ListGroup
+import com.aria.ariacast.ui.ListRow
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Speaker
+import androidx.compose.material3.LinearProgressIndicator
 import com.aria.ariacast.ui.StatusDot
 import com.aria.ariacast.ui.theme.StatusColors
 import kotlinx.coroutines.delay
@@ -77,31 +85,33 @@ fun MusicAssistantPanel(controller: AppController) {
         }
     }
 
-    SectionCard(title = stringResource(R.string.ma_title)) {
+    ListGroup(
+        Modifier.padding(top = 8.dp),
+        title = stringResource(R.string.ma_title),
+        actions = { TextButton(onClick = { showLogin = true }) { Text(stringResource(if (needsAuth) R.string.ma_sign_in else R.string.ma_account)) } },
+    ) {
         when {
-            needsAuth -> {
-                Text(stringResource(R.string.ma_needs_auth), style = MaterialTheme.typography.bodyMedium)
-                OutlinedButton(onClick = { showLogin = true }) { Text(stringResource(R.string.ma_sign_in)) }
+            needsAuth -> ListBlock { Text(stringResource(R.string.ma_needs_auth), style = MaterialTheme.typography.bodyMedium) }
+            error != null && players == null -> ListBlock {
+                Text(stringResource(R.string.ma_unreachable, error ?: ""), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             }
-            error != null && players == null -> Text(stringResource(R.string.ma_unreachable, error ?: ""), style = MaterialTheme.typography.bodyMedium)
-            players == null -> Text(stringResource(R.string.loading), style = MaterialTheme.typography.bodyMedium)
+            players == null -> ListBlock { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             else -> {
-                Text(stringResource(R.string.ma_pick_player), style = MaterialTheme.typography.bodySmall)
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    players!!.filter { it.available }.forEach { p ->
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            StatusDot(if (p.playingAriaCast) StatusColors.Connected else null, stringResource(R.string.status_connected))
-                            TextButton(onClick = {
-                                scope.launch {
-                                    runCatching { MaClient(ma.host, token).playAriaCastOn(p.id) }
-                                        .onFailure { error = it.message }
-                                    delay(1000); refresh++
-                                }
-                            }, modifier = Modifier.weight(1f)) { Text(p.name, Modifier.fillMaxWidth()) }
-                        }
-                    }
+                ListBlock { Text(stringResource(R.string.ma_pick_player), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                players!!.filter { it.available }.forEach { p ->
+                    ListRow(
+                        headline = p.name,
+                        supporting = if (p.playingAriaCast) stringResource(R.string.status_playing) else null,
+                        leading = { LeadingIcon(Icons.Filled.Speaker, active = p.playingAriaCast) },
+                        selected = p.playingAriaCast,
+                        onClick = {
+                            scope.launch {
+                                runCatching { MaClient(ma.host, token).playAriaCastOn(p.id) }.onFailure { error = it.message }
+                                delay(1000); refresh++
+                            }
+                        },
+                    )
                 }
-                TextButton(onClick = { showLogin = true }) { Text(stringResource(R.string.ma_account)) }
             }
         }
     }

@@ -6,6 +6,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.bluetooth.BluetoothManager
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
@@ -31,7 +33,7 @@ import kotlinx.coroutines.launch
 sealed interface CompanionStatus {
     data object Absent : CompanionStatus
     data object NeedsPermission : CompanionStatus
-    data class Connected(val info: CompanionInfo, val speaker: Boolean, val streaming: Boolean) : CompanionStatus
+    data class Connected(val info: CompanionInfo, val speaker: Boolean, val streaming: Boolean, val bluetooth: Boolean = false) : CompanionStatus
     data object Switching : CompanionStatus
     data object Bootloader : CompanionStatus
     data class Error(val message: String) : CompanionStatus
@@ -62,7 +64,9 @@ class CompanionHub private constructor(private val app: Context) {
 
     val gate = GateMonitor(app) { prefs.getBoolean(KEY_INCLUDE_GAMES, false) }
 
-    @Volatile private var usb: CompanionUsb? = null
+    /** The board in use: USB when one is plugged in, otherwise the chosen Bluetooth board. */
+    @Volatile private var link: CompanionLink? = null
+    private var bluetoothJob: Job? = null
     private var heartbeatJob: Job? = null
     private var statsJob: Job? = null
     @Volatile private var castingWanted = false
@@ -108,6 +112,7 @@ class CompanionHub private constructor(private val app: Context) {
         // Exported: the attach/detach broadcasts come from the system USB service.
         ContextCompat.registerReceiver(app, usbReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
         rescan()
+        startBluetooth()
     }
 
     /** Looks for an already-attached board, e.g. when the app starts with it plugged in. */
@@ -123,7 +128,7 @@ class CompanionHub private constructor(private val app: Context) {
             return
         }
         if (!CompanionUsb.isCompanion(device)) return
-        if (usb?.device?.deviceName == device.deviceName) return
+        if ((link as? CompanionUsb)?.device?.deviceName == device.deviceName) return
         if (usbManager.hasPermission(device)) openDevice(device) else requestPermission(device)
     }
 
@@ -132,13 +137,14 @@ class CompanionHub private constructor(private val app: Context) {
             _status.value = CompanionStatus.Absent
             return
         }
-        val current = usb ?: return
+        val current = link as? CompanionUsb ?: return
         if (current.device.deviceName != device.deviceName) return
         closeDevice()
         // A mode switch re-enumerates the board: it disappears and comes back within ~1 s.
         if (!isReenumeration()) {
             _status.value = CompanionStatus.Absent
             events?.close() // unplugged: end the running cast
+            startBluetooth() // a paired Bluetooth board can take over
         }
     }
 
@@ -157,40 +163,67 @@ class CompanionHub private constructor(private val app: Context) {
                 _status.value = CompanionStatus.Error("AriaCompanion could not be opened")
                 return@launch
             }
-            val info = opened.getInfo()
-            if (info == null || info.protocolVersion != CompanionProtocol.PROTOCOL_VERSION) {
-                opened.close()
-                _status.value = CompanionStatus.Error(
-                    if (info == null) "AriaCompanion did not answer" else "AriaCompanion firmware speaks protocol ${info.protocolVersion}; update it from this screen"
-                )
-                return@launch
-            }
-            usb = opened
-            parser.reset()
-            val speaker = info.mode == CompanionProtocol.MODE_SPEAKER
-            _speakerActive.value = speaker
-            _status.value = CompanionStatus.Connected(info, speaker, streaming = false)
-            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "AriaCompanion ${info.firmwareVersionString} connected (${if (speaker) "speaker" else "private"} mode)")
-            opened.startReading(
-                onBytes = { bytes, n -> onBulkBytes(bytes, n) },
-                onError = { msg -> PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AriaCompanion read stopped: $msg") },
-            )
-            startStatsPolling()
-            reconcile()
+            // A plugged-in board always wins over the Bluetooth one.
+            if (link is CompanionBt) closeDevice()
+            attachLink(opened)
         }
+    }
+
+    /** Starts using [opened]: reads its stream, checks it speaks our protocol, then applies the wanted mode. */
+    private fun attachLink(opened: CompanionLink): Boolean {
+        val bluetooth = opened.kind == CompanionLink.Kind.BLUETOOTH
+        parser.reset()
+        link = opened
+        // Read first: the Bluetooth board answers GET_INFO inside the stream.
+        opened.startReading(
+            onBytes = { bytes, n -> onBulkBytes(opened, bytes, n) },
+            onError = { msg ->
+                PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "AriaCompanion read stopped: $msg")
+                if (bluetooth) scope.launch { onBluetoothLost(opened) }
+            },
+        )
+        val info = opened.getInfo()
+        val expected = if (bluetooth) CompanionProtocol.BT_PROTOCOL_VERSION else CompanionProtocol.PROTOCOL_VERSION
+        if (info == null || info.protocolVersion != expected) {
+            link = null
+            opened.close()
+            _status.value = CompanionStatus.Error(
+                if (info == null) "AriaCompanion did not answer" else "AriaCompanion firmware speaks protocol ${info.protocolVersion}; update it"
+            )
+            return false
+        }
+        val speaker = info.mode == CompanionProtocol.MODE_SPEAKER
+        _speakerActive.value = speaker
+        _status.value = CompanionStatus.Connected(info, speaker, streaming = false, bluetooth = bluetooth)
+        PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE,
+            "AriaCompanion ${info.firmwareVersionString} connected over ${if (bluetooth) "Bluetooth" else "USB"} (${if (speaker) "speaker" else "private"} mode)")
+        startStatsPolling()
+        reconcile()
+        return true
+    }
+
+    /** The Bluetooth link dropped (board off, out of range): end a cast through it and try again later. */
+    private fun onBluetoothLost(lost: CompanionLink) {
+        if (link !== lost) return
+        closeDevice()
+        _status.value = CompanionStatus.Absent
+        events?.close()
+        startBluetooth()
     }
 
     private fun closeDevice() {
         heartbeatJob?.cancel(); heartbeatJob = null
         statsJob?.cancel(); statsJob = null
-        usb?.close()
-        usb = null
+        link?.close()
+        link = null
         _speakerActive.value = false
     }
 
-    private fun onBulkBytes(bytes: ByteArray, n: Int) {
+    private fun onBulkBytes(from: CompanionLink, bytes: ByteArray, n: Int) {
+        if (link !== from) return
         for (event in parser.feed(bytes, 0, n)) {
             when (event) {
+                is CompanionEvent.Info, is CompanionEvent.Stats -> { from.onReply(event); continue }
                 is CompanionEvent.Mode -> {
                     val speaker = event.mode == CompanionProtocol.MODE_SPEAKER
                     _speakerActive.value = speaker
@@ -211,18 +244,21 @@ class CompanionHub private constructor(private val app: Context) {
 
     /** Brings the board's mode in line with what the app wants right now. */
     private fun reconcile() {
-        val device = usb ?: return
+        val device = link ?: return
         val wantSpeaker = castingWanted && !inCall
         val isSpeaker = _speakerActive.value
         if (wantSpeaker) startHeartbeat() else { heartbeatJob?.cancel(); heartbeatJob = null }
         if (wantSpeaker == isSpeaker) return
-        lastModeSwitchAt = System.currentTimeMillis()
+        val usbBoard = device.kind == CompanionLink.Kind.USB
+        if (usbBoard) lastModeSwitchAt = System.currentTimeMillis()
         scope.launch {
-            _status.value = CompanionStatus.Switching
+            // The USB board re-enumerates (it drops off the bus and comes back), so it is
+            // "switching" until it is reopened. The Bluetooth board stays linked and just
+            // answers with a MODE chunk, which updates the Connected status in place.
+            if (usbBoard) _status.value = CompanionStatus.Switching
             val ok = device.setMode(if (wantSpeaker) CompanionProtocol.MODE_SPEAKER else CompanionProtocol.MODE_PRIVATE)
             PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "AriaCompanion -> ${if (wantSpeaker) "speaker" else "private"} mode${if (ok) "" else " (failed)"}")
             if (!ok) _status.value = CompanionStatus.Error("AriaCompanion did not accept the mode change")
-            // The board now re-enumerates; the detach/attach broadcasts reopen it.
         }
     }
 
@@ -230,7 +266,7 @@ class CompanionHub private constructor(private val app: Context) {
         if (heartbeatJob?.isActive == true) return
         heartbeatJob = scope.launch {
             while (isActive) {
-                usb?.heartbeat(HEARTBEAT_TIMEOUT_S)
+                link?.heartbeat(HEARTBEAT_TIMEOUT_S)
                 delay(1000)
             }
         }
@@ -240,7 +276,7 @@ class CompanionHub private constructor(private val app: Context) {
         statsJob?.cancel()
         statsJob = scope.launch {
             while (isActive) {
-                _stats.value = usb?.getStats()
+                _stats.value = link?.getStats()
                 delay(500)
             }
         }
@@ -255,16 +291,70 @@ class CompanionHub private constructor(private val app: Context) {
 
     fun createSource(): AudioSource = CompanionSource(this)
 
-    val isAttached: Boolean get() = usb != null
+    /** A board is linked, over USB or Bluetooth. */
+    val isAttached: Boolean get() = link != null
 
-    fun rebootToBootloader(): Boolean = usb?.rebootToBootloader() ?: false
+    /** A board is plugged in over USB: then every cast can go through it without screen capture. */
+    val isUsbAttached: Boolean get() = link is CompanionUsb
 
-    fun resetStats() { scope.launch { usb?.resetStats() } }
+    fun rebootToBootloader(): Boolean = (link as? CompanionUsb)?.rebootToBootloader() ?: false
+
+    fun resetStats() { scope.launch { link?.resetStats() } }
+
+    // ------------------------------------------------------------------ Bluetooth board
+
+    /** Address of the Bluetooth board chosen on the AriaCompanion screen, or null. */
+    val bluetoothAddress: String? get() = prefs.getString(KEY_BT_ADDRESS, null)
+
+    private val _bluetoothConnecting = MutableStateFlow(false)
+    /** True while the app is trying to reach the chosen Bluetooth board. */
+    val bluetoothConnecting: StateFlow<Boolean> = _bluetoothConnecting.asStateFlow()
+
+    fun setBluetoothDevice(address: String?) {
+        prefs.edit().putString(KEY_BT_ADDRESS, address).apply()
+        val current = link
+        if (current is CompanionBt && current.id != address) {
+            scope.launch { onBluetoothLost(current) }
+        }
+        bluetoothJob?.cancel(); bluetoothJob = null
+        startBluetooth()
+    }
+
+    fun canUseBluetooth(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            ContextCompat.checkSelfPermission(app, android.Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Keeps trying to link the chosen Bluetooth board while no board is linked, backing off
+     * from 3 s to 30 s. Safe to call repeatedly (after the permission is granted, after unplugging).
+     */
+    @SuppressLint("MissingPermission")
+    fun startBluetooth() {
+        if (bluetoothJob?.isActive == true) return
+        val adapter = app.getSystemService(BluetoothManager::class.java)?.adapter ?: return
+        bluetoothJob = scope.launch {
+            var backoff = 3_000L
+            while (isActive) {
+                val address = bluetoothAddress ?: break
+                if (!canUseBluetooth()) break
+                if (link == null && adapter.isEnabled) {
+                    _bluetoothConnecting.value = true
+                    val opened = runCatching { CompanionBt.open(adapter.getRemoteDevice(address)) }.getOrNull()
+                    _bluetoothConnecting.value = false
+                    if (opened != null && link == null && attachLink(opened)) backoff = 3_000L
+                    else { opened?.takeIf { link !== it }?.close(); backoff = (backoff * 2).coerceAtMost(30_000L) }
+                }
+                delay(if (link != null) 5_000L else backoff)
+            }
+            _bluetoothConnecting.value = false
+        }
+    }
 
     companion object {
         const val ACTION_USB_PERMISSION = "com.aria.ariacast.companion.USB_PERMISSION"
         const val KEY_INCLUDE_GAMES = "companion_include_games"
         const val KEY_AUTO_CAST = "companion_auto_cast"
+        const val KEY_BT_ADDRESS = "companion_bt_address"
         private const val HEARTBEAT_TIMEOUT_S = 3
 
         @Volatile private var instance: CompanionHub? = null

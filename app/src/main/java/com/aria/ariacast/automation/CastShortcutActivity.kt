@@ -53,7 +53,7 @@ class CastShortcutActivity : ComponentActivity() {
         val name = (if (automation) intent.getStringExtra(EXTRA_NAME) else prefs.getString(AudioCastService.KEY_LAST_SERVER_NAME, null)) ?: host
         target = JSONObject().put("name", name).put("host", host).put("port", port).put("platform", platform)
 
-        if (CompanionHub.get(this).isAttached) {
+        if (CompanionHub.get(this).isUsbAttached) {
             start(Intent(this, AudioCastService::class.java).setAction(AudioCastService.ACTION_START_SOURCE)
                 .putExtra(AudioCastService.EXTRA_SOURCE, SourceKind.COMPANION_USB.id))
             finish()

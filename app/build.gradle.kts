@@ -24,6 +24,14 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.aria.ariacast"
     compileSdk = 36
+    ndkVersion = "27.1.12297006"
+
+    // SBC decoder for the AriaCompanion BT board (docs/ariacompanion-bt.md).
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/sbc/CMakeLists.txt")
+        }
+    }
 
     signingConfigs {
         create("release") {
@@ -117,12 +125,12 @@ dependencies {
     implementation(libs.ktor.server.cio)
     implementation(libs.ktor.server.websockets)
     implementation(libs.ktor.server.cors)
-    implementation("io.ktor:ktor-client-core:2.3.8")
-    implementation("io.ktor:ktor-client-websockets:2.3.8")
-    implementation("io.ktor:ktor-client-okhttp:2.3.8")
-    implementation("io.ktor:ktor-client-logging:2.3.8")
-    implementation("io.ktor:ktor-client-content-negotiation:2.3.8")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.8")
+    implementation("io.ktor:ktor-client-core:2.3.13")
+    implementation("io.ktor:ktor-client-websockets:2.3.13")
+    implementation("io.ktor:ktor-client-okhttp:2.3.13")
+    implementation("io.ktor:ktor-client-logging:2.3.13")
+    implementation("io.ktor:ktor-client-content-negotiation:2.3.13")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.13")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("androidx.media:media:1.7.0")
     

@@ -1,0 +1,7 @@
+#ifndef ARIA_BT_VERSION_H
+#define ARIA_BT_VERSION_H
+/* Firmware version 1.0; INFO reports 0xMMmm. */
+#define ARIA_BT_FW_VERSION_MAJOR 1
+#define ARIA_BT_FW_VERSION_MINOR 0
+#define ARIA_BT_FW_VERSION_BCD ((ARIA_BT_FW_VERSION_MAJOR << 8) | ARIA_BT_FW_VERSION_MINOR)
+#endif

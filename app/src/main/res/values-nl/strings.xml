@@ -45,20 +45,13 @@
     <string name="about">Over</string>
     <string name="version_format">Versie %1$s</string>
     <string name="select_appearance">Selecteer weergave</string>
-    <string name="select_accent_color">Selecteer accentkleur</string>
     <string name="theme_light">Licht</string>
     <string name="theme_dark">Donker</string>
     <string name="theme_follow_system">Systeem volgen</string>
-    <string name="accent_blue">Blauw</string>
-    <string name="accent_purple">Paars</string>
-    <string name="accent_green">Groen</string>
-    <string name="accent_orange">Oranje</string>
-    <string name="accent_pink">Roze</string>
     <string name="secret_logs_one_tap">Nog één tik om geheime logs te openen…</string>
     <string name="secret_logs_multiple_taps">Nog %1$d tikken om geheime logs te openen…</string>
     <string name="server_cleared">Laatste serververbinding gewist</string>
     <string name="appearance">Weergave</string>
-    <string name="accent_color">Accentkleur</string>
     <string name="language">Taal</string>
     <string name="select_language">Selecteer taal</string>
     <string name="language_default">Systeemstandaard</string>
@@ -132,4 +125,6 @@
     <string name="group_name">Groepsnaam</string>
     <string name="select_devices">Apparaten selecteren</string>
     <string name="save">Opslaan</string>
+    <string name="nav_send">Verzenden</string>
+    <string name="nav_receive">Ontvangen</string>
 </resources>
