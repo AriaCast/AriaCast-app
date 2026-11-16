@@ -153,6 +153,10 @@
     <string name="companion_error">Qualcosa è andato storto</string>
     <string name="add_by_address">Aggiungi per indirizzo</string>
     <string name="add_by_address_desc">Per altoparlanti su un\'altra rete o VLAN che la ricerca non vede.</string>
+    <string name="manual_protocol">Protocollo</string>
+    <string name="manual_advanced">Avanzate</string>
+    <string name="manual_advanced_hide">Nascondi avanzate</string>
+    <string name="manual_port_hint">Lascia vuoto per la porta predefinita (%1$d).</string>
     <string name="allow">Consenti</string>
     <string name="open">Apri</string>
     <string name="more">Altro</string>

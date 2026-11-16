@@ -246,6 +246,10 @@
     <string name="companion_error">Something went wrong</string>
     <string name="add_by_address">Add by address</string>
     <string name="add_by_address_desc">For speakers on another network or VLAN that discovery can\'t see.</string>
+    <string name="manual_protocol">Protocol</string>
+    <string name="manual_advanced">Advanced</string>
+    <string name="manual_advanced_hide">Hide advanced</string>
+    <string name="manual_port_hint">Leave empty for the default port (%1$d).</string>
     <string name="allow">Allow</string>
     <string name="open">Open</string>
     <string name="more">More</string>

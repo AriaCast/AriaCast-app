@@ -384,8 +384,12 @@ class DiscoveryManager(private val context: Context) {
      * Adds a server that was entered manually (e.g. via the "Manual Server Entry" plugin)
      * rather than discovered through mDNS/SSDP/UDP. Returns false if the host is not a
      * valid IP address, true once the server has been merged into [servers].
+     *
+     * [platform] picks the protocol AudioCastService speaks to it ("AriaCast", "AirPlay2",
+     * "AirPlay", "Google Cast"); "Manual" (plugins) is treated as AriaCast.
      */
-    fun addManualServer(host: String, port: Int, name: String): Boolean {
+    @JvmOverloads // plugins call the three-argument form through Rhino
+    fun addManualServer(host: String, port: Int, name: String, platform: String = "Manual"): Boolean {
         if (!Patterns.IP_ADDRESS.matcher(host).matches()) {
             Log.w(TAG, "addManualServer: invalid host '$host'")
             return false
@@ -398,13 +402,16 @@ class DiscoveryManager(private val context: Context) {
             codecs = emptyList(),
             sampleRate = 48000,
             channels = 2,
-            platform = "Manual"
+            platform = platform,
+            // Without mDNS there is no TXT record: give the AirPlay 1 client the same
+            // conservative capabilities it uses when falling back from AirPlay 2.
+            extra = if (platform == "AirPlay") ExtraFields.join(MANUAL_RAOP_TXT) else null
         )
         synchronized(discoveredServers) {
-            discoveredServers[name] = server
+            discoveredServers["manual|$platform|$host|$port"] = server
             _servers.value = discoveredServers.values.toList()
         }
-        Log.d(TAG, "Manually added server: $name @ $host:$port")
+        Log.d(TAG, "Manually added server: $name @ $host:$port ($platform)")
         return true
     }
 
@@ -564,6 +571,7 @@ class DiscoveryManager(private val context: Context) {
         private const val MAX_DEVICE_DESCRIPTION_BYTES = 262_144
 
         /** `_raop._tcp` TXT keys the AirPlay 1 client uses. */
+        private val MANUAL_RAOP_TXT = listOf("md" to "0,1,2", "et" to "0,1", "cn" to "0,1")
         private val RAOP_TXT_KEYS = setOf("et", "cn", "md", "pw", "sf", "ft", "am", "tp", "vn", "vs", "ss", "sr", "ch", "da", "sv", "ek", "pk")
 
         /**
