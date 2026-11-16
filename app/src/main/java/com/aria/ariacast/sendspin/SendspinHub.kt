@@ -183,7 +183,10 @@ class SendspinHub private constructor(private val app: Context) {
 
         override fun onActivated(session: SendspinSession) {
             publish(session)
-            _sourceTarget.value = if ("source@v1" in session.activeRoles && "playback" in session.activities)
+            // Offered whenever the connection is allowed to use the source role, not only while
+            // the server is already playing: the server starts the input only after this device
+            // reports a signal, and the signal comes from casting to this very target.
+            _sourceTarget.value = if ("source@v1" in session.activeRoles)
                 Server("${session.serverName.ifBlank { "Sendspin" }} · input", HOST_TOKEN, 0, "1.0", listOf("pcm"), 48000, 2, PLATFORM)
             else null
         }

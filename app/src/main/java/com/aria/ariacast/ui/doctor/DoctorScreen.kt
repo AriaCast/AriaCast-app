@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import com.aria.ariacast.CastState
 import com.aria.ariacast.MediaNotificationListener
 import com.aria.ariacast.PacketLogActivity
+import com.aria.ariacast.ProtocolsActivity
 import com.aria.ariacast.R
 import com.aria.ariacast.companion.CompanionHub
 import com.aria.ariacast.companion.CompanionStatus
@@ -99,8 +100,14 @@ fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
                 context.getString(if (access) R.string.doctor_notifications_ok else R.string.doctor_notifications_warn),
                 if (access) null else context.getString(R.string.allow) to { controller.requestNotificationAccess() })
 
+            val protocolsOff = !ProtocolsActivity.anyOptionalEnabled(context)
             list += Check(context.getString(R.string.doctor_speakers), if (servers.isNotEmpty()) CheckStatus.OK else CheckStatus.WARN,
-                if (servers.isNotEmpty()) context.getString(R.string.doctor_speakers_ok, servers.size) else context.getString(R.string.doctor_speakers_warn))
+                when {
+                    servers.isNotEmpty() -> context.getString(R.string.doctor_speakers_ok, servers.size)
+                    protocolsOff -> context.getString(R.string.doctor_speakers_protocols_off)
+                    else -> context.getString(R.string.doctor_speakers_warn)
+                },
+                if (servers.isEmpty() && protocolsOff) context.getString(R.string.protocols) to { controller.openActivity(ProtocolsActivity::class.java) } else null)
 
             val state = s?.state?.value ?: CastState.OFF
             if (s == null || state == CastState.OFF) {

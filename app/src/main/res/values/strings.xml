@@ -246,6 +246,10 @@
     <string name="companion_error">Something went wrong</string>
     <string name="add_by_address">Add by address</string>
     <string name="add_by_address_desc">For speakers on another network or VLAN that discovery can\'t see.</string>
+    <string name="manual_protocol">Protocol</string>
+    <string name="manual_advanced">Advanced</string>
+    <string name="manual_advanced_hide">Hide advanced</string>
+    <string name="manual_port_hint">Leave empty for the default port (%1$d).</string>
     <string name="allow">Allow</string>
     <string name="open">Open</string>
     <string name="more">More</string>
@@ -325,6 +329,7 @@
     <string name="doctor_speakers">Speakers</string>
     <string name="doctor_speakers_ok">%1$d found.</string>
     <string name="doctor_speakers_warn">None found. On another VLAN? Add the speaker by address.</string>
+    <string name="doctor_speakers_protocols_off">None found. Only AriaCast is turned on: turn on AirPlay, Google Cast, DLNA or Snapcast in Protocols.</string>
     <string name="doctor_casting">Casting</string>
     <string name="doctor_casting_idle">Start casting to run the remaining checks.</string>
     <string name="doctor_source">Audio signal</string>
@@ -413,6 +418,7 @@
     <string name="status_playing">Playing</string>
     <string name="speakers_empty_title">No speakers found yet</string>
     <string name="speakers_empty_body">AriaCast looks for AirPlay, Google Cast, DLNA, Snapcast and AriaCast speakers on this Wi‑Fi. Speakers on another network can be added by address.</string>
+    <string name="speakers_empty_body_protocols_off">Only AriaCast speakers are searched for right now. Turn on AirPlay, Google Cast, DLNA or Snapcast in Settings → Protocols to find other speakers.</string>
     <string name="send_diagnose">Diagnose</string>
     <string name="settings_features">Features</string>
     <string name="settings_diagnostics">Diagnostics</string>

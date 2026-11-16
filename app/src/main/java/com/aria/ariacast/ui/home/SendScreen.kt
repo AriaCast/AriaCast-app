@@ -88,7 +88,9 @@ import com.aria.ariacast.AudioCastService
 import com.aria.ariacast.CastDestination
 import com.aria.ariacast.CastGroup
 import com.aria.ariacast.CastState
+import com.aria.ariacast.ProtocolsActivity
 import com.aria.ariacast.DiscoveryState
+import com.aria.ariacast.MainActivity
 import com.aria.ariacast.MediaCommand
 import com.aria.ariacast.R
 import com.aria.ariacast.Server
@@ -258,9 +260,18 @@ private fun Speakers(controller: AppController, selection: SourceSelection) {
             if (discovery == DiscoveryState.SCANNING) LinearProgressIndicator(Modifier.fillMaxWidth().clip(RoundedCornerShape(2.dp)))
         }
         if (servers.isEmpty()) {
+            // Every protocol but AriaCast starts off: say so, or the user hunts for network problems.
+            val context = LocalContext.current
+            val protocolsOff = remember(discovery) { !ProtocolsActivity.anyOptionalEnabled(context) }
             EmptyState(
-                Icons.Filled.Speaker, stringResource(R.string.speakers_empty_title), stringResource(R.string.speakers_empty_body),
-                action = { TextButton(onClick = { addDialog = true }) { Text(stringResource(R.string.add_by_address)) } },
+                Icons.Filled.Speaker, stringResource(R.string.speakers_empty_title),
+                stringResource(if (protocolsOff) R.string.speakers_empty_body_protocols_off else R.string.speakers_empty_body),
+                action = {
+                    Row {
+                        if (protocolsOff) TextButton(onClick = { controller.openActivity(ProtocolsActivity::class.java) }) { Text(stringResource(R.string.protocols)) }
+                        TextButton(onClick = { addDialog = true }) { Text(stringResource(R.string.add_by_address)) }
+                    }
+                },
             )
         } else {
             // Active first; then by name, so a TV offering AirPlay and Cast shows its two entries side by side.
@@ -314,30 +325,51 @@ fun platformLabel(platform: String?): String = when (platform) {
     else -> platform
 }
 
+/** Protocols a speaker can be added with by address alone (DLNA needs SSDP-sourced control URLs). */
+private val MANUAL_PROTOCOLS = listOf("AriaCast", "AirPlay2", "AirPlay", "Google Cast")
+
 @Composable
 private fun AddSpeakerDialog(controller: AppController, onDismiss: () -> Unit) {
     var host by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("12889") }
+    var platform by remember { mutableStateOf(MANUAL_PROTOCOLS.first()) }
+    // Empty means the protocol's default port, so switching protocol never leaves a stale one.
+    var port by remember { mutableStateOf("") }
+    var advanced by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
+    val defaultPort = MainActivity.defaultPortForDeepLinkPlatform(platform)
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.Add, null) },
         title = { Text(stringResource(R.string.add_by_address)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.add_by_address_desc), style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(host, { host = it.trim(); error = false }, label = { Text(stringResource(R.string.ip_address)) }, singleLine = true, isError = error,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text(stringResource(R.string.port)) }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                Text(stringResource(R.string.manual_protocol), style = MaterialTheme.typography.labelLarge)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MANUAL_PROTOCOLS.forEach { p ->
+                        FilterChip(selected = platform == p, onClick = { platform = p }, label = { Text(platformLabel(p)) },
+                            leadingIcon = { Icon(platformIcon(p), null, Modifier.size(FilterChipDefaults.IconSize)) })
+                    }
+                }
                 OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.name_optional)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                TextButton(onClick = { advanced = !advanced }) {
+                    Text(stringResource(if (advanced) R.string.manual_advanced_hide else R.string.manual_advanced))
+                }
+                AnimatedVisibility(advanced) {
+                    OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text(stringResource(R.string.port)) }, singleLine = true,
+                        placeholder = { Text(defaultPort.toString()) },
+                        supportingText = { Text(stringResource(R.string.manual_port_hint, defaultPort)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                }
             }
         },
         confirmButton = {
             TextButton(enabled = host.isNotBlank(), onClick = {
-                val p = port.toIntOrNull()?.takeIf { it in 1..65535 } ?: 12889
-                if (controller.addManualServer(host, p, name.ifBlank { host })) onDismiss() else error = true
+                val p = port.toIntOrNull()?.takeIf { it in 1..65535 } ?: defaultPort
+                if (controller.addManualServer(host, p, name.ifBlank { host }, platform)) onDismiss() else error = true
             }) { Text(stringResource(R.string.save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },

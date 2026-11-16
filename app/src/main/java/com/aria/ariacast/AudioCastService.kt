@@ -960,8 +960,18 @@ class AudioCastService : Service() {
                     val feeder = launch {
                         audioBufferFlow.collect { chunk -> streamer.writePcm(resampler.resample(chunk)) }
                     }
+                    // "Streaming" alone doesn't say whether the receiver is playing: log what it
+                    // has asked for (timing requests, resends) once it has had time to start.
+                    val health = launch {
+                        var elapsed = 0L
+                        for (at in longArrayOf(5_000, 30_000)) {
+                            delay(at - elapsed); elapsed = at
+                            PacketLogger.log(PacketDirection.OUT, PacketType.STATS, "${dest.name} after ${at / 1000}s: ${streamer.statsSummary()}")
+                        }
+                    }
                     val r = ended.await()
                     feeder.cancel()
+                    health.cancel()
                     r
                 }
                 Log.w(TAG, "AirPlay ${dest.name} dropped: $reason (${streamer.statsSummary()})")

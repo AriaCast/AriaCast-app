@@ -180,7 +180,8 @@ class ReceiverService : Service() {
     }
 
     private fun shutdown() {
-        SendspinHub.get(this).stop()
+        // Sendspin is not stopped here: it has its own switch, and its source role (this
+        // device as a Music Assistant Live Input) must keep working with the receiver off.
         DlnaRenderer.get(this).stop()
         nsdRegistration?.let { runCatching { getSystemService(NsdManager::class.java).unregisterService(it) } }
         nsdRegistration = null
