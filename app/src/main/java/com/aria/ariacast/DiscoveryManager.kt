@@ -48,6 +48,7 @@ class DiscoveryManager(private val context: Context) {
     private var discoveryJob: Job? = null
     private val activeListeners = mutableListOf<NsdManager.DiscoveryListener>()
     private var raopDiscovery: RaopDiscovery? = null
+    private val fetchedLocations = mutableSetOf<String>()
 
     private fun createNsdListener() = object : NsdManager.DiscoveryListener {
         override fun onDiscoveryStarted(serviceType: String) {
@@ -263,6 +264,7 @@ class DiscoveryManager(private val context: Context) {
             discoveredServers.clear()
             _servers.value = emptyList()
         }
+        synchronized(fetchedLocations) { fetchedLocations.clear() }
         
         try {
             if (multicastLock == null) {
@@ -370,6 +372,14 @@ class DiscoveryManager(private val context: Context) {
         }
     }
 
+    /** Removes [server] whatever key it is stored under (DLNA and AirPlay entries aren't keyed by name). */
+    fun removeServer(server: Server) {
+        synchronized(discoveredServers) {
+            discoveredServers.entries.removeAll { it.value == server }
+            _servers.value = discoveredServers.values.toList()
+        }
+    }
+
     /**
      * Adds a server that was entered manually (e.g. via the "Manual Server Entry" plugin)
      * rather than discovered through mDNS/SSDP/UDP. Returns false if the host is not a
@@ -424,7 +434,8 @@ class DiscoveryManager(private val context: Context) {
                                 val response = String(responsePacket.data, 0, responsePacket.length)
                                 val host = responsePacket.address.hostAddress ?: continue
                                 val location = response.split("\r\n").find { it.startsWith("LOCATION:", true) }?.substring(9)?.trim() ?: continue
-                                launch { resolveDlnaDevice(location, host) }
+                                // Each device answers every search target, every cycle: fetch its description once per scan.
+                                if (synchronized(fetchedLocations) { fetchedLocations.add(location) }) launch { resolveDlnaDevice(location, host) }
                             } catch (e: Exception) { break }
                         }
                     }
@@ -450,52 +461,45 @@ class DiscoveryManager(private val context: Context) {
             connection.connectTimeout = 3000
             connection.readTimeout = 3000
             val xml = connection.inputStream.use { readBounded(it, MAX_DEVICE_DESCRIPTION_BYTES) }
-            val friendlyName = xml.substringAfter("<friendlyName>", "").substringBefore("</friendlyName>")
+            // Only devices that can actually play: routers, NAS media servers and repeaters
+            // answer SSDP too, but without AVTransport there is nothing to cast to.
+            val desc = com.aria.ariacast.dlna.Dlna.parseRemoteDescription(xml) ?: return@withContext
             // Our own DLNA renderer: never offer casting to ourselves.
-            if (xml.substringAfter("<UDN>", "").substringBefore("</UDN>").trim() == com.aria.ariacast.dlna.DlnaRenderer.get(context).udn) return@withContext
-            
-            if (friendlyName.isNotEmpty()) {
-                var avTransportUrl = ""
-                if (xml.contains("urn:schemas-upnp-org:service:AVTransport:1")) {
-                    val raw = xml.substringAfter("urn:schemas-upnp-org:service:AVTransport:1").substringAfter("<controlURL>", "").substringBefore("</controlURL>")
-                    avTransportUrl = resolveTrustedControlUrl(raw, locationUri, hostAddress) ?: ""
-                }
+            if (desc.udn == com.aria.ariacast.dlna.DlnaRenderer.get(context).udn) return@withContext
+            val avTransportUrl = resolveTrustedControlUrl(desc.avControl, locationUri, hostAddress) ?: return@withContext
+            val renderingControlUrl = desc.rcControl?.let { resolveTrustedControlUrl(it, locationUri, hostAddress) }
 
-                var renderingControlUrl = ""
-                if (xml.contains("urn:schemas-upnp-org:service:RenderingControl:1")) {
-                    val raw = xml.substringAfter("urn:schemas-upnp-org:service:RenderingControl:1").substringAfter("<controlURL>", "").substringBefore("</controlURL>")
-                    renderingControlUrl = resolveTrustedControlUrl(raw, locationUri, hostAddress) ?: ""
-                }
+            val extraParts = mutableListOf(ExtraFields.encode("av_control", avTransportUrl))
+            if (renderingControlUrl != null) extraParts.add(ExtraFields.encode("rc_control", renderingControlUrl))
 
-                val extraParts = mutableListOf<String>()
-                if (avTransportUrl.isNotEmpty()) extraParts.add(ExtraFields.encode("av_control", avTransportUrl))
-                if (renderingControlUrl.isNotEmpty()) extraParts.add(ExtraFields.encode("rc_control", renderingControlUrl))
-
-                val server = Server(
-                    name = friendlyName,
-                    host = hostAddress,
-                    port = 0,
-                    version = "1.0",
-                    codecs = listOf("pcm"),
-                    sampleRate = 48000,
-                    channels = 2,
-                    platform = "DLNA",
-                    extra = if (extraParts.isEmpty()) null else extraParts.joinToString(";")
-                )
-                synchronized(discoveredServers) {
-                    val existing = discoveredServers[friendlyName]
-                    if (existing != null && existing.host != hostAddress) {
-                        discoveredServers["$friendlyName@$hostAddress"] = server.copy(name = "$friendlyName ($hostAddress)")
-                    } else {
-                        discoveredServers[friendlyName] = server
-                    }
-                    _servers.value = discoveredServers.values.toList()
-                    if (_state.value != DiscoveryState.SCANNING) {
-                        _state.value = DiscoveryState.FOUND
-                    }
+            val server = Server(
+                name = desc.friendlyName,
+                host = hostAddress,
+                port = 0,
+                version = "1.0",
+                codecs = listOf("pcm"),
+                sampleRate = 48000,
+                channels = 2,
+                platform = "DLNA",
+                extra = extraParts.joinToString(";")
+            )
+            synchronized(discoveredServers) {
+                // One entry per device: a renderer answers several SSDP search targets (and
+                // some publish more than one description), so key by its UDN, not its name.
+                val key = "dlna:" + (desc.udn ?: "$hostAddress|${desc.friendlyName}")
+                // Same name on another host and another device: keep both visible and tell
+                // them apart rather than letting a spoofed name pass as the familiar speaker.
+                val clash = discoveredServers.any { (k, v) -> k != key && v.name == desc.friendlyName && v.host != hostAddress }
+                discoveredServers[key] = if (clash) server.copy(name = "${desc.friendlyName} ($hostAddress)") else server
+                _servers.value = discoveredServers.values.toList()
+                if (_state.value != DiscoveryState.SCANNING) {
+                    _state.value = DiscoveryState.FOUND
                 }
             }
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            // Unreachable or slow right now: let the next SSDP reply try again.
+            synchronized(fetchedLocations) { fetchedLocations.remove(location) }
+        }
     }
 
     private suspend fun startUdpDiscoveryLoop() = withContext(Dispatchers.IO) {

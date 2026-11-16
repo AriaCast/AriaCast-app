@@ -232,6 +232,7 @@
     <string name="doctor_speakers">Altoparlanti</string>
     <string name="doctor_speakers_ok">%1$d trovati.</string>
     <string name="doctor_speakers_warn">Nessuno trovato. Sono su un\'altra VLAN? Aggiungi l\'altoparlante per indirizzo.</string>
+    <string name="doctor_speakers_protocols_off">Nessuno trovato. È attivo solo AriaCast: attiva AirPlay, Google Cast, DLNA o Snapcast in Protocolli.</string>
     <string name="doctor_casting">Trasmissione</string>
     <string name="doctor_casting_idle">Avvia una trasmissione per eseguire gli altri controlli.</string>
     <string name="doctor_source">Segnale audio</string>
@@ -320,6 +321,7 @@
     <string name="status_playing">In riproduzione</string>
     <string name="speakers_empty_title">Ancora nessuno speaker</string>
     <string name="speakers_empty_body">AriaCast cerca speaker AirPlay, Google Cast, DLNA, Snapcast e AriaCast su questa rete Wi‑Fi. Quelli su un\'altra rete si aggiungono per indirizzo.</string>
+    <string name="speakers_empty_body_protocols_off">Al momento si cercano solo speaker AriaCast. Attiva AirPlay, Google Cast, DLNA o Snapcast in Impostazioni → Protocolli per trovare altri speaker.</string>
     <string name="send_diagnose">Diagnostica</string>
     <string name="settings_features">Funzioni</string>
     <string name="settings_diagnostics">Diagnostica</string>

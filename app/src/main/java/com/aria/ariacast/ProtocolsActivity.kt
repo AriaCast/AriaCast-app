@@ -46,6 +46,13 @@ class ProtocolsActivity : ComponentActivity() {
         const val KEY_AIRPLAY_ENABLED = "airplay_enabled"
         const val KEY_AIRPLAY2_ENABLED = "airplay2_enabled"
         const val KEY_SNAPCAST_ENABLED = "snapcast_enabled"
+
+        /** True if discovery looks for anything beyond AriaCast; all of these start off. */
+        fun anyOptionalEnabled(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
+            return listOf(KEY_AIRPLAY_ENABLED, KEY_AIRPLAY2_ENABLED, KEY_GOOGLE_CAST_ENABLED, KEY_DLNA_ENABLED, KEY_SNAPCAST_ENABLED)
+                .any { prefs.getBoolean(it, false) }
+        }
     }
 }
 

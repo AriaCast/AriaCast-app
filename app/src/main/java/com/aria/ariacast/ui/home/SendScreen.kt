@@ -88,6 +88,7 @@ import com.aria.ariacast.AudioCastService
 import com.aria.ariacast.CastDestination
 import com.aria.ariacast.CastGroup
 import com.aria.ariacast.CastState
+import com.aria.ariacast.ProtocolsActivity
 import com.aria.ariacast.DiscoveryState
 import com.aria.ariacast.MediaCommand
 import com.aria.ariacast.R
@@ -258,9 +259,18 @@ private fun Speakers(controller: AppController, selection: SourceSelection) {
             if (discovery == DiscoveryState.SCANNING) LinearProgressIndicator(Modifier.fillMaxWidth().clip(RoundedCornerShape(2.dp)))
         }
         if (servers.isEmpty()) {
+            // Every protocol but AriaCast starts off: say so, or the user hunts for network problems.
+            val context = LocalContext.current
+            val protocolsOff = remember(discovery) { !ProtocolsActivity.anyOptionalEnabled(context) }
             EmptyState(
-                Icons.Filled.Speaker, stringResource(R.string.speakers_empty_title), stringResource(R.string.speakers_empty_body),
-                action = { TextButton(onClick = { addDialog = true }) { Text(stringResource(R.string.add_by_address)) } },
+                Icons.Filled.Speaker, stringResource(R.string.speakers_empty_title),
+                stringResource(if (protocolsOff) R.string.speakers_empty_body_protocols_off else R.string.speakers_empty_body),
+                action = {
+                    Row {
+                        if (protocolsOff) TextButton(onClick = { controller.openActivity(ProtocolsActivity::class.java) }) { Text(stringResource(R.string.protocols)) }
+                        TextButton(onClick = { addDialog = true }) { Text(stringResource(R.string.add_by_address)) }
+                    }
+                },
             )
         } else {
             // Active first; then by name, so a TV offering AirPlay and Cast shows its two entries side by side.

@@ -7,6 +7,25 @@ object Dlna {
     private const val RC = "urn:schemas-upnp-org:service:RenderingControl:1"
     private const val CM = "urn:schemas-upnp-org:service:ConnectionManager:1"
 
+    /** What discovery needs from a remote device description: who it is and where to control it. */
+    data class RemoteRenderer(val udn: String?, val friendlyName: String, val avControl: String, val rcControl: String?)
+
+    /**
+     * Parses a UPnP device description fetched from an SSDP LOCATION. Returns null unless the
+     * device (or one embedded in it, as on Sonos) offers AVTransport: routers, NAS media
+     * servers and repeaters answer SSDP too but can't play anything. [RemoteRenderer.udn] is
+     * the root device's UDN, stable across a device's several SSDP replies; control URLs are raw.
+     */
+    fun parseRemoteDescription(xml: String): RemoteRenderer? {
+        fun tag(t: String, src: String) = Regex("<$t>([\\s\\S]*?)</$t>").find(src)?.groupValues?.get(1)?.let(::xmlUnescape)?.trim()
+        val name = tag("friendlyName", xml)?.takeIf { it.isNotEmpty() } ?: return null
+        val services = Regex("<service>([\\s\\S]*?)</service>").findAll(xml).map { it.groupValues[1] }.toList()
+        fun control(kind: String) = services.firstOrNull { tag("serviceType", it)?.contains(":service:$kind:") == true }
+            ?.let { tag("controlURL", it) }?.takeIf { it.isNotEmpty() }
+        val av = control("AVTransport") ?: return null
+        return RemoteRenderer(tag("UDN", xml)?.takeIf { it.isNotEmpty() }, name, av, control("RenderingControl"))
+    }
+
     fun serviceType(service: String) = when (service) {
         "AVTransport" -> AVT
         "RenderingControl" -> RC

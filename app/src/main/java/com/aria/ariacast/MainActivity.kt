@@ -266,7 +266,7 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
     override fun addManualServer(host: String, port: Int, name: String): Boolean =
         discoveryManager.addManualServer(host, port, name)
 
-    override fun removeServer(server: Server) = discoveryManager.removeServer(server.name)
+    override fun removeServer(server: Server) = discoveryManager.removeServer(server)
 
     private fun loadGroups() {
         val array = JSONArray(prefs.getString(KEY_GROUPS, "[]") ?: "[]")
