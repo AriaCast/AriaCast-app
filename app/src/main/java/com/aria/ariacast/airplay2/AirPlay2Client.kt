@@ -173,7 +173,8 @@ class AirPlay2Client(
         }
         val statusFlags = (info["statusFlags"] as? Long)
             ?: AirPlayTxt.flags(txt["flags"] ?: txt["sf"])
-        ProtoLog.d(TAG, "$host info: model=${info["model"]} statusFlags=0x${statusFlags.toString(16)}")
+        ProtoLog.d(TAG, "$host info: model=${info["model"] ?: txt["model"]} srcvers=${info["sourceVersion"] ?: txt["srcvers"]} " +
+            "features=${txt["features"] ?: info["features"]} statusFlags=0x${statusFlags.toString(16)}")
 
         // 2. pairing
         sharedSecret = when {
@@ -198,6 +199,7 @@ class AirPlay2Client(
             else -> transientOrRequestPin(statusFlags)
         }
 
+        ProtoLog.d(TAG, "$host paired (pairing=$pairingMode)")
         // 3. encrypt the control channel from here on
         rtsp.enableEncryption(HapCipher.forControl(sharedSecret!!))
     }
@@ -272,6 +274,7 @@ class AirPlay2Client(
         if (r1.code == 453) throw AirPlayBusyException(host)
         val sessionReply = decodeOrEmpty(r1)
         val eventPort = (sessionReply["eventPort"] as? Long)?.toInt() ?: 0
+        ProtoLog.d(TAG, "$host SETUP session (${t.name}) -> ${r1.code} eventPort=$eventPort")
         if (!r1.isSuccess || eventPort <= 0) {
             throw AirPlayTimingUnsupportedException("SETUP session with ${t.name} -> ${r1.code}, eventPort=$eventPort")
         }
@@ -313,6 +316,7 @@ class AirPlay2Client(
             "Range" to "npt=0-",
             "RTP-Info" to "seq=$firstSeq;rtptime=${firstRtp.toUInt()}"
         ))
+        ProtoLog.d(TAG, "$host RECORD -> ${r3.code} Audio-Latency=${r3.header("Audio-Latency")}")
         if (!r3.isSuccess) throw RtspException("RECORD rejected: ${r3.code}", r3.code)
 
         if (t == Timing.PTP) {
