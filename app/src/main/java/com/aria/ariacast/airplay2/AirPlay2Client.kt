@@ -173,6 +173,9 @@ class AirPlay2Client(
         }
         val statusFlags = (info["statusFlags"] as? Long)
             ?: AirPlayTxt.flags(txt["flags"] ?: txt["sf"])
+        val featureBits = AirPlayTxt.features(txt["features"] ?: (info["features"] as? Number)?.toString())
+        ProtoLog.d(TAG, "$host supports: ptp=${AirPlayTxt.hasFeature(featureBits, AirPlayTxt.FEATURE_PTP)} " +
+            "bufferedAudio=${AirPlayTxt.hasFeature(featureBits, AirPlayTxt.FEATURE_BUFFERED_AUDIO)} (sender PTP available: ${ptpMaster != null})")
         ProtoLog.d(TAG, "$host info: model=${info["model"] ?: txt["model"]} srcvers=${info["sourceVersion"] ?: txt["srcvers"]} " +
             "features=${txt["features"] ?: info["features"]} statusFlags=0x${statusFlags.toString(16)}")
 
@@ -275,6 +278,10 @@ class AirPlay2Client(
         val sessionReply = decodeOrEmpty(r1)
         val eventPort = (sessionReply["eventPort"] as? Long)?.toInt() ?: 0
         ProtoLog.d(TAG, "$host SETUP session (${t.name}) -> ${r1.code} eventPort=$eventPort")
+        // What the receiver says back about timing: Sonos and HomePods that accept an NTP
+        // session but stay silent are the case to tell apart (they may want PTP instead).
+        ProtoLog.d(TAG, "$host SETUP session reply: keys=${sessionReply.keys.sorted()} " +
+            "timingPeerInfo=${sessionReply["timingPeerInfo"]} timingPort=${sessionReply["timingPort"]}")
         if (!r1.isSuccess || eventPort <= 0) {
             throw AirPlayTimingUnsupportedException("SETUP session with ${t.name} -> ${r1.code}, eventPort=$eventPort")
         }
