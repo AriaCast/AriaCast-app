@@ -452,7 +452,11 @@ class AirPlay2Client(
         val headers = if (rtpInfo) mapOf("RTP-Info" to "rtptime=${(sender?.currentRtpTime() ?: 0).toUInt()}") else emptyMap()
         try {
             val r = rtsp.request("SET_PARAMETER", sessionUri, body, contentType, headers)
-            if (!r.isSuccess) ProtoLog.d(TAG, "$host SET_PARAMETER $contentType -> ${r.code}")
+            // Volume replies are always logged: a receiver that accepts the stream but stays
+            // silent may be muted or capped by the volume it was given.
+            val volume = if (contentType == "text/parameters") String(body).trim().takeIf { it.startsWith("volume") } else null
+            if (volume != null) ProtoLog.d(TAG, "$host SET_PARAMETER $volume -> ${r.code}")
+            else if (!r.isSuccess) ProtoLog.d(TAG, "$host SET_PARAMETER $contentType -> ${r.code}")
         } catch (e: Exception) {
             ProtoLog.w(TAG, "$host SET_PARAMETER $contentType failed: ${e.message}")
         }
