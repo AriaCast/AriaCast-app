@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -123,6 +124,13 @@ private fun PacketLogScreen(onBack: () -> Unit) {
                         unfocusedBorderColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
                 )
+            }
+            // A visible button as well as the top-bar icon, which testers missed.
+            if (logs.isNotEmpty()) item {
+                FilledTonalButton(onClick = { exporting = true }, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                    Icon(Icons.Filled.Share, null, Modifier.padding(end = 8.dp))
+                    Text(stringResource(R.string.export_log))
+                }
             }
             if (shown.isEmpty()) {
                 item { EmptyState(Icons.AutoMirrored.Filled.ReceiptLong, stringResource(R.string.packet_exchange), stringResource(R.string.packet_log_empty)) }
