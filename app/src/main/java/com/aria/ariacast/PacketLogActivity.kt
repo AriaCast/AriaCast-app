@@ -1,5 +1,9 @@
 package com.aria.ariacast
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,7 +20,10 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SouthWest
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -24,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -66,8 +75,16 @@ private fun PacketLogScreen(onBack: () -> Unit) {
         }
     }
 
+    val context = LocalContext.current
+    var opened by remember { mutableStateOf<PacketLog?>(null) }
+
     SubScreenScaffold(
         title = stringResource(R.string.packet_exchange), onBack = onBack,
+        actions = {
+            if (shown.isNotEmpty()) IconButton(onClick = { shareLog(context, shown) }) {
+                Icon(Icons.Filled.Share, stringResource(R.string.share_log))
+            }
+        },
         floatingActionButton = {
             if (logs.isNotEmpty()) ExtendedFloatingActionButton(
                 onClick = { PacketLogger.clear(); logs = emptyList() },
@@ -112,9 +129,40 @@ private fun PacketLogScreen(onBack: () -> Unit) {
                     },
                     shape = groupItemShape(i, shown.size),
                     modifier = Modifier.padding(bottom = 2.dp),
+                    // Long lines are cut off in the list: tap for the whole line.
+                    onClick = { opened = log },
                 )
             }
             item { Spacer(Modifier.height(72.dp)) }
         }
     }
+
+    opened?.let { log ->
+        AlertDialog(
+            onDismissRequest = { opened = null },
+            title = { Text("${log.timestamp} · ${log.direction.name} · ${log.type.name}") },
+            text = { SelectionContainer { Text(log.message, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) } },
+            confirmButton = { TextButton(onClick = { opened = null }) { Text(stringResource(R.string.close)) } },
+            dismissButton = {
+                TextButton(onClick = {
+                    context.getSystemService(ClipboardManager::class.java)
+                        .setPrimaryClip(ClipData.newPlainText("AriaCast log", log.message))
+                }) { Text(stringResource(R.string.copy)) }
+            },
+        )
+    }
+}
+
+/** Plain text, oldest first, so it reads like a log when pasted into an issue. */
+internal fun formatLog(logs: List<PacketLog>): String = logs.asReversed().joinToString("\n") { l ->
+    "${l.timestamp} ${l.direction.name} ${l.type.name}" + (if (l.count > 1) " x${l.count}" else "") + " ${l.message}"
+}
+
+private fun shareLog(context: Context, logs: List<PacketLog>) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "AriaCast packet log")
+        putExtra(Intent.EXTRA_TEXT, formatLog(logs))
+    }
+    context.startActivity(Intent.createChooser(send, null))
 }

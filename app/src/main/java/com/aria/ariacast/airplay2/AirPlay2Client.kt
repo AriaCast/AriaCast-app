@@ -525,7 +525,11 @@ class AirPlay2Client(
 
     override fun statsSummary(): String {
         val s = sender ?: return "not streaming"
-        return "sent=${s.packetsSent} resent=${s.packetsResent} underruns=${s.underruns} " +
-            "drift(-${s.framesDropped}/+${s.framesInserted}) timing=${timing.name}/${timingResponder?.requestsAnswered ?: 0}"
+        // Spelled out: these lines get pasted into issues, and the receiver-side counters
+        // (timing requests, control packets) are what tell a silent receiver apart.
+        return "packets sent=${s.packetsSent}, resend requests=${s.resendRequests} (resent ${s.packetsResent}), " +
+            "control packets from receiver=${s.controlPacketsReceived}, timing=${timing.name}, " +
+            "timing requests from receiver=${if (timing == Timing.NTP) timingResponder?.requestsAnswered ?: 0 else "n/a (PTP)"}, " +
+            "underruns=${s.underruns}, drift -${s.framesDropped}/+${s.framesInserted}"
     }
 }

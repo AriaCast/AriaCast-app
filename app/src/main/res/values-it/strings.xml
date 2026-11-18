@@ -27,6 +27,7 @@
     <string name="manual_entry">Connessione Manuale</string>
     <string name="manual_entry_desc">Inserisci l\'IP del Server e la Porta</string>
     <string name="ip_address">Indirizzo IP</string>
+    <string name="ip_address_invalid">Indirizzo IPv4 non valido</string>
     <string name="port">Porta</string>
     <string name="add">Aggiungi</string>
     <string name="synchronization">Sincronizzazione</string>
@@ -114,6 +115,7 @@
     <string name="packet_logs_desc">Visualizza i log dettagliati dei pacchetti di rete per il debug</string>
     <string name="search_logs">Cerca Log</string>
     <string name="clear_logs">Pulisci i Log</string>
+    <string name="share_log">Condividi log</string>
     <string name="create_speaker_group">Crea Gruppo Altoparlanti</string>
     <string name="group_name">Nome Gruppo</string>
     <string name="select_devices">Seleziona Dispositivi</string>

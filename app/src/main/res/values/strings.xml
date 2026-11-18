@@ -45,6 +45,7 @@
     <string name="manual_entry">Manual Entry</string>
     <string name="manual_entry_desc">Enter server IP and Port</string>
     <string name="ip_address">IP Address</string>
+    <string name="ip_address_invalid">Not a valid IPv4 address</string>
     <string name="port">Port</string>
     <string name="add">Add</string>
     <string name="synchronization">Synchronization</string>
@@ -149,6 +150,7 @@
     <string name="packet_logs_desc">View detailed network packet logs for debugging</string>
     <string name="search_logs">Search logs…</string>
     <string name="clear_logs">Clear Logs</string>
+    <string name="share_log">Share log</string>
 
     <!-- Create Group Dialog -->
     <string name="create_speaker_group">Create Speaker Group</string>

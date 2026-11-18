@@ -345,8 +345,12 @@ private fun AddSpeakerDialog(controller: AppController, onDismiss: () -> Unit) {
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.add_by_address_desc), style = MaterialTheme.typography.bodyMedium)
-                OutlinedTextField(host, { host = it.trim(); error = false }, label = { Text(stringResource(R.string.ip_address)) }, singleLine = true, isError = error,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
+                // IPv4 only (that's what addManualServer accepts): numeric keypad, digits and dots.
+                val invalid = error || (host.count { it == '.' } == 3 && !host.endsWith('.') && !android.util.Patterns.IP_ADDRESS.matcher(host).matches())
+                OutlinedTextField(host, { v -> host = v.filter { it.isDigit() || it == '.' }.take(15); error = false },
+                    label = { Text(stringResource(R.string.ip_address)) }, placeholder = { Text("192.168.1.20") }, singleLine = true, isError = invalid,
+                    supportingText = if (invalid) ({ Text(stringResource(R.string.ip_address_invalid)) }) else null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 Text(stringResource(R.string.manual_protocol), style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MANUAL_PROTOCOLS.forEach { p ->
@@ -367,7 +371,7 @@ private fun AddSpeakerDialog(controller: AppController, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(enabled = host.isNotBlank(), onClick = {
+            TextButton(enabled = android.util.Patterns.IP_ADDRESS.matcher(host).matches(), onClick = {
                 val p = port.toIntOrNull()?.takeIf { it in 1..65535 } ?: defaultPort
                 if (controller.addManualServer(host, p, name.ifBlank { host }, platform)) onDismiss() else error = true
             }) { Text(stringResource(R.string.save)) }

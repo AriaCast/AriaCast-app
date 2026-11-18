@@ -99,6 +99,9 @@ class RtpAudioSender(
     // --- stats ----------------------------------------------------------------------------
     @Volatile var packetsSent = 0L; private set
     @Volatile var packetsResent = 0L; private set
+    /** Packets the receiver sent to our control port (resend requests and anything else). */
+    @Volatile var controlPacketsReceived = 0L; private set
+    @Volatile var resendRequests = 0L; private set
     @Volatile var underruns = 0L; private set
     @Volatile var framesDropped = 0L; private set
     @Volatile var framesInserted = 0L; private set
@@ -368,7 +371,9 @@ class RtpAudioSender(
                 if (running) ProtoLog.w(TAG, "$name: control socket closed: ${e.message}")
                 return
             }
+            controlPacketsReceived++
             if (pkt.length >= 8 && (buf[1].toInt() and 0x7F) == 0x55) {
+                resendRequests++
                 val first = Bytes.u16(buf, 4)
                 val count = Bytes.u16(buf, 6).coerceAtMost(HISTORY)
                 resend(first, count, pkt.address, pkt.port)

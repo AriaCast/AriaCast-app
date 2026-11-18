@@ -388,8 +388,9 @@ class RaopClient(
 
     override fun statsSummary(): String {
         val s = sender ?: return "not streaming"
-        return "sent=${s.packetsSent} resent=${s.packetsResent} underruns=${s.underruns} " +
-            "drift(-${s.framesDropped}/+${s.framesInserted}) timing=${timing?.requestsAnswered ?: 0}"
+        return "packets sent=${s.packetsSent}, resend requests=${s.resendRequests} (resent ${s.packetsResent}), " +
+            "control packets from receiver=${s.controlPacketsReceived}, timing requests from receiver=${timing?.requestsAnswered ?: 0}, " +
+            "underruns=${s.underruns}, drift -${s.framesDropped}/+${s.framesInserted}"
     }
 
     // --- legacy pairing helpers used by the service -------------------------------------

@@ -82,7 +82,7 @@ class RaopShairportE2eTest {
                 ToneGenerator(1000.0, 1500.0).stream(client, 4.0)
                 Thread.sleep(2600)
                 println("stats: ${client.statsSummary()}, appleResponse=${client.appleResponseValid}")
-                assertTrue("receiver queried our NTP timing", client.statsSummary().contains("timing=") && !client.statsSummary().endsWith("timing=0"))
+                assertTrue("receiver queried our NTP timing", Regex("timing requests from receiver=([1-9]\\d*)").containsMatchIn(client.statsSummary()))
                 if (mac != null) assertEquals("Apple-Response verifies against the AirPort key", true, client.appleResponseValid)
                 capture.read()
             } finally {
