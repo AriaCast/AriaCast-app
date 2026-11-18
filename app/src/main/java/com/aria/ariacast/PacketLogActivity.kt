@@ -5,6 +5,19 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Build
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.Alignment
+import androidx.core.content.FileProvider
+import com.aria.ariacast.sendspin.SendspinHub
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -77,12 +90,13 @@ private fun PacketLogScreen(onBack: () -> Unit) {
 
     val context = LocalContext.current
     var opened by remember { mutableStateOf<PacketLog?>(null) }
+    var exporting by remember { mutableStateOf(false) }
 
     SubScreenScaffold(
         title = stringResource(R.string.packet_exchange), onBack = onBack,
         actions = {
-            if (shown.isNotEmpty()) IconButton(onClick = { shareLog(context, shown) }) {
-                Icon(Icons.Filled.Share, stringResource(R.string.share_log))
+            if (logs.isNotEmpty()) IconButton(onClick = { exporting = true }) {
+                Icon(Icons.Filled.Share, stringResource(R.string.export_log))
             }
         },
         floatingActionButton = {
@@ -137,6 +151,8 @@ private fun PacketLogScreen(onBack: () -> Unit) {
         }
     }
 
+    if (exporting) ExportDialog(onDismiss = { exporting = false })
+
     opened?.let { log ->
         AlertDialog(
             onDismissRequest = { opened = null },
@@ -154,15 +170,67 @@ private fun PacketLogScreen(onBack: () -> Unit) {
 }
 
 /** Plain text, oldest first, so it reads like a log when pasted into an issue. */
-internal fun formatLog(logs: List<PacketLog>): String = logs.asReversed().joinToString("\n") { l ->
-    "${l.timestamp} ${l.direction.name} ${l.type.name}" + (if (l.count > 1) " x${l.count}" else "") + " ${l.message}"
+@Composable
+private fun ExportDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var scope by remember { mutableStateOf(PacketLogExport.Scope.LAST_SESSION) }
+    var copied by remember { mutableStateOf(false) }
+    fun report() = PacketLogExport.build(exportEnvironment(context), PacketLogger.logs.map { it.copy() }, scope,
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()))
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Share, null) },
+        title = { Text(stringResource(R.string.export_log)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.export_log_desc), style = MaterialTheme.typography.bodyMedium)
+                listOf(PacketLogExport.Scope.LAST_SESSION to R.string.export_scope_last, PacketLogExport.Scope.ALL to R.string.export_scope_all)
+                    .forEach { (value, label) ->
+                        Row(Modifier.fillMaxWidth().clickable { scope = value }, verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = scope == value, onClick = { scope = value })
+                            Text(stringResource(label))
+                        }
+                    }
+                if (copied) Text(stringResource(R.string.export_copied), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = { shareReport(context, report()); onDismiss() }) { Text(stringResource(R.string.export_share_file)) } },
+        dismissButton = {
+            TextButton(onClick = {
+                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AriaCast report", report()))
+                copied = true
+            }) { Text(stringResource(R.string.export_copy_github)) }
+        },
+    )
 }
 
-private fun shareLog(context: Context, logs: List<PacketLog>) {
+private fun exportEnvironment(context: Context): PacketLogExport.Environment {
+    val prefs = context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
+    val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
+    return PacketLogExport.Environment(
+        appVersion = version,
+        variant = if (context.resources.getBoolean(R.bool.self_update)) "GitHub" else "F-Droid",
+        android = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+        device = "${Build.MANUFACTURER} ${Build.MODEL}",
+        protocols = listOf(
+            "AirPlay" to ProtocolsActivity.KEY_AIRPLAY_ENABLED, "AirPlay 2" to ProtocolsActivity.KEY_AIRPLAY2_ENABLED,
+            "Google Cast" to ProtocolsActivity.KEY_GOOGLE_CAST_ENABLED, "DLNA" to ProtocolsActivity.KEY_DLNA_ENABLED,
+            "Snapcast" to ProtocolsActivity.KEY_SNAPCAST_ENABLED, "Sendspin" to SendspinHub.KEY_ENABLED,
+        ).map { (name, key) -> name to prefs.getBoolean(key, false) },
+    )
+}
+
+/** Shares the report as a .md file (keeps long logs intact), with a short text for apps that ignore files. */
+private fun shareReport(context: Context, report: String) {
+    val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+    dir.listFiles()?.forEach { it.delete() } // only the latest export is kept
+    val file = File(dir, "ariacast-log-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())}.md").apply { writeText(report) }
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     val send = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, "AriaCast packet log")
-        putExtra(Intent.EXTRA_TEXT, formatLog(logs))
+        type = "text/markdown"
+        putExtra(Intent.EXTRA_SUBJECT, "AriaCast diagnostic report")
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(send, null))
 }

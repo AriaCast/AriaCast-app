@@ -513,6 +513,9 @@ class AudioCastService : Service() {
         sessionJob?.cancel()
 
         _activeDestinations.value = destinations
+        // Marks where a "last session" log export starts, and records each speaker's details.
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "${PacketLogExport.SESSION_MARKER} (${destinations.size} speaker(s))")
+        destinations.forEach { logSpeaker(it) }
         _state.value = CastState.CONNECTING
         sessionJob = SupervisorJob()
         val sessionScope = CoroutineScope(Dispatchers.IO + sessionJob!!)
@@ -616,6 +619,10 @@ class AudioCastService : Service() {
         }
     }
 
+    private fun logSpeaker(d: CastDestination) = PacketLogger.log(
+        PacketDirection.OUT, PacketType.HANDSHAKE, PacketLogExport.speakerLine(d.name, d.platform, d.host, d.port, d.extra)
+    )
+
     /** One job per destination, so speakers can be added or removed while casting. */
     private val destinationJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
     private fun destKey(d: CastDestination) = "${d.platform}|${d.host}|${d.port}"
@@ -654,6 +661,7 @@ class AudioCastService : Service() {
         _activeDestinations.value = _activeDestinations.value + dest
         launchDestination(scope, dest, withVideo = false)
         PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Added ${dest.name} to the cast")
+        logSpeaker(dest)
         _metadata.value?.let { sendMetadata(it) }
         updateNotification()
     }

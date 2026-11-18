@@ -115,7 +115,13 @@
     <string name="packet_logs_desc">Visualizza i log dettagliati dei pacchetti di rete per il debug</string>
     <string name="search_logs">Cerca Log</string>
     <string name="clear_logs">Pulisci i Log</string>
-    <string name="share_log">Condividi log</string>
+    <string name="export_log">Esporta log</string>
+    <string name="export_log_desc">Un report pronto da incollare in una issue GitHub: dati di app e telefono, gli altoparlanti usati, prima i possibili problemi, poi il log completo.</string>
+    <string name="export_scope_last">Ultima sessione di cast</string>
+    <string name="export_scope_all">Tutto</string>
+    <string name="export_copy_github">Copia per GitHub</string>
+    <string name="export_share_file">Condividi file</string>
+    <string name="export_copied">Copiato. Incollalo nella issue.</string>
     <string name="create_speaker_group">Crea Gruppo Altoparlanti</string>
     <string name="group_name">Nome Gruppo</string>
     <string name="select_devices">Seleziona Dispositivi</string>

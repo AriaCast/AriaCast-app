@@ -150,7 +150,13 @@
     <string name="packet_logs_desc">View detailed network packet logs for debugging</string>
     <string name="search_logs">Search logs…</string>
     <string name="clear_logs">Clear Logs</string>
-    <string name="share_log">Share log</string>
+    <string name="export_log">Export log</string>
+    <string name="export_log_desc">A report ready to paste into a GitHub issue: app and phone details, the speakers used, possible problems first, then the full log.</string>
+    <string name="export_scope_last">Last cast session</string>
+    <string name="export_scope_all">Everything</string>
+    <string name="export_copy_github">Copy for GitHub</string>
+    <string name="export_share_file">Share file</string>
+    <string name="export_copied">Copied. Paste it into the issue.</string>
 
     <!-- Create Group Dialog -->
     <string name="create_speaker_group">Create Speaker Group</string>
