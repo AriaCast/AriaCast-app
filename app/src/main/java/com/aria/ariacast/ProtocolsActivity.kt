@@ -48,11 +48,12 @@ class ProtocolsActivity : ComponentActivity() {
         const val KEY_AIRPLAY_ENABLED = "airplay_enabled"
         const val KEY_AIRPLAY2_ENABLED = "airplay2_enabled"
         const val KEY_SNAPCAST_ENABLED = "snapcast_enabled"
+        const val KEY_VBAN_ENABLED = "vban_enabled"
 
         /** True if discovery looks for anything beyond AriaCast; all of these start off. */
         fun anyOptionalEnabled(context: Context): Boolean {
             val prefs = context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)
-            return listOf(KEY_AIRPLAY_ENABLED, KEY_AIRPLAY2_ENABLED, KEY_GOOGLE_CAST_ENABLED, KEY_DLNA_ENABLED, KEY_SNAPCAST_ENABLED)
+            return listOf(KEY_AIRPLAY_ENABLED, KEY_AIRPLAY2_ENABLED, KEY_GOOGLE_CAST_ENABLED, KEY_DLNA_ENABLED, KEY_SNAPCAST_ENABLED, KEY_VBAN_ENABLED)
                 .any { prefs.getBoolean(it, false) }
         }
     }
@@ -74,6 +75,7 @@ private fun ProtocolsScreen(onBack: () -> Unit) {
                     ProtocolRow(R.string.google_cast_protocol, R.string.google_cast_protocol_desc, ProtocolsActivity.KEY_GOOGLE_CAST_ENABLED, Icons.Filled.Cast)
                     ProtocolRow(R.string.dlna_protocol, R.string.dlna_protocol_desc, ProtocolsActivity.KEY_DLNA_ENABLED, Icons.Filled.Tv)
                     ProtocolRow(R.string.snapcast_protocol, R.string.snapcast_protocol_desc, ProtocolsActivity.KEY_SNAPCAST_ENABLED, Icons.Filled.SpeakerGroup)
+                    ProtocolRow(R.string.vban_protocol, R.string.vban_protocol_desc, ProtocolsActivity.KEY_VBAN_ENABLED, Icons.Filled.Speaker)
                     SendspinRow()
                 }
             }

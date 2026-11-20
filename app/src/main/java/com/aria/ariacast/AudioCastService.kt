@@ -85,6 +85,9 @@ import com.aria.ariacast.pipeline.ProjectionCaptureSource
 import com.aria.ariacast.pipeline.SourceKind
 import com.aria.ariacast.receiver.ReceiverHub
 import com.aria.ariacast.sendspin.SendspinHub
+import com.aria.ariacast.pipeline.PcmFormat
+import com.aria.ariacast.vban.VbanProtocol
+import com.aria.ariacast.vban.VbanStreamer
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
@@ -628,6 +631,7 @@ class AudioCastService : Service() {
                 "AirPlay" -> startAirPlaySession(dest, airplay2 = false)
                 "AirPlay2" -> startAirPlaySession(dest, airplay2 = true)
                 "Snapcast" -> startSnapcastSession(dest)
+                VbanProtocol.PLATFORM -> startVbanSession(dest)
                 SendspinHub.PLATFORM -> startSendspinSourceSession()
                 else -> {
                     launch { startControlSession(dest) }
@@ -1201,6 +1205,31 @@ class AudioCastService : Service() {
         }
     }
 
+    /**
+     * VBAN: plain UDP to the receiver, no handshake, so there is nothing to tear down and
+     * no volume or metadata channel. The stream name must match the receiver's incoming
+     * stream (usually "Stream1").
+     */
+    private suspend fun startVbanSession(dest: CastDestination) = withContext(Dispatchers.IO) {
+        val streamName = VbanProtocol.sanitizeStreamName(ExtraFields.get(dest.extra, VbanProtocol.EXTRA_STREAM))
+        val port = dest.port.takeIf { it in 1..65535 } ?: VbanProtocol.DEFAULT_PORT
+        try {
+            VbanStreamer(InetAddress.getByName(dest.host), port, streamName, PcmFormat.SAMPLE_RATE, PcmFormat.CHANNELS).use { streamer ->
+                _state.value = CastState.CASTING
+                updateNotification()
+                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE,
+                    "VBAN stream '$streamName' to ${dest.name} (${dest.host}:$port), ${PcmFormat.SAMPLE_RATE} Hz stereo 16-bit PCM")
+                audioBufferFlow.collect { streamer.send(it) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "VBAN session failed for ${dest.name}: ${e.message}")
+            PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "VBAN to ${dest.name} failed: ${e.message}")
+            _state.value = CastState.ERROR
+        }
+    }
+
     private suspend fun startSnapcastSession(dest: CastDestination) = withContext(Dispatchers.IO) {
         var streamId: String? = null
         var rpcSocket: Socket? = null
@@ -1698,7 +1727,9 @@ class AudioCastService : Service() {
 
         destinations.forEach { dest ->
             try {
-                if (dest.platform != "DLNA" && dest.platform != "Google Cast" && dest.platform != "AirPlay" && dest.platform != "AirPlay2") {
+                if (dest.platform == VbanProtocol.PLATFORM) {
+                    // VBAN AUDIO packets carry no metadata.
+                } else if (dest.platform != "DLNA" && dest.platform != "Google Cast" && dest.platform != "AirPlay" && dest.platform != "AirPlay2") {
                     client.post {
                         url {
                             protocol = URLProtocol.HTTP

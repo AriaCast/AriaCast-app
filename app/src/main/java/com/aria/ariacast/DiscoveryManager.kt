@@ -9,6 +9,7 @@ import android.util.Patterns
 import com.aria.ariacast.raop.RaopDiscovery
 import com.aria.ariacast.raop.RaopDevice
 import com.aria.ariacast.airplay.AirPlayTxt
+import com.aria.ariacast.vban.VbanProtocol
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,6 +25,8 @@ import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.NetworkInterface
 import java.util.concurrent.ConcurrentLinkedQueue
 
 class DiscoveryManager(private val context: Context) {
@@ -337,6 +340,9 @@ class DiscoveryManager(private val context: Context) {
             if (prefs.getBoolean("dlna_enabled", false)) {
                 launch { startSsdpDiscoveryLoop() }
             }
+            if (prefs.getBoolean("vban_enabled", false)) {
+                launch { startVbanDiscoveryLoop() }
+            }
 
             // Keep "SCANNING" state for at least 15 seconds
             delay(15000)
@@ -386,10 +392,11 @@ class DiscoveryManager(private val context: Context) {
      * valid IP address, true once the server has been merged into [servers].
      *
      * [platform] picks the protocol AudioCastService speaks to it ("AriaCast", "AirPlay2",
-     * "AirPlay", "Google Cast"); "Manual" (plugins) is treated as AriaCast.
+     * "AirPlay", "Google Cast", "VBAN"); "Manual" (plugins) is treated as AriaCast.
+     * [extra] carries protocol settings, e.g. the VBAN stream name.
      */
     @JvmOverloads // plugins call the three-argument form through Rhino
-    fun addManualServer(host: String, port: Int, name: String, platform: String = "Manual"): Boolean {
+    fun addManualServer(host: String, port: Int, name: String, platform: String = "Manual", extra: String? = null): Boolean {
         if (!Patterns.IP_ADDRESS.matcher(host).matches()) {
             Log.w(TAG, "addManualServer: invalid host '$host'")
             return false
@@ -405,7 +412,7 @@ class DiscoveryManager(private val context: Context) {
             platform = platform,
             // Without mDNS there is no TXT record: give the AirPlay 1 client the same
             // conservative capabilities it uses when falling back from AirPlay 2.
-            extra = if (platform == "AirPlay") ExtraFields.join(MANUAL_RAOP_TXT) else null
+            extra = if (platform == "AirPlay") ExtraFields.join(MANUAL_RAOP_TXT) else extra
         )
         synchronized(discoveredServers) {
             discoveredServers["manual|$platform|$host|$port"] = server
@@ -551,6 +558,61 @@ class DiscoveryManager(private val context: Context) {
         }
     }
 
+    /**
+     * VBAN has no mDNS: broadcast a SERVICE/PING0 request and list whatever answers as an
+     * audio receiver. The spec marks the service part as preliminary and not every VBAN
+     * app replies, so adding a receiver by address stays the dependable way.
+     * Replies may go to the sender's port or to the VBAN port, so listen on 6980 if free.
+     */
+    private suspend fun startVbanDiscoveryLoop() = withContext(Dispatchers.IO) {
+        var frame = 0
+        val deviceName = android.os.Build.MODEL ?: "Android"
+        while (isActive) {
+            try {
+                openVbanSocket().use { socket ->
+                    socket.broadcast = true
+                    socket.soTimeout = 3000
+                    val ownAddresses = localAddresses()
+                    val request = VbanProtocol.pingRequest(++frame, deviceName, "AriaCast", deviceName)
+                    socket.send(DatagramPacket(request, request.size, InetAddress.getByName("255.255.255.255"), VbanProtocol.DEFAULT_PORT))
+                    val buffer = ByteArray(2048)
+                    val endTime = System.currentTimeMillis() + 3000
+                    while (System.currentTimeMillis() < endTime && isActive) {
+                        val resp = DatagramPacket(buffer, buffer.size)
+                        try { socket.receive(resp) } catch (e: Exception) { break }
+                        val reply = VbanProtocol.parsePingReply(resp.data, resp.length) ?: continue
+                        val host = resp.address.hostAddress ?: continue
+                        if (!reply.receivesAudio || host in ownAddresses) continue
+                        val server = Server(
+                            name = reply.displayName, host = host, port = VbanProtocol.DEFAULT_PORT,
+                            version = "VBAN", codecs = listOf("pcm"), sampleRate = 48000, channels = 2,
+                            platform = VbanProtocol.PLATFORM,
+                            extra = reply.application.takeIf { it.isNotBlank() }?.let { ExtraFields.encode("model", it) }
+                        )
+                        synchronized(discoveredServers) {
+                            discoveredServers["$host::VBAN"] = server
+                            _servers.value = discoveredServers.values.toList()
+                            if (_state.value != DiscoveryState.SCANNING) _state.value = DiscoveryState.FOUND
+                        }
+                    }
+                }
+            } catch (e: Exception) { Log.d(TAG, "VBAN ping failed: ${e.message}") }
+            delay(5000)
+        }
+    }
+
+    private fun openVbanSocket(): DatagramSocket = try {
+        DatagramSocket(null).apply { reuseAddress = true; bind(InetSocketAddress(VbanProtocol.DEFAULT_PORT)) }
+    } catch (e: Exception) {
+        DatagramSocket()
+    }
+
+    private fun localAddresses(): Set<String> = try {
+        NetworkInterface.getNetworkInterfaces().toList()
+            .flatMap { it.inetAddresses.toList() }
+            .mapNotNull { it.hostAddress }
+            .toSet()
+    } catch (e: Exception) { emptySet() }
 
     /** Reads at most [maxBytes] from [input] as UTF-8 text, so a malicious/misbehaving
      *  device can't hang discovery by streaming an unbounded response body. */

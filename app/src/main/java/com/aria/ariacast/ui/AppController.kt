@@ -34,8 +34,8 @@ interface AppController {
     fun castTo(servers: List<Server>, source: SourceKind = SourceKind.SYSTEM_CAPTURE, inputDeviceId: Int? = null)
     fun stopCasting()
     fun refreshDiscovery()
-    /** [platform]: "AriaCast", "AirPlay2", "AirPlay" or "Google Cast". */
-    fun addManualServer(host: String, port: Int, name: String, platform: String): Boolean
+    /** [platform]: "AriaCast", "AirPlay2", "AirPlay", "Google Cast" or "VBAN"; [extra]: protocol settings ([com.aria.ariacast.ExtraFields]). */
+    fun addManualServer(host: String, port: Int, name: String, platform: String, extra: String? = null): Boolean
     fun removeServer(server: Server)
     fun saveGroup(name: String, hosts: List<String>)
     fun deleteGroup(group: CastGroup)
