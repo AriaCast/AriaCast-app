@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -45,6 +46,12 @@ class DiscoveryManager(private val context: Context) {
     private var multicastLock: WifiManager.MulticastLock? = null
     
     private val discoveredServers = mutableMapOf<String, Server>()
+    /**
+     * Servers added by address. Kept apart from [discoveredServers] (and guarded by its lock)
+     * so a new scan doesn't drop them, and saved so they survive a restart; only an explicit
+     * [removeServer] deletes one.
+     */
+    private val manualServers = loadManualServers()
     private val resolveQueue = ConcurrentLinkedQueue<NsdServiceInfo>()
     private var activeResolves = 0
     private val MAX_CONCURRENT_RESOLVES = 3
@@ -82,7 +89,7 @@ class DiscoveryManager(private val context: Context) {
             val nameToRemove = if (platform != null) "$baseName::$platform" else baseName
             synchronized(discoveredServers) {
                 discoveredServers.remove(nameToRemove)
-                _servers.value = discoveredServers.values.toList()
+                publishServers()
                 if (discoveredServers.isEmpty()) {
                     _state.value = DiscoveryState.NONE
                 }
@@ -247,7 +254,7 @@ class DiscoveryManager(private val context: Context) {
             } else {
                 discoveredServers[key] = candidate
             }
-            _servers.value = discoveredServers.values.toList()
+            publishServers()
             if (_state.value != DiscoveryState.SCANNING) {
                 _state.value = DiscoveryState.FOUND
             }
@@ -265,7 +272,7 @@ class DiscoveryManager(private val context: Context) {
         stopDiscovery()
         synchronized(discoveredServers) {
             discoveredServers.clear()
-            _servers.value = emptyList()
+            publishServers()
         }
         synchronized(fetchedLocations) { fetchedLocations.clear() }
         
@@ -305,13 +312,13 @@ class DiscoveryManager(private val context: Context) {
                 )
                 synchronized(discoveredServers) {
                     discoveredServers["${device.name}::AirPlay"] = server
-                    _servers.value = discoveredServers.values.toList()
+                    publishServers()
                     _state.value = DiscoveryState.FOUND
                 }
             }, onDeviceLost = { name ->
                 synchronized(discoveredServers) {
                     if (discoveredServers.remove("$name::AirPlay") != null) {
-                        _servers.value = discoveredServers.values.toList()
+                        publishServers()
                     }
                 }
             })
@@ -374,7 +381,7 @@ class DiscoveryManager(private val context: Context) {
     fun removeServer(name: String) {
         synchronized(discoveredServers) {
             discoveredServers.remove(name)
-            _servers.value = discoveredServers.values.toList()
+            publishServers()
         }
     }
 
@@ -382,9 +389,49 @@ class DiscoveryManager(private val context: Context) {
     fun removeServer(server: Server) {
         synchronized(discoveredServers) {
             discoveredServers.entries.removeAll { it.value == server }
-            _servers.value = discoveredServers.values.toList()
+            if (manualServers.entries.removeAll { it.value == server }) saveManualServers()
+            publishServers()
         }
     }
+
+    /** Call with the [discoveredServers] lock held. A manual entry hides the scan's entry for the same device and protocol. */
+    private fun publishServers() {
+        val manual = manualServers.values.toList()
+        _servers.value = discoveredServers.values.filter { d -> manual.none { it.host == d.host && it.platform == d.platform } } + manual
+    }
+
+    private fun loadManualServers(): MutableMap<String, Server> {
+        val result = LinkedHashMap<String, Server>()
+        val json = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_MANUAL_SERVERS, null) ?: return result
+        try {
+            val array = JSONArray(json)
+            for (i in 0 until array.length()) {
+                val o = array.getJSONObject(i)
+                val server = Server(
+                    name = o.getString("name"), host = o.getString("host"), port = o.getInt("port"),
+                    version = "manual", codecs = emptyList(), sampleRate = 48000, channels = 2,
+                    platform = o.optString("platform").ifEmpty { null },
+                    extra = o.optString("extra").ifEmpty { null }
+                )
+                result[manualKey(server.platform, server.host, server.port)] = server
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Ignoring unreadable saved servers: ${e.message}")
+        }
+        return result
+    }
+
+    /** Call with the [discoveredServers] lock held. */
+    private fun saveManualServers() {
+        val array = JSONArray()
+        manualServers.values.forEach { s ->
+            array.put(JSONObject().put("name", s.name).put("host", s.host).put("port", s.port)
+                .put("platform", s.platform ?: "").put("extra", s.extra ?: ""))
+        }
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putString(KEY_MANUAL_SERVERS, array.toString()).apply()
+    }
+
+    private fun manualKey(platform: String?, host: String, port: Int) = "manual|$platform|$host|$port"
 
     /**
      * Adds a server that was entered manually (e.g. via the "Manual Server Entry" plugin)
@@ -415,8 +462,9 @@ class DiscoveryManager(private val context: Context) {
             extra = if (platform == "AirPlay") ExtraFields.join(MANUAL_RAOP_TXT) else extra
         )
         synchronized(discoveredServers) {
-            discoveredServers["manual|$platform|$host|$port"] = server
-            _servers.value = discoveredServers.values.toList()
+            manualServers[manualKey(platform, host, port)] = server
+            saveManualServers()
+            publishServers()
         }
         Log.d(TAG, "Manually added server: $name @ $host:$port ($platform)")
         return true
@@ -505,7 +553,7 @@ class DiscoveryManager(private val context: Context) {
                 // them apart rather than letting a spoofed name pass as the familiar speaker.
                 val clash = discoveredServers.any { (k, v) -> k != key && v.name == desc.friendlyName && v.host != hostAddress }
                 discoveredServers[key] = if (clash) server.copy(name = "${desc.friendlyName} ($hostAddress)") else server
-                _servers.value = discoveredServers.values.toList()
+                publishServers()
                 if (_state.value != DiscoveryState.SCANNING) {
                     _state.value = DiscoveryState.FOUND
                 }
@@ -541,7 +589,7 @@ class DiscoveryManager(private val context: Context) {
                             val server = Server(name = json.optString("server_name"), host = resp.address.hostAddress ?: "", port = json.optInt("port"), version = "1.0", codecs = listOf("pcm"), sampleRate = 48000, channels = 2, platform = "AriaCast")
                             synchronized(discoveredServers) {
                                 discoveredServers[server.name] = server
-                                _servers.value = discoveredServers.values.toList()
+                                publishServers()
                                 if (_state.value != DiscoveryState.SCANNING) {
                                     _state.value = DiscoveryState.FOUND
                                 }
@@ -591,7 +639,7 @@ class DiscoveryManager(private val context: Context) {
                         )
                         synchronized(discoveredServers) {
                             discoveredServers["$host::VBAN"] = server
-                            _servers.value = discoveredServers.values.toList()
+                            publishServers()
                             if (_state.value != DiscoveryState.SCANNING) _state.value = DiscoveryState.FOUND
                         }
                     }
@@ -630,6 +678,8 @@ class DiscoveryManager(private val context: Context) {
 
     companion object {
         private const val TAG = "DiscoveryManager"
+        private const val PREFS_NAME = "AriaCastPrefs"
+        private const val KEY_MANUAL_SERVERS = "manual_servers"
         private const val MAX_DEVICE_DESCRIPTION_BYTES = 262_144
 
         /** `_raop._tcp` TXT keys the AirPlay 1 client uses. */
