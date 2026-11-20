@@ -290,6 +290,10 @@ class AudioCastService : Service() {
     private val _controlCommands = MutableSharedFlow<MediaCommand>(extraBufferCapacity = 10)
     val controlCommands: SharedFlow<MediaCommand> = _controlCommands.asSharedFlow()
 
+    private val _seekRequests = MutableSharedFlow<Long>(extraBufferCapacity = 10)
+    /** Positions (ms) a receiver asked to seek to; applied to the app playing on this device. */
+    val seekRequests: SharedFlow<Long> = _seekRequests.asSharedFlow()
+
     private val _audioBufferFlow = MutableSharedFlow<ByteArray>(
         replay = 0,
         extraBufferCapacity = 500,
@@ -1859,6 +1863,16 @@ class AudioCastService : Service() {
                             try {
                                 val json = JSONObject(text)
                                 val action = json.getString("action")
+                                if (action.equals("seek", ignoreCase = true)) {
+                                    // {"action":"seek","position_ms":N}, e.g. from Music Assistant's AriaCast receiver.
+                                    val key = if (json.has("position_ms")) "position_ms" else "value"
+                                    if (json.has(key)) {
+                                        val positionMs = json.getLong(key).coerceAtLeast(0)
+                                        PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Seek to ${positionMs / 1000} s from ${dest.name}")
+                                        _seekRequests.emit(positionMs)
+                                    }
+                                    continue
+                                }
                                 val command = MediaCommand.entries.find { it.name.equals(action, ignoreCase = true) }
                                 if (command != null) {
                                     _controlCommands.emit(command)
