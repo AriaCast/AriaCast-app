@@ -9,6 +9,7 @@ import android.util.Patterns
 import com.aria.ariacast.raop.RaopDiscovery
 import com.aria.ariacast.raop.RaopDevice
 import com.aria.ariacast.airplay.AirPlayTxt
+import com.aria.ariacast.vban.VbanProtocol
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,10 +21,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.NetworkInterface
 import java.util.concurrent.ConcurrentLinkedQueue
 
 class DiscoveryManager(private val context: Context) {
@@ -42,6 +46,12 @@ class DiscoveryManager(private val context: Context) {
     private var multicastLock: WifiManager.MulticastLock? = null
     
     private val discoveredServers = mutableMapOf<String, Server>()
+    /**
+     * Servers added by address. Kept apart from [discoveredServers] (and guarded by its lock)
+     * so a new scan doesn't drop them, and saved so they survive a restart; only an explicit
+     * [removeServer] deletes one.
+     */
+    private val manualServers = loadManualServers()
     private val resolveQueue = ConcurrentLinkedQueue<NsdServiceInfo>()
     private var activeResolves = 0
     private val MAX_CONCURRENT_RESOLVES = 3
@@ -79,7 +89,7 @@ class DiscoveryManager(private val context: Context) {
             val nameToRemove = if (platform != null) "$baseName::$platform" else baseName
             synchronized(discoveredServers) {
                 discoveredServers.remove(nameToRemove)
-                _servers.value = discoveredServers.values.toList()
+                publishServers()
                 if (discoveredServers.isEmpty()) {
                     _state.value = DiscoveryState.NONE
                 }
@@ -244,7 +254,7 @@ class DiscoveryManager(private val context: Context) {
             } else {
                 discoveredServers[key] = candidate
             }
-            _servers.value = discoveredServers.values.toList()
+            publishServers()
             if (_state.value != DiscoveryState.SCANNING) {
                 _state.value = DiscoveryState.FOUND
             }
@@ -262,7 +272,7 @@ class DiscoveryManager(private val context: Context) {
         stopDiscovery()
         synchronized(discoveredServers) {
             discoveredServers.clear()
-            _servers.value = emptyList()
+            publishServers()
         }
         synchronized(fetchedLocations) { fetchedLocations.clear() }
         
@@ -302,13 +312,13 @@ class DiscoveryManager(private val context: Context) {
                 )
                 synchronized(discoveredServers) {
                     discoveredServers["${device.name}::AirPlay"] = server
-                    _servers.value = discoveredServers.values.toList()
+                    publishServers()
                     _state.value = DiscoveryState.FOUND
                 }
             }, onDeviceLost = { name ->
                 synchronized(discoveredServers) {
                     if (discoveredServers.remove("$name::AirPlay") != null) {
-                        _servers.value = discoveredServers.values.toList()
+                        publishServers()
                     }
                 }
             })
@@ -336,6 +346,9 @@ class DiscoveryManager(private val context: Context) {
             launch { startUdpDiscoveryLoop() }
             if (prefs.getBoolean("dlna_enabled", false)) {
                 launch { startSsdpDiscoveryLoop() }
+            }
+            if (prefs.getBoolean("vban_enabled", false)) {
+                launch { startVbanDiscoveryLoop() }
             }
 
             // Keep "SCANNING" state for at least 15 seconds
@@ -368,7 +381,7 @@ class DiscoveryManager(private val context: Context) {
     fun removeServer(name: String) {
         synchronized(discoveredServers) {
             discoveredServers.remove(name)
-            _servers.value = discoveredServers.values.toList()
+            publishServers()
         }
     }
 
@@ -376,9 +389,49 @@ class DiscoveryManager(private val context: Context) {
     fun removeServer(server: Server) {
         synchronized(discoveredServers) {
             discoveredServers.entries.removeAll { it.value == server }
-            _servers.value = discoveredServers.values.toList()
+            if (manualServers.entries.removeAll { it.value == server }) saveManualServers()
+            publishServers()
         }
     }
+
+    /** Call with the [discoveredServers] lock held. A manual entry hides the scan's entry for the same device and protocol. */
+    private fun publishServers() {
+        val manual = manualServers.values.toList()
+        _servers.value = discoveredServers.values.filter { d -> manual.none { it.host == d.host && it.platform == d.platform } } + manual
+    }
+
+    private fun loadManualServers(): MutableMap<String, Server> {
+        val result = LinkedHashMap<String, Server>()
+        val json = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_MANUAL_SERVERS, null) ?: return result
+        try {
+            val array = JSONArray(json)
+            for (i in 0 until array.length()) {
+                val o = array.getJSONObject(i)
+                val server = Server(
+                    name = o.getString("name"), host = o.getString("host"), port = o.getInt("port"),
+                    version = "manual", codecs = emptyList(), sampleRate = 48000, channels = 2,
+                    platform = o.optString("platform").ifEmpty { null },
+                    extra = o.optString("extra").ifEmpty { null }
+                )
+                result[manualKey(server.platform, server.host, server.port)] = server
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Ignoring unreadable saved servers: ${e.message}")
+        }
+        return result
+    }
+
+    /** Call with the [discoveredServers] lock held. */
+    private fun saveManualServers() {
+        val array = JSONArray()
+        manualServers.values.forEach { s ->
+            array.put(JSONObject().put("name", s.name).put("host", s.host).put("port", s.port)
+                .put("platform", s.platform ?: "").put("extra", s.extra ?: ""))
+        }
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putString(KEY_MANUAL_SERVERS, array.toString()).apply()
+    }
+
+    private fun manualKey(platform: String?, host: String, port: Int) = "manual|$platform|$host|$port"
 
     /**
      * Adds a server that was entered manually (e.g. via the "Manual Server Entry" plugin)
@@ -386,10 +439,11 @@ class DiscoveryManager(private val context: Context) {
      * valid IP address, true once the server has been merged into [servers].
      *
      * [platform] picks the protocol AudioCastService speaks to it ("AriaCast", "AirPlay2",
-     * "AirPlay", "Google Cast"); "Manual" (plugins) is treated as AriaCast.
+     * "AirPlay", "Google Cast", "VBAN"); "Manual" (plugins) is treated as AriaCast.
+     * [extra] carries protocol settings, e.g. the VBAN stream name.
      */
     @JvmOverloads // plugins call the three-argument form through Rhino
-    fun addManualServer(host: String, port: Int, name: String, platform: String = "Manual"): Boolean {
+    fun addManualServer(host: String, port: Int, name: String, platform: String = "Manual", extra: String? = null): Boolean {
         if (!Patterns.IP_ADDRESS.matcher(host).matches()) {
             Log.w(TAG, "addManualServer: invalid host '$host'")
             return false
@@ -405,11 +459,12 @@ class DiscoveryManager(private val context: Context) {
             platform = platform,
             // Without mDNS there is no TXT record: give the AirPlay 1 client the same
             // conservative capabilities it uses when falling back from AirPlay 2.
-            extra = if (platform == "AirPlay") ExtraFields.join(MANUAL_RAOP_TXT) else null
+            extra = if (platform == "AirPlay") ExtraFields.join(MANUAL_RAOP_TXT) else extra
         )
         synchronized(discoveredServers) {
-            discoveredServers["manual|$platform|$host|$port"] = server
-            _servers.value = discoveredServers.values.toList()
+            manualServers[manualKey(platform, host, port)] = server
+            saveManualServers()
+            publishServers()
         }
         Log.d(TAG, "Manually added server: $name @ $host:$port ($platform)")
         return true
@@ -498,7 +553,7 @@ class DiscoveryManager(private val context: Context) {
                 // them apart rather than letting a spoofed name pass as the familiar speaker.
                 val clash = discoveredServers.any { (k, v) -> k != key && v.name == desc.friendlyName && v.host != hostAddress }
                 discoveredServers[key] = if (clash) server.copy(name = "${desc.friendlyName} ($hostAddress)") else server
-                _servers.value = discoveredServers.values.toList()
+                publishServers()
                 if (_state.value != DiscoveryState.SCANNING) {
                     _state.value = DiscoveryState.FOUND
                 }
@@ -534,7 +589,7 @@ class DiscoveryManager(private val context: Context) {
                             val server = Server(name = json.optString("server_name"), host = resp.address.hostAddress ?: "", port = json.optInt("port"), version = "1.0", codecs = listOf("pcm"), sampleRate = 48000, channels = 2, platform = "AriaCast")
                             synchronized(discoveredServers) {
                                 discoveredServers[server.name] = server
-                                _servers.value = discoveredServers.values.toList()
+                                publishServers()
                                 if (_state.value != DiscoveryState.SCANNING) {
                                     _state.value = DiscoveryState.FOUND
                                 }
@@ -551,6 +606,61 @@ class DiscoveryManager(private val context: Context) {
         }
     }
 
+    /**
+     * VBAN has no mDNS: broadcast a SERVICE/PING0 request and list whatever answers as an
+     * audio receiver. The spec marks the service part as preliminary and not every VBAN
+     * app replies, so adding a receiver by address stays the dependable way.
+     * Replies may go to the sender's port or to the VBAN port, so listen on 6980 if free.
+     */
+    private suspend fun startVbanDiscoveryLoop() = withContext(Dispatchers.IO) {
+        var frame = 0
+        val deviceName = android.os.Build.MODEL ?: "Android"
+        while (isActive) {
+            try {
+                openVbanSocket().use { socket ->
+                    socket.broadcast = true
+                    socket.soTimeout = 3000
+                    val ownAddresses = localAddresses()
+                    val request = VbanProtocol.pingRequest(++frame, deviceName, "AriaCast", deviceName)
+                    socket.send(DatagramPacket(request, request.size, InetAddress.getByName("255.255.255.255"), VbanProtocol.DEFAULT_PORT))
+                    val buffer = ByteArray(2048)
+                    val endTime = System.currentTimeMillis() + 3000
+                    while (System.currentTimeMillis() < endTime && isActive) {
+                        val resp = DatagramPacket(buffer, buffer.size)
+                        try { socket.receive(resp) } catch (e: Exception) { break }
+                        val reply = VbanProtocol.parsePingReply(resp.data, resp.length) ?: continue
+                        val host = resp.address.hostAddress ?: continue
+                        if (!reply.receivesAudio || host in ownAddresses) continue
+                        val server = Server(
+                            name = reply.displayName, host = host, port = VbanProtocol.DEFAULT_PORT,
+                            version = "VBAN", codecs = listOf("pcm"), sampleRate = 48000, channels = 2,
+                            platform = VbanProtocol.PLATFORM,
+                            extra = reply.application.takeIf { it.isNotBlank() }?.let { ExtraFields.encode("model", it) }
+                        )
+                        synchronized(discoveredServers) {
+                            discoveredServers["$host::VBAN"] = server
+                            publishServers()
+                            if (_state.value != DiscoveryState.SCANNING) _state.value = DiscoveryState.FOUND
+                        }
+                    }
+                }
+            } catch (e: Exception) { Log.d(TAG, "VBAN ping failed: ${e.message}") }
+            delay(5000)
+        }
+    }
+
+    private fun openVbanSocket(): DatagramSocket = try {
+        DatagramSocket(null).apply { reuseAddress = true; bind(InetSocketAddress(VbanProtocol.DEFAULT_PORT)) }
+    } catch (e: Exception) {
+        DatagramSocket()
+    }
+
+    private fun localAddresses(): Set<String> = try {
+        NetworkInterface.getNetworkInterfaces().toList()
+            .flatMap { it.inetAddresses.toList() }
+            .mapNotNull { it.hostAddress }
+            .toSet()
+    } catch (e: Exception) { emptySet() }
 
     /** Reads at most [maxBytes] from [input] as UTF-8 text, so a malicious/misbehaving
      *  device can't hang discovery by streaming an unbounded response body. */
@@ -568,6 +678,8 @@ class DiscoveryManager(private val context: Context) {
 
     companion object {
         private const val TAG = "DiscoveryManager"
+        private const val PREFS_NAME = "AriaCastPrefs"
+        private const val KEY_MANUAL_SERVERS = "manual_servers"
         private const val MAX_DEVICE_DESCRIPTION_BYTES = 262_144
 
         /** `_raop._tcp` TXT keys the AirPlay 1 client uses. */

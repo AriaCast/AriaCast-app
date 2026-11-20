@@ -80,10 +80,24 @@ class MediaNotificationListener : NotificationListenerService() {
     private fun startCommandCollection(service: AudioCastService) {
         commandCollectionJob?.cancel()
         commandCollectionJob = scope.launch {
-            service.controlCommands.collectLatest { command: MediaCommand ->
-                handleIncomingCommand(command)
-            }
+            launch { service.controlCommands.collectLatest { command: MediaCommand -> handleIncomingCommand(command) } }
+            launch { service.seekRequests.collectLatest { positionMs -> handleSeek(positionMs) } }
         }
+    }
+
+    /** The player's next playback state update carries the new position back to the receiver. */
+    private fun handleSeek(positionMs: Long) {
+        val controller = activeMediaController ?: run {
+            Log.w(TAG, "Received seek to $positionMs ms but no active media controller found.")
+            return
+        }
+        val actions = controller.playbackState?.actions ?: 0L
+        if (actions and PlaybackState.ACTION_SEEK_TO == 0L) {
+            Log.w(TAG, "${controller.packageName} does not support seeking")
+            return
+        }
+        controller.transportControls.seekTo(positionMs)
+        Log.d(TAG, "Seeked ${controller.packageName} to $positionMs ms")
     }
 
     private fun handleIncomingCommand(command: MediaCommand) {
@@ -188,6 +202,7 @@ class MediaNotificationListener : NotificationListenerService() {
         val service = audioCastService ?: return
 
         if (controller == null) {
+            service.setCanSeek(false)
             service.setArtwork(null)
             service.sendMetadata(TrackMetadata(null, null, null, null, null, null, false))
             return
@@ -197,6 +212,7 @@ class MediaNotificationListener : NotificationListenerService() {
         val playbackState = controller.playbackState
 
         val isPlaying = playbackState?.state == PlaybackState.STATE_PLAYING
+        service.setCanSeek((playbackState?.actions ?: 0L) and PlaybackState.ACTION_SEEK_TO != 0L)
         val position = if (isPlaying && playbackState != null) {
             val timeDiff = SystemClock.elapsedRealtime() - playbackState.lastPositionUpdateTime
             playbackState.position + (timeDiff * playbackState.playbackSpeed).toLong()

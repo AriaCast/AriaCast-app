@@ -263,8 +263,8 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
 
     override fun refreshDiscovery() = discoveryManager.startDiscovery()
 
-    override fun addManualServer(host: String, port: Int, name: String, platform: String): Boolean =
-        discoveryManager.addManualServer(host, port, name, platform)
+    override fun addManualServer(host: String, port: Int, name: String, platform: String, extra: String?): Boolean =
+        discoveryManager.addManualServer(host, port, name, platform, extra)
 
     override fun removeServer(server: Server) = discoveryManager.removeServer(server)
 
@@ -400,6 +400,7 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
             "dlna" -> "DLNA"
             "googlecast", "google_cast", "google-cast" -> "Google Cast"
             "sendspin" -> "Sendspin"
+            "vban" -> "VBAN"
             else -> "AriaCast"
         }
 
@@ -409,6 +410,7 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
             "AirPlay2" -> 7000
             "Google Cast" -> 8009
             "Sendspin" -> 8927
+            "VBAN" -> 6980
             else -> 0 // DLNA needs SSDP-sourced control URLs
         }
 
