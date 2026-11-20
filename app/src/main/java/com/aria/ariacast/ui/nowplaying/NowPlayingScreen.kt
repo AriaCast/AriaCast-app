@@ -101,6 +101,7 @@ fun NowPlayingScreen(controller: AppController, onClose: () -> Unit) {
     val metadata by (s?.metadata ?: remember { MutableStateFlow<TrackMetadata?>(null) }).collectAsState()
     val artwork by (s?.artwork ?: remember { MutableStateFlow<ByteArray?>(null) }).collectAsState()
     val volume by (s?.volumePercent ?: remember { MutableStateFlow(50) }).collectAsState()
+    val canSeek by (s?.canSeek ?: remember { MutableStateFlow(false) }).collectAsState()
 
     val bitmap = remember(artwork) { artwork?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() } }
     val swatch = remember(bitmap) { bitmap?.let { Palette.from(it).generate().let { p -> p.vibrantSwatch ?: p.dominantSwatch } } }
@@ -131,10 +132,25 @@ fun NowPlayingScreen(controller: AppController, onClose: () -> Unit) {
                     if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
 
-                val position = rememberLivePosition(m)
+                val livePosition = rememberLivePosition(m)
+                // While dragging, and briefly after release until the player reports the new
+                // position, show the chosen spot instead of snapping back.
+                var seekTarget by remember { mutableStateOf<Long?>(null) }
+                var dragging by remember { mutableStateOf(false) }
+                LaunchedEffect(seekTarget, dragging) { if (seekTarget != null && !dragging) { delay(1500); seekTarget = null } }
                 m?.durationMs?.takeIf { it > 0 }?.let { d ->
+                    val position = (seekTarget ?: livePosition).coerceIn(0, d)
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        LinearProgressIndicator(progress = { (position.toFloat() / d).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), drawStopIndicator = {})
+                        if (canSeek && s != null) {
+                            Slider(
+                                value = position.toFloat() / d,
+                                onValueChange = { dragging = true; seekTarget = (it * d).toLong() },
+                                onValueChangeFinished = { dragging = false; seekTarget?.let { s.seekTo(it) } },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        } else {
+                            LinearProgressIndicator(progress = { (position.toFloat() / d).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), drawStopIndicator = {})
+                        }
                         Row {
                             Text(formatTime(position), style = StatTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.weight(1f))
@@ -166,7 +182,7 @@ fun NowPlayingScreen(controller: AppController, onClose: () -> Unit) {
                 s?.let { Visualizer(it, Modifier.fillMaxWidth().height(40.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) }
                 s?.let { SpeakersInCast(controller, it) }
                 s?.let { MultiroomSync(it) }
-                LyricsSection(m, position)
+                LyricsSection(m, livePosition)
                 Spacer(Modifier.height(24.dp))
             }
         }

@@ -291,8 +291,12 @@ class AudioCastService : Service() {
     val controlCommands: SharedFlow<MediaCommand> = _controlCommands.asSharedFlow()
 
     private val _seekRequests = MutableSharedFlow<Long>(extraBufferCapacity = 10)
-    /** Positions (ms) a receiver asked to seek to; applied to the app playing on this device. */
+    /** Positions (ms) a receiver or the UI asked to seek to; applied to the app playing on this device. */
     val seekRequests: SharedFlow<Long> = _seekRequests.asSharedFlow()
+
+    private val _canSeek = MutableStateFlow(false)
+    /** Whether the app playing on this device accepts seeking (not e.g. a live stream). */
+    val canSeek: StateFlow<Boolean> = _canSeek.asStateFlow()
 
     private val _audioBufferFlow = MutableSharedFlow<ByteArray>(
         replay = 0,
@@ -1691,6 +1695,15 @@ class AudioCastService : Service() {
 
     fun sendMetadata(metadata: TrackMetadata) {
         metadataChannel.trySend(metadata)
+    }
+
+    fun setCanSeek(canSeek: Boolean) {
+        _canSeek.value = canSeek
+    }
+
+    /** Seeks the app playing on this device, from AriaCast's own UI. */
+    fun seekTo(positionMs: Long) {
+        scope.launch { _seekRequests.emit(positionMs.coerceAtLeast(0)) }
     }
 
     fun submitPairingPin(host: String, pin: String) {

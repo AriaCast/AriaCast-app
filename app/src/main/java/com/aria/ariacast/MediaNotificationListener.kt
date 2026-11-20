@@ -202,6 +202,7 @@ class MediaNotificationListener : NotificationListenerService() {
         val service = audioCastService ?: return
 
         if (controller == null) {
+            service.setCanSeek(false)
             service.setArtwork(null)
             service.sendMetadata(TrackMetadata(null, null, null, null, null, null, false))
             return
@@ -211,6 +212,7 @@ class MediaNotificationListener : NotificationListenerService() {
         val playbackState = controller.playbackState
 
         val isPlaying = playbackState?.state == PlaybackState.STATE_PLAYING
+        service.setCanSeek((playbackState?.actions ?: 0L) and PlaybackState.ACTION_SEEK_TO != 0L)
         val position = if (isPlaying && playbackState != null) {
             val timeDiff = SystemClock.elapsedRealtime() - playbackState.lastPositionUpdateTime
             playbackState.position + (timeDiff * playbackState.playbackSpeed).toLong()
