@@ -8,7 +8,7 @@ on:
 
 jobs:
   firmware:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
@@ -37,7 +37,7 @@ jobs:
           path: build/aria_companion.uf2
 
   firmware-bt:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
@@ -58,7 +58,7 @@ jobs:
             AriaCompanion/firmware-bt/build/flasher_args.json
 
   web-remote:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
