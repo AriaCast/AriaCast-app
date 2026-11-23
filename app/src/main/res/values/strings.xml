@@ -104,6 +104,8 @@
     <string name="airplay2_protocol_desc">Stream to Macs, Apple TVs and HomePods</string>
     <string name="snapcast_protocol">Snapcast</string>
     <string name="snapcast_protocol_desc">Stream to Snapcast multi-room audio servers</string>
+    <string name="vban_protocol">VBAN</string>
+    <string name="vban_protocol_desc">Stream to VBAN receivers on your network</string>
 
     <!-- Plugins Activity -->
     <string name="plugin_folder_updated">Plugin folder updated</string>
@@ -250,6 +252,8 @@
     <string name="manual_advanced">Advanced</string>
     <string name="manual_advanced_hide">Hide advanced</string>
     <string name="manual_port_hint">Leave empty for the default port (%1$d).</string>
+    <string name="vban_stream_name">Stream name</string>
+    <string name="vban_stream_name_hint">Must match the incoming stream on the receiver. Empty means %1$s.</string>
     <string name="allow">Allow</string>
     <string name="open">Open</string>
     <string name="more">More</string>

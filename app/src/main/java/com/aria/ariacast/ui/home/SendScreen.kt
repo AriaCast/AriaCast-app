@@ -88,6 +88,7 @@ import com.aria.ariacast.AudioCastService
 import com.aria.ariacast.CastDestination
 import com.aria.ariacast.CastGroup
 import com.aria.ariacast.CastState
+import com.aria.ariacast.ExtraFields
 import com.aria.ariacast.ProtocolsActivity
 import com.aria.ariacast.DiscoveryState
 import com.aria.ariacast.MainActivity
@@ -115,6 +116,7 @@ import com.aria.ariacast.ui.SectionHeader
 import com.aria.ariacast.ui.StatusBanner
 import com.aria.ariacast.ui.SubScreenScaffold
 import com.aria.ariacast.ui.plugins.PluginPanels
+import com.aria.ariacast.vban.VbanProtocol
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /** The audio source chosen on the Send screen, shared with the speaker list and groups. */
@@ -326,7 +328,7 @@ fun platformLabel(platform: String?): String = when (platform) {
 }
 
 /** Protocols a speaker can be added with by address alone (DLNA needs SSDP-sourced control URLs). */
-private val MANUAL_PROTOCOLS = listOf("AriaCast", "AirPlay2", "AirPlay", "Google Cast")
+private val MANUAL_PROTOCOLS = listOf("AriaCast", "AirPlay2", "AirPlay", "Google Cast", VbanProtocol.PLATFORM)
 
 @Composable
 private fun AddSpeakerDialog(controller: AppController, onDismiss: () -> Unit) {
@@ -336,6 +338,7 @@ private fun AddSpeakerDialog(controller: AppController, onDismiss: () -> Unit) {
     var port by remember { mutableStateOf("") }
     var advanced by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
+    var streamName by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
     val defaultPort = MainActivity.defaultPortForDeepLinkPlatform(platform)
     AlertDialog(
@@ -355,6 +358,14 @@ private fun AddSpeakerDialog(controller: AppController, onDismiss: () -> Unit) {
                     }
                 }
                 OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.name_optional)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                // The receiver only plays a VBAN stream whose name it expects, so this isn't hidden under Advanced.
+                AnimatedVisibility(platform == VbanProtocol.PLATFORM) {
+                    OutlinedTextField(streamName, { streamName = it.filter { c -> c in ' '..'~' }.take(VbanProtocol.STREAM_NAME_SIZE) },
+                        label = { Text(stringResource(R.string.vban_stream_name)) }, singleLine = true,
+                        placeholder = { Text(VbanProtocol.DEFAULT_STREAM_NAME) },
+                        supportingText = { Text(stringResource(R.string.vban_stream_name_hint, VbanProtocol.DEFAULT_STREAM_NAME)) },
+                        modifier = Modifier.fillMaxWidth())
+                }
                 TextButton(onClick = { advanced = !advanced }) {
                     Text(stringResource(if (advanced) R.string.manual_advanced_hide else R.string.manual_advanced))
                 }
@@ -369,7 +380,9 @@ private fun AddSpeakerDialog(controller: AppController, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(enabled = host.isNotBlank(), onClick = {
                 val p = port.toIntOrNull()?.takeIf { it in 1..65535 } ?: defaultPort
-                if (controller.addManualServer(host, p, name.ifBlank { host }, platform)) onDismiss() else error = true
+                val extra = if (platform == VbanProtocol.PLATFORM)
+                    ExtraFields.encode(VbanProtocol.EXTRA_STREAM, VbanProtocol.sanitizeStreamName(streamName)) else null
+                if (controller.addManualServer(host, p, name.ifBlank { host }, platform, extra)) onDismiss() else error = true
             }) { Text(stringResource(R.string.save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
