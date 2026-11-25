@@ -32,7 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.MediumTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -95,7 +95,11 @@ fun ScreenList(
 /** Insets for a navigation destination: the bar or rail below/beside it already handles the bottom edge. */
 val DestinationInsets = WindowInsets(0, 0, 0, 0)
 
-/** Scaffold for a pushed screen: large collapsing title, back arrow, optional actions and FAB. */
+/**
+ * Scaffold for a screen: collapsing title, back arrow, optional actions and FAB. Medium rather than
+ * large app bar: the large one's 152dp left a big empty gap above the title, most of all on the
+ * top-level screens that have no back arrow.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubScreenScaffold(
@@ -111,7 +115,7 @@ fun SubScreenScaffold(
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
+            MediumTopAppBar(
                 title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
