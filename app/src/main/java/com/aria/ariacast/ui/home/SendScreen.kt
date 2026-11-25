@@ -229,14 +229,36 @@ private fun InputPicker(prefs: android.content.SharedPreferences, selection: Sou
     val context = LocalContext.current
     val inputs = remember { MicrophoneSource.availableInputs(context) }
     val selected = selection.inputDeviceId ?: -1
+    val builtinMic = stringResource(R.string.source_builtin_mic)
+    val labels = remember(inputs, builtinMic) { inputLabels(inputs, builtinMic) }
     ListGroup(Modifier.padding(top = 8.dp)) {
         inputs.forEach { d ->
             val choose = { selection.inputDeviceId = d.id; prefs.edit().putInt(KEY_INPUT, d.id).apply() }
             ListRow(
-                headline = d.productName?.toString()?.ifBlank { null } ?: stringResource(R.string.source_builtin_mic),
+                headline = labels.getValue(d.id),
                 leading = { RadioButton(selected = selected == d.id, onClick = null) },
                 onClick = choose,
             )
+        }
+    }
+}
+
+/**
+ * Names for the input list. Built-in microphones all report the phone's model as their
+ * product name, so they're called "Built-in microphone", told apart by their address
+ * (e.g. "bottom", "back") or, without a distinct one, by number.
+ */
+private fun inputLabels(inputs: List<android.media.AudioDeviceInfo>, builtinMic: String): Map<Int, String> {
+    val mics = inputs.filter { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_MIC }
+    val addresses = mics.map { it.address.orEmpty().trim() }
+    val useAddress = addresses.none { it.isEmpty() } && addresses.toSet().size == addresses.size
+    return inputs.associate { d ->
+        val i = mics.indexOf(d)
+        d.id to when {
+            i < 0 -> d.productName?.toString()?.ifBlank { null } ?: builtinMic
+            mics.size == 1 -> builtinMic
+            useAddress -> "$builtinMic (${addresses[i]})"
+            else -> "$builtinMic ${i + 1}"
         }
     }
 }
