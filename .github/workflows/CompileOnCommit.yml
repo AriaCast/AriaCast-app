@@ -30,6 +30,8 @@ jobs:
       - name: Build APKs
         run: ./gradlew assembleDebug assembleRelease
 
+      # Debug APKs are "AriaCast Test": a separate app (com.aria.ariacast.test) signed with the
+      # debug key, so testers can install it next to the real app without touching its data.
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
