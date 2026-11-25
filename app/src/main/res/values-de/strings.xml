@@ -273,7 +273,7 @@
     <string name="status_connected">Verbunden</string>
     <string name="status_available">Verfügbar</string>
     <string name="groups_title">Gruppen</string>
-    <string name="groups_desc">Auf mehreren Lautsprechern zugleich spielen, z. B. „Abend = Küche + Wohnzimmer“.</string>
+    <string name="groups_desc">Auf mehreren Lautsprechern zugleich spielen, z.B. „Abend = Küche + Wohnzimmer“.</string>
     <string name="group_online">%1$d von %2$d online</string>
     <string name="receive_title">Auf diesem Gerät empfangen</string>
     <string name="receive_off">Aus</string>
