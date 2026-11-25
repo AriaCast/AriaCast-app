@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Hub
@@ -92,7 +93,7 @@ private val languages = listOf(
     "nl" to "Nederlands", "pl" to "Polski", "ta" to "தமிழ்", "ja" to "日本語", "zh" to "简体中文",
 )
 
-private enum class SettingsDialog { THEME, LANGUAGE, NOTIFICATIONS, PLUGIN_FOLDER, WEB_REMOTE, CAST_RECEIVER }
+private enum class SettingsDialog { THEME, LANGUAGE, NOTIFICATIONS, PLUGIN_FOLDER, WEB_REMOTE, CAST_RECEIVER, CONTRIBUTORS }
 
 /**
  * Settings destination. Everything that used to live in the overflow menu is here, grouped by
@@ -190,6 +191,7 @@ fun SettingsScreen(controller: AppController, onBack: (() -> Unit)?) {
                     ListRow(stringResource(R.string.github_repo), supporting = stringResource(R.string.github_repo_desc), leading = { LeadingIcon(Icons.Filled.Code) }) {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SettingsActivity.GITHUB_URL)))
                     }
+                    ListRow(stringResource(R.string.contributors), supporting = stringResource(R.string.contributors_desc), leading = { LeadingIcon(Icons.Filled.Favorite) }) { dialog = SettingsDialog.CONTRIBUTORS }
                     ListRow(stringResource(R.string.version_format, stringResource(R.string.app_version)), leading = { LeadingIcon(Icons.Filled.Info) })
                 }
             }
@@ -250,6 +252,25 @@ fun SettingsScreen(controller: AppController, onBack: (() -> Unit)?) {
         )
         SettingsDialog.WEB_REMOTE -> WebRemoteDialog { dialog = null }
         SettingsDialog.CAST_RECEIVER -> CastReceiverDialog { dialog = null }
+        SettingsDialog.CONTRIBUTORS -> AlertDialog(
+            onDismissRequest = { dialog = null },
+            icon = { androidx.compose.material3.Icon(Icons.Filled.Favorite, null) },
+            title = { Text(stringResource(R.string.contributors_title)) },
+            text = { Text(stringResource(R.string.contributors_message), Modifier.verticalScroll(rememberScrollState())) },
+            confirmButton = {
+                TextButton(onClick = { dialog = null; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SettingsActivity.CONTRIBUTORS_URL))) }) {
+                    Text(stringResource(R.string.contributors_code))
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { dialog = null; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SettingsActivity.TRANSLATORS_URL))) }) {
+                        Text(stringResource(R.string.contributors_translations))
+                    }
+                    TextButton(onClick = { dialog = null }) { Text(stringResource(R.string.close)) }
+                }
+            },
+        )
         null -> {}
     }
 }
