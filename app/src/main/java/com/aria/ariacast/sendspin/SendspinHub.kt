@@ -51,10 +51,12 @@ data class SendspinStatus(
 /**
  * This device as a Sendspin client (Music Assistant's protocol): a WebSocket endpoint at
  * `ws://<ip>:8928/sendspin`, advertised as `_sendspin._tcp`, that servers connect to.
- * - player@v1: play what the server sends, in sync with its other speakers.
- * - source@v1: offer this device's audio (whatever AriaCast is casting to "Sendspin") as a
- *   Live Input. Only on paired connections, per the spec.
- * - metadata@v1: show what is playing on the Receive screen.
+ * It runs while Receive (with its Sendspin switch) or the Live input is on, and announces
+ * the roles they ask for:
+ * - player@v1 and metadata@v1 while receiving over Sendspin: play what the server sends, in sync
+ *   with its other speakers, and show what is playing on the Receive screen.
+ * - source@v1 while the Live input is on: offer this device's audio (whatever AriaCast is
+ *   casting to "<server> · Live input") as a Live Input. Only on paired connections.
  */
 class SendspinHub private constructor(private val app: Context) {
     val identity = SendspinIdentity(app)
@@ -70,17 +72,55 @@ class SendspinHub private constructor(private val app: Context) {
     val status: StateFlow<SendspinStatus> = _status.asStateFlow()
 
     private val _sourceTarget = MutableStateFlow<Server?>(null)
-    /** A pseudo-speaker for the Send card: "<server> input", present while a server offers source@v1. */
+    /** A pseudo-speaker for the Send card: "<server> · Live input", present while a server offers source@v1. */
     val sourceTarget: StateFlow<Server?> = _sourceTarget.asStateFlow()
 
-    var enabled: Boolean
-        get() = prefs.getBoolean(KEY_ENABLED, false)
-        set(v) { prefs.edit().putBoolean(KEY_ENABLED, v).apply() }
+    /** The Live input: offer this device's audio to Music Assistant (source@v1). */
+    var liveInputEnabled: Boolean
+        get() = prefs.getBoolean(KEY_LIVE_INPUT, false)
+        set(v) { prefs.edit().putBoolean(KEY_LIVE_INPUT, v).apply(); refresh() }
+
+    /** Receive over Sendspin: lets Music Assistant play here while Receive is on (player@v1). */
+    var receiveEnabled: Boolean
+        get() = prefs.getBoolean(KEY_RECEIVE, true)
+        set(v) { prefs.edit().putBoolean(KEY_RECEIVE, v).apply(); refresh() }
+
+    private data class Roles(val player: Boolean, val source: Boolean)
+
+    /** The roles the running endpoint announces. */
+    @Volatile private var announced = Roles(player = false, source = false)
+
+    init {
+        // Receive decides the player role; follow it from app start on.
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            ReceiverHub.get(app).running.collect { refresh() }
+        }
+    }
+
+    /**
+     * Starts, stops or restarts the endpoint for the roles Receive and the Live input ask
+     * for. Roles are announced in client/hello, so a change reconnects the servers.
+     */
+    @Synchronized
+    fun refresh() {
+        val want = Roles(player = ReceiverHub.get(app).running.value && receiveEnabled, source = liveInputEnabled)
+        when {
+            !want.player && !want.source -> if (engine != null) stop()
+            engine == null -> start(want)
+            want != announced -> {
+                log("Sendspin roles changed: reconnecting servers")
+                stop()
+                start(want)
+            }
+        }
+    }
 
     @Synchronized
-    fun start(name: String) {
+    private fun start(roles: Roles) {
         if (engine != null) return
         if (!scope.isActive) scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        announced = roles
+        val name = ReceiverHub.get(app).name
         engine = embeddedServer(CIO, port = PORT, host = "0.0.0.0") {
             install(WebSockets) { maxFrameSize = 2L * 1024 * 1024 }
             routing {
@@ -129,7 +169,7 @@ class SendspinHub private constructor(private val app: Context) {
     }
 
     @Synchronized
-    fun stop() {
+    private fun stop() {
         sessions.forEach { it.close("stopped") }
         sessions.clear()
         player.stop()
@@ -148,6 +188,9 @@ class SendspinHub private constructor(private val app: Context) {
         productName = Build.MODEL,
         manufacturer = Build.MANUFACTURER,
         softwareVersion = "AriaCast " + runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull().orEmpty(),
+        player = announced.player,
+        source = announced.source,
+        metadata = announced.player,
     )
 
     private fun register(name: String) {
@@ -187,7 +230,7 @@ class SendspinHub private constructor(private val app: Context) {
             // the server is already playing: the server starts the input only after this device
             // reports a signal, and the signal comes from casting to this very target.
             _sourceTarget.value = if ("source@v1" in session.activeRoles)
-                Server("${session.serverName.ifBlank { "Sendspin" }} · input", HOST_TOKEN, 0, "1.0", listOf("pcm"), 48000, 2, PLATFORM)
+                Server("${session.serverName.ifBlank { "Sendspin" }} · Live input", HOST_TOKEN, 0, "1.0", listOf("pcm"), 48000, 2, PLATFORM)
             else null
         }
 
@@ -255,7 +298,8 @@ class SendspinHub private constructor(private val app: Context) {
         const val PATH = "/sendspin"
         const val PLATFORM = "Sendspin"
         const val HOST_TOKEN = "sendspin"
-        const val KEY_ENABLED = "sendspin_enabled"
+        const val KEY_LIVE_INPUT = "sendspin_live_input"
+        const val KEY_RECEIVE = "sendspin_receive"
 
         @Volatile private var instance: SendspinHub? = null
         fun get(context: Context): SendspinHub =

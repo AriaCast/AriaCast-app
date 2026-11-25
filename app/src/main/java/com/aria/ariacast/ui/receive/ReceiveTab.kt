@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Speaker
+import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
@@ -63,7 +64,6 @@ import com.aria.ariacast.ui.ScreenList
 import com.aria.ariacast.ui.SubScreenScaffold
 import com.aria.ariacast.ui.SwitchListRow
 import com.aria.ariacast.ui.home.Artwork
-import com.aria.ariacast.ui.home.SendspinSection
 import com.aria.ariacast.ui.home.platformLabel
 
 /** Receive destination: turn this device into a speaker, and everything that goes with it. */
@@ -78,6 +78,8 @@ fun ReceiveTab(controller: AppController) {
     var playLocally by remember { mutableStateOf(hub.playLocally) }
     var startAtBoot by remember { mutableStateOf(hub.startAtBoot) }
     var dlnaOn by remember { mutableStateOf(prefs.getBoolean(DlnaRenderer.KEY_ENABLED, true)) }
+    val sendspin = remember { com.aria.ariacast.sendspin.SendspinHub.get(context) }
+    var sendspinOn by remember { mutableStateOf(sendspin.receiveEnabled) }
     var forwardDialog by remember { mutableStateOf(false) }
 
     SubScreenScaffold(title = stringResource(R.string.nav_receive), onBack = null, contentWindowInsets = DestinationInsets) { padding ->
@@ -106,6 +108,9 @@ fun ReceiveTab(controller: AppController) {
                                 prefs.edit().putBoolean(DlnaRenderer.KEY_ENABLED, it).apply()
                                 if (it) DlnaRenderer.get(context).start(hub.name) else DlnaRenderer.get(context).stop()
                             }, Icons.Filled.Tv)
+                            SwitchListRow(stringResource(R.string.sendspin_receive), stringResource(R.string.sendspin_receive_desc), sendspinOn, {
+                                sendspinOn = it; sendspin.receiveEnabled = it
+                            }, Icons.Filled.SpeakerGroup)
                         }
                         ListGroup {
                             ListRow(
@@ -123,7 +128,6 @@ fun ReceiveTab(controller: AppController) {
                                 onClick = { controller.navigate(Screen.RECEIVER_DISPLAY) },
                             )
                         }
-                        SendspinSection()
                     }
                 }
             }

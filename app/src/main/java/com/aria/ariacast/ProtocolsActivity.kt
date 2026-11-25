@@ -23,8 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import com.aria.ariacast.receiver.ReceiverHub
-import com.aria.ariacast.sendspin.SendspinHub
+import com.aria.ariacast.ui.home.SendspinSection
 import com.aria.ariacast.ui.LeadingIcon
 import com.aria.ariacast.ui.ListGroup
 import com.aria.ariacast.ui.ListRow
@@ -76,23 +75,11 @@ private fun ProtocolsScreen(onBack: () -> Unit) {
                     ProtocolRow(R.string.dlna_protocol, R.string.dlna_protocol_desc, ProtocolsActivity.KEY_DLNA_ENABLED, Icons.Filled.Tv)
                     ProtocolRow(R.string.snapcast_protocol, R.string.snapcast_protocol_desc, ProtocolsActivity.KEY_SNAPCAST_ENABLED, Icons.Filled.SpeakerGroup)
                     ProtocolRow(R.string.vban_protocol, R.string.vban_protocol_desc, ProtocolsActivity.KEY_VBAN_ENABLED, Icons.Filled.Speaker)
-                    SendspinRow()
                 }
             }
+            item { SendspinSection() }
         }
     }
-}
-
-/** Sendspin: Music Assistant connects to this device, to play on it or use it as a Live Input. */
-@Composable
-private fun SendspinRow() {
-    val context = LocalContext.current
-    val hub = remember { SendspinHub.get(context) }
-    var on by remember { mutableStateOf(hub.enabled) }
-    SwitchListRow(stringResource(R.string.sendspin_title), stringResource(R.string.sendspin_desc), on, {
-        on = it; hub.enabled = it
-        if (it) hub.start(ReceiverHub.get(context).name) else hub.stop()
-    }, Icons.Filled.SpeakerGroup)
 }
 
 @Composable
