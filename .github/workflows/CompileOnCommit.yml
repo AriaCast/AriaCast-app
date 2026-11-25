@@ -26,9 +26,44 @@ jobs:
       - name: Unit tests
         run: ./gradlew testGithubDebugUnitTest
 
+      # Release APKs are signed on pushes to main when the signing secrets are set:
+      #   RELEASE_KEYSTORE_BASE64   the keystore file, base64-encoded (base64 -w0 release.jks)
+      #   RELEASE_KEYSTORE_PASSWORD
+      #   RELEASE_KEY_ALIAS
+      #   RELEASE_KEY_PASSWORD      optional; defaults to the keystore password (PKCS12)
+      # app/build.gradle.kts reads them from keystore.properties. Pull requests never get
+      # the key, and without the secrets the release APKs stay unsigned.
+      - name: Set up release signing
+        id: signing
+        if: github.event_name == 'push'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ]; then
+            echo "Signing secrets not set: release APKs stay unsigned."
+            exit 0
+          fi
+          keystore="$RUNNER_TEMP/release.keystore"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$keystore"
+          {
+            echo "MYAPP_RELEASE_STORE_FILE=$keystore"
+            echo "MYAPP_RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "MYAPP_RELEASE_KEY_ALIAS=$KEY_ALIAS"
+            echo "MYAPP_RELEASE_KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+          } > keystore.properties
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
       # Builds both flavors (github, fdroid) in Debug and Release
       - name: Build APKs
         run: ./gradlew assembleDebug assembleRelease
+
+      # The runner is self-hosted and keeps its disk between jobs: never leave the key behind.
+      - name: Remove signing key
+        if: always()
+        run: rm -f keystore.properties "$RUNNER_TEMP/release.keystore"
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
@@ -36,8 +71,8 @@ jobs:
           name: debug-apk
           path: app/build/outputs/apk/*/debug/*.apk
 
-      - name: Upload Release APK (Unsigned)
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk
+          name: ${{ steps.signing.outputs.signed == 'true' && 'release-apk-signed' || 'release-apk-unsigned' }}
           path: app/build/outputs/apk/*/release/*.apk
