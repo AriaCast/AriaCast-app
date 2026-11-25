@@ -81,6 +81,12 @@
     <string name="manage_plugins_desc">Manage script-based extensions</string>
     <string name="notification_access">Notification Access</string>
     <string name="notification_access_desc">Required for media metadata AND to start playback on some receivers</string>
+    <string name="contributors">Contributors</string>
+    <string name="contributors_desc">Thank you to everyone who helps AriaCast</string>
+    <string name="contributors_title">Thank you!</string>
+    <string name="contributors_message">AriaCast exists thanks to the people who give their time to it: developers who write and review code, translators who bring the app to more languages, and everyone who reports bugs, tests builds and shares ideas.\n\nThank you, every contribution makes AriaCast better.</string>
+    <string name="contributors_code">Code contributors</string>
+    <string name="contributors_translations">Translators</string>
     <string name="check_for_updates">Check for Updates</string>
     <string name="github_repo">GitHub Repository</string>
     <string name="github_repo_desc">View source code and report issues</string>

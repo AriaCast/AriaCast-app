@@ -26,5 +26,7 @@ class SettingsActivity : ComponentActivity() {
         const val KEY_VIDEO_ENABLED = "prefs_video_enabled"
         const val KEY_MULTIROOM_ENABLED = "prefs_multiroom_enabled"
         const val GITHUB_URL = "https://github.com/AriaCast/AriaCast-app"
+        const val CONTRIBUTORS_URL = "https://github.com/AriaCast/AriaCast-app/graphs/contributors"
+        const val TRANSLATORS_URL = "https://hosted.weblate.org/projects/ariacast/ariacast-app/"
     }
 }
