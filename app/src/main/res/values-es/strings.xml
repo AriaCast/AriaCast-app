@@ -273,7 +273,7 @@
     <string name="status_connected">Conectado</string>
     <string name="status_available">Disponible</string>
     <string name="groups_title">Grupos</string>
-    <string name="groups_desc">Reproduce en varios altavoces a la vez, p. ej. \"Noche = cocina + salón\".</string>
+    <string name="groups_desc">Reproduce en varios altavoces a la vez, p. ej. \"Noche = cocina + salón\".</string>
     <string name="group_online">%1$d de %2$d en línea</string>
     <string name="receive_title">Recibir en este dispositivo</string>
     <string name="receive_off">Desactivado</string>
