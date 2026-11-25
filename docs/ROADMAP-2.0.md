@@ -29,8 +29,10 @@ this section before releasing.
 | Plugin catalog with signature checks | Not done | The existing GitHub sync with re-consent on change remains |
 | AirPlay receiver (UxPlay via NDK) | Not done | Large native integration |
 | Cast mirroring (libcast), AirPlay mirroring | Not done | |
-| Per-app routing, EQ/loudness, AV sync offset | Not done | Multiroom delay sliders exist |
-| Home Assistant `media_player`, quirk profiles, auto-cast on speaker appearance | Not done | |
+| Sleep timer with fades, per-speaker EQ/loudness, saved per-speaker delay | Done | `MasterGain`, `SpeakerDsp`. Sendspin speakers aren't shaped (the server pulls the stream) |
+| Per-app routing | Not done | Spike |
+| Quirk profiles | Partial | `DeviceQuirks`: notes in the doctor for WiiM (DLNA) and shairport-sync (AirPlay 2); more entries come from "Copy report" |
+| Home Assistant `media_player`, auto-cast on speaker appearance | Not done | |
 | Ktor 3 | Not done | Client and server on 2.3.8 |
 | Retire the standalone receiver repo | Not done | Needs a final release there pointing to AriaCast |
 

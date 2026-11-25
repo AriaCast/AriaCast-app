@@ -533,6 +533,8 @@ class DiscoveryManager(private val context: Context) {
 
             val extraParts = mutableListOf(ExtraFields.encode("av_control", avTransportUrl))
             if (renderingControlUrl != null) extraParts.add(ExtraFields.encode("rc_control", renderingControlUrl))
+            desc.manufacturer?.let { extraParts.add(ExtraFields.encode("manufacturer", it)) }
+            desc.modelName?.let { extraParts.add(ExtraFields.encode("model", it)) }
 
             val server = Server(
                 name = desc.friendlyName,

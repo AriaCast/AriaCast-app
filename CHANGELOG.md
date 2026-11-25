@@ -38,6 +38,18 @@ casting, a new interface, and AriaCompanion 2.
   recognizes apps that block audio capture.
 - **Onboarding**, Material You colors on Android 12+, home-screen **widget**.
 
+### Sound and timing
+- **Sleep timer** on Now Playing (15 to 90 minutes). The sound fades out over the last 30
+  seconds, then the cast stops. Every cast also starts with a one-second fade-in.
+- **Sound per speaker**: bass, treble and level (-12 to +12 dB) and an optional loudness
+  leveler, set for each speaker while casting and remembered for next time. Works with
+  AriaCast, AirPlay, Cast, DLNA, Snapcast and VBAN speakers.
+- **Rooms stay lined up**: each speaker's sync delay is now saved and applied the next time
+  that speaker joins a cast.
+- **Known speaker behavior**: the connection doctor now shows notes for brands and models with
+  documented quirks (WiiM over DLNA, shairport-sync over AirPlay 2) and adds the speaker's
+  manufacturer and model to the copied report. DLNA speakers now report both.
+
 ### Built in, previously plugins
 - Music Assistant player picker, connection doctor, visualizer, add speaker by address.
 - **Plugin API v2**: plugins describe their UI with `ui.render()`; the v1 view methods

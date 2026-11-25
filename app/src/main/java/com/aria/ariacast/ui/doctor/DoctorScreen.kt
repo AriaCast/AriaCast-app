@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import com.aria.ariacast.quirks.DeviceIdentity
+import com.aria.ariacast.quirks.DeviceQuirks
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
@@ -67,7 +70,7 @@ import kotlinx.coroutines.withContext
 import java.net.InetSocketAddress
 import java.net.Socket
 
-enum class CheckStatus { OK, WARN, FAIL, PENDING }
+enum class CheckStatus { OK, WARN, FAIL, PENDING, INFO }
 
 data class Check(val title: String, val status: CheckStatus, val detail: String, val fix: Pair<String, () -> Unit>? = null)
 
@@ -139,6 +142,13 @@ fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
                         context.getString(if (ok) R.string.doctor_reach_ok else R.string.doctor_reach_fail, d.host, d.port))
                 }
 
+                // Known behavior of this brand or model, so a quirk isn't mistaken for a bug.
+                s.activeDestinations.value.forEach { d ->
+                    DeviceQuirks.matching(DeviceIdentity.of(d.platform, d.name, d.extra)).forEach { q ->
+                        list += Check(context.getString(R.string.doctor_known_behavior, d.name), CheckStatus.INFO, context.getString(q.note))
+                    }
+                }
+
                 // Data flowing?
                 val stats = s.stats.value
                 val flowing = stats.sentFrames > lastSent && lastSent >= 0
@@ -179,6 +189,7 @@ fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
                             CheckStatus.WARN -> Icons.Filled.Warning to StatusColors.Warning
                             CheckStatus.FAIL -> Icons.Filled.Error to MaterialTheme.colorScheme.error
                             CheckStatus.PENDING -> Icons.Filled.RadioButtonUnchecked to MaterialTheme.colorScheme.outline
+                            CheckStatus.INFO -> Icons.Filled.Info to MaterialTheme.colorScheme.primary
                         }
                         ListRow(
                             headline = c.title,
@@ -195,6 +206,7 @@ fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
                         val report = buildString {
                             appendLine("AriaCast connection report")
                             checks.forEach { appendLine("[${it.status}] ${it.title}: ${it.detail}") }
+                            service?.activeDestinations?.value?.forEach { appendLine("Speaker: " + DeviceIdentity.of(it.platform, it.name, it.extra).reportLine()) }
                             service?.let { appendLine(it.getStatsJson()) }
                         }
                         context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AriaCast report", report))

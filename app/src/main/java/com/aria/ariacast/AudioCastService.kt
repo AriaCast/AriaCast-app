@@ -59,6 +59,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.Json
 import org.json.JSONArray
 import org.json.JSONObject
@@ -84,6 +85,8 @@ import com.aria.ariacast.pipeline.FgsTypes
 import com.aria.ariacast.pipeline.MicrophoneSource
 import com.aria.ariacast.pipeline.ProjectionCaptureSource
 import com.aria.ariacast.pipeline.SourceKind
+import com.aria.ariacast.pipeline.SpeakerDsp
+import com.aria.ariacast.pipeline.SpeakerSound
 import com.aria.ariacast.receiver.ReceiverHub
 import com.aria.ariacast.sendspin.SendspinHub
 import com.aria.ariacast.pipeline.PcmFormat
@@ -274,6 +277,42 @@ class AudioCastService : Service() {
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
     private var mutedForSource = false
+
+    /** Fade-in at the start of a cast and the sleep timer's fade-out, ahead of every sink. */
+    private val masterGain = com.aria.ariacast.pipeline.MasterGain()
+    private var sleepTimerJob: Job? = null
+
+    private val _sleepTimerRemainingMs = MutableStateFlow<Long?>(null)
+    /** Time left on the sleep timer, or null when none is set. */
+    val sleepTimerRemainingMs: StateFlow<Long?> = _sleepTimerRemainingMs.asStateFlow()
+
+    /** Stops the cast after [minutes], fading the sound out over the last 30 seconds. */
+    fun setSleepTimer(minutes: Int) {
+        if (minutes <= 0) { cancelSleepTimer(); return }
+        if (_state.value != CastState.CASTING && _state.value != CastState.CONNECTING) return
+        sleepTimerJob?.cancel()
+        masterGain.startTimer(minutes * 60_000L)
+        _sleepTimerRemainingMs.value = masterGain.remainingMs()
+        sleepTimerJob = scope.launch {
+            while (isActive) {
+                val left = masterGain.remainingMs() ?: break
+                _sleepTimerRemainingMs.value = left
+                if (left == 0L) {
+                    PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Sleep timer ended: stopping the cast")
+                    withContext(Dispatchers.Main) { stopCasting() }
+                    break
+                }
+                delay(minOf(left, 1_000L))
+            }
+        }
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        masterGain.cancelTimer()
+        _sleepTimerRemainingMs.value = null
+    }
 
     private val _metadata = MutableStateFlow<TrackMetadata?>(null)
     val metadata: StateFlow<TrackMetadata?> = _metadata.asStateFlow()
@@ -524,7 +563,7 @@ class AudioCastService : Service() {
     ) {
         sessionJob?.cancel()
 
-        _activeDestinations.value = destinations
+        _activeDestinations.value = destinations.map(::withSavedDelay)
         _state.value = CastState.CONNECTING
         sessionJob = SupervisorJob()
         val sessionScope = CoroutineScope(Dispatchers.IO + sessionJob!!)
@@ -568,6 +607,8 @@ class AudioCastService : Service() {
             return
         }
         currentSource = source
+        cancelSleepTimer()
+        masterGain.beginSession()
         _sourceKind.value = source.kind
         if (source.muteLocalPlayback) {
             // Playback capture happens before the volume is applied, so muting the phone
@@ -608,6 +649,7 @@ class AudioCastService : Service() {
                                 else "Source is producing a real audio signal"
                             )
                         }
+                        masterGain.process(frame)
                         _audioBufferFlow.emit(frame)
                     }
                     PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "Source ${source.kind.id} ended")
@@ -664,8 +706,9 @@ class AudioCastService : Service() {
             startDlnaHttpServer(); startArtworkServer()
         }
         if ((dest.platform == "AirPlay" || dest.platform == "AirPlay2") && dacpServer == null) startDacpServer()
-        _activeDestinations.value = _activeDestinations.value + dest
-        launchDestination(scope, dest, withVideo = false)
+        val withDelay = withSavedDelay(dest)
+        _activeDestinations.value = _activeDestinations.value + withDelay
+        launchDestination(scope, withDelay, withVideo = false)
         PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Added ${dest.name} to the cast")
         _metadata.value?.let { sendMetadata(it) }
         updateNotification()
@@ -771,7 +814,9 @@ class AudioCastService : Service() {
                             }
                             output.write(header.array())
 
-                            audioBufferFlow.collect { buffer ->
+                            val dsp = dspFor(clientSocket.inetAddress?.hostAddress ?: "")
+                            audioBufferFlow.collect { raw ->
+                                val buffer = dsp.process(raw)
                                 try {
                                     output.write(buffer)
                                     output.flush()
@@ -971,7 +1016,8 @@ class AudioCastService : Service() {
             try {
                 val reason = coroutineScope {
                     val feeder = launch {
-                        audioBufferFlow.collect { chunk -> streamer.writePcm(resampler.resample(chunk)) }
+                        val dsp = dspFor(dest.host)
+                        audioBufferFlow.collect { chunk -> streamer.writePcm(resampler.resample(dsp.process(chunk))) }
                     }
                     // "Streaming" alone doesn't say whether the receiver is playing: log what it
                     // has asked for (timing requests, resends) once it has had time to start.
@@ -1231,7 +1277,8 @@ class AudioCastService : Service() {
                 updateNotification()
                 PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE,
                     "VBAN stream '$streamName' to ${dest.name} (${dest.host}:$port), ${PcmFormat.SAMPLE_RATE} Hz stereo 16-bit PCM")
-                audioBufferFlow.collect { streamer.send(it) }
+                val dsp = dspFor(dest.host)
+                audioBufferFlow.collect { streamer.send(dsp.process(it)) }
             }
         } catch (e: CancellationException) {
             throw e
@@ -1375,8 +1422,9 @@ class AudioCastService : Service() {
 
             // 5. Stream audio
             try {
-                audioBufferFlow.collect { buffer ->
-                    audioOut.write(buffer)
+                val dsp = dspFor(dest.host)
+                audioBufferFlow.collect { raw ->
+                    audioOut.write(dsp.process(raw))
                 }
             } finally {
                 try { audioSocket.close() } catch (_: Exception) {}
@@ -1443,8 +1491,9 @@ class AudioCastService : Service() {
 
                     val delayQueue = java.util.LinkedList<ByteArray>()
                     
-                    audioBufferFlow.collect { buffer: ByteArray ->
-                        delayQueue.add(buffer)
+                    val dsp = dspFor(dest.host)
+                    audioBufferFlow.collect { raw: ByteArray ->
+                        delayQueue.add(dsp.process(raw))
                         
                         val currentDelay = _activeDestinations.value.find { it.host == dest.host }?.delayMs ?: 0
                         val requiredFrames = currentDelay / 20 
@@ -1670,7 +1719,49 @@ class AudioCastService : Service() {
         } catch (_: Exception) {}
     }
 
+    private val _speakerSounds = MutableStateFlow<Map<String, SpeakerSound>>(emptyMap())
+    /** Sound settings per speaker host, saved across sessions. */
+    val speakerSounds: StateFlow<Map<String, SpeakerSound>> = _speakerSounds.asStateFlow()
+
+    private fun speakerKey(host: String, field: String) = "spk.$host.$field"
+
+    /** The saved sound for [host]; read from storage once, then served from memory. */
+    fun soundFor(host: String): SpeakerSound {
+        _speakerSounds.value[host]?.let { return it }
+        val loaded = SpeakerSound(
+            bassDb = sharedPreferences.getInt(speakerKey(host, "bass"), 0),
+            trebleDb = sharedPreferences.getInt(speakerKey(host, "treble"), 0),
+            trimDb = sharedPreferences.getInt(speakerKey(host, "trim"), 0),
+            leveling = sharedPreferences.getBoolean(speakerKey(host, "leveling"), false),
+        ).clamped()
+        _speakerSounds.update { it + (host to loaded) }
+        return loaded
+    }
+
+    /** Applies the sound to the running stream at once and remembers it for next time. */
+    fun setSpeakerSound(host: String, sound: SpeakerSound) {
+        val s = sound.clamped()
+        _speakerSounds.update { it + (host to s) }
+        sharedPreferences.edit()
+            .putInt(speakerKey(host, "bass"), s.bassDb)
+            .putInt(speakerKey(host, "treble"), s.trebleDb)
+            .putInt(speakerKey(host, "trim"), s.trimDb)
+            .putBoolean(speakerKey(host, "leveling"), s.leveling)
+            .apply()
+    }
+
+    /** One processor per consumer of the audio bus; it follows this speaker's live settings. */
+    private fun dspFor(host: String) = SpeakerDsp { soundFor(host) }
+
+    /** Gives [dest] the delay saved for its host, unless one was already set. */
+    private fun withSavedDelay(dest: CastDestination): CastDestination {
+        if (dest.delayMs != 0) return dest
+        val saved = sharedPreferences.getInt(speakerKey(dest.host, "delay"), 0)
+        return if (saved != 0) dest.copy(delayMs = saved) else dest
+    }
+
     fun setDelay(host: String, delayMs: Int) {
+        sharedPreferences.edit().putInt(speakerKey(host, "delay"), delayMs).apply()
         val current = _activeDestinations.value.toMutableList()
         val index = current.indexOfFirst { it.host == host }
         if (index != -1) {
@@ -1990,6 +2081,7 @@ class AudioCastService : Service() {
     }
 
     private fun cleanupSession() {
+        cancelSleepTimer()
         val destinations = _activeDestinations.value.toList()
         val teardownJobs = stopRemoteSessions(destinations)
         releaseWakeLock()

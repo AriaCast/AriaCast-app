@@ -14,10 +14,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -61,7 +64,10 @@ import com.aria.ariacast.TrackMetadata
 import com.aria.ariacast.lyrics.LrcLib
 import com.aria.ariacast.lyrics.Lyrics
 import com.aria.ariacast.ui.AppController
+import com.aria.ariacast.pipeline.SpeakerSound
+import com.aria.ariacast.sendspin.SendspinHub
 import com.aria.ariacast.ui.ListBlock
+import com.aria.ariacast.ui.ListRow
 import com.aria.ariacast.ui.ListGroup
 import com.aria.ariacast.ui.SwitchListRow
 import com.aria.ariacast.ui.theme.StatTextStyle
@@ -182,6 +188,8 @@ fun NowPlayingScreen(controller: AppController, onClose: () -> Unit) {
                 s?.let { Visualizer(it, Modifier.fillMaxWidth().height(40.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) }
                 s?.let { SpeakersInCast(controller, it) }
                 s?.let { MultiroomSync(it) }
+                s?.let { SpeakerSounds(it) }
+                s?.let { SleepTimer(it) }
                 LyricsSection(m, livePosition)
                 Spacer(Modifier.height(24.dp))
             }
@@ -211,6 +219,86 @@ private fun MultiroomSync(service: AudioCastService) {
                 }
                 Slider(value = value, onValueChange = { value = it }, valueRange = 0f..2000f, steps = 99,
                     onValueChangeFinished = { service.setDelay(dest.host, value.toInt()) })
+            }
+        }
+    }
+}
+
+/** Bass, treble, level and leveling for each speaker, saved per speaker. */
+@Composable
+private fun SpeakerSounds(service: AudioCastService) {
+    val destinations by service.activeDestinations.collectAsState()
+    val sounds by service.speakerSounds.collectAsState()
+    val state by service.state.collectAsState()
+    // A Sendspin server pulls the stream itself, so there is nothing of ours to shape.
+    val speakers = destinations.filter { it.platform != SendspinHub.PLATFORM }
+    if (state != CastState.CASTING || speakers.isEmpty()) return
+    ListGroup(title = stringResource(R.string.speaker_sound)) {
+        speakers.forEach { dest ->
+            val sound = sounds[dest.host] ?: service.soundFor(dest.host)
+            var open by remember(dest.host) { mutableStateOf(false) }
+            val flat = stringResource(R.string.speaker_sound_flat)
+            ListRow(
+                headline = dest.name,
+                supporting = if (sound.isFlat) flat else soundSummary(sound),
+                trailing = { Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null) },
+                onClick = { open = !open },
+            )
+            if (open) {
+                ListBlock {
+                    DbSlider(stringResource(R.string.speaker_sound_bass), sound.bassDb) { service.setSpeakerSound(dest.host, sound.copy(bassDb = it)) }
+                    DbSlider(stringResource(R.string.speaker_sound_treble), sound.trebleDb) { service.setSpeakerSound(dest.host, sound.copy(trebleDb = it)) }
+                    DbSlider(stringResource(R.string.speaker_sound_level), sound.trimDb) { service.setSpeakerSound(dest.host, sound.copy(trimDb = it)) }
+                }
+                SwitchListRow(stringResource(R.string.speaker_sound_leveling), stringResource(R.string.speaker_sound_leveling_desc), sound.leveling,
+                    { service.setSpeakerSound(dest.host, sound.copy(leveling = it)) })
+                if (!sound.isFlat) {
+                    ListRow(headline = stringResource(R.string.speaker_sound_reset), onClick = { service.setSpeakerSound(dest.host, SpeakerSound()) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun soundSummary(s: SpeakerSound): String = buildList {
+    if (s.bassDb != 0) add(stringResource(R.string.speaker_sound_bass) + " %+d".format(s.bassDb))
+    if (s.trebleDb != 0) add(stringResource(R.string.speaker_sound_treble) + " %+d".format(s.trebleDb))
+    if (s.trimDb != 0) add(stringResource(R.string.speaker_sound_level) + " %+d".format(s.trimDb))
+    if (s.leveling) add(stringResource(R.string.speaker_sound_leveling))
+}.joinToString(" · ")
+
+/** A -12..+12 dB slider that applies when released. */
+@Composable
+private fun DbSlider(label: String, value: Int, onCommit: (Int) -> Unit) {
+    var v by remember(value) { mutableFloatStateOf(value.toFloat()) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Text("%+d dB".format(v.toInt()), style = StatTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Slider(value = v, onValueChange = { v = it }, valueRange = -12f..12f, steps = 23, onValueChangeFinished = { onCommit(v.toInt()) })
+}
+
+private val SLEEP_TIMER_CHOICES = listOf(15, 30, 45, 60, 90)
+
+/** Stops the cast after a while, fading the sound out over the last 30 seconds. */
+@Composable
+private fun SleepTimer(service: AudioCastService) {
+    val state by service.state.collectAsState()
+    val left by service.sleepTimerRemainingMs.collectAsState()
+    if (state != CastState.CASTING) return
+    ListGroup(title = stringResource(R.string.sleep_timer)) {
+        ListBlock {
+            Text(
+                left?.let { stringResource(R.string.sleep_timer_left, formatTime(it + 999)) } ?: stringResource(R.string.sleep_timer_desc),
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = left == null, onClick = { service.cancelSleepTimer() }, label = { Text(stringResource(R.string.sleep_timer_off)) })
+                SLEEP_TIMER_CHOICES.forEach { minutes ->
+                    FilterChip(selected = false, onClick = { service.setSleepTimer(minutes) },
+                        label = { Text(stringResource(R.string.sleep_timer_minutes, minutes)) })
+                }
             }
         }
     }

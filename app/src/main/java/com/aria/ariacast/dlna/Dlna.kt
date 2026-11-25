@@ -8,7 +8,15 @@ object Dlna {
     private const val CM = "urn:schemas-upnp-org:service:ConnectionManager:1"
 
     /** What discovery needs from a remote device description: who it is and where to control it. */
-    data class RemoteRenderer(val udn: String?, val friendlyName: String, val avControl: String, val rcControl: String?)
+    data class RemoteRenderer(
+        val udn: String?,
+        val friendlyName: String,
+        val avControl: String,
+        val rcControl: String?,
+        /** `manufacturer` and `modelName` of the root device; they tell brands apart (see DeviceQuirks). */
+        val manufacturer: String? = null,
+        val modelName: String? = null,
+    )
 
     /**
      * Parses a UPnP device description fetched from an SSDP LOCATION. Returns null unless the
@@ -23,7 +31,11 @@ object Dlna {
         fun control(kind: String) = services.firstOrNull { tag("serviceType", it)?.contains(":service:$kind:") == true }
             ?.let { tag("controlURL", it) }?.takeIf { it.isNotEmpty() }
         val av = control("AVTransport") ?: return null
-        return RemoteRenderer(tag("UDN", xml)?.takeIf { it.isNotEmpty() }, name, av, control("RenderingControl"))
+        return RemoteRenderer(
+            tag("UDN", xml)?.takeIf { it.isNotEmpty() }, name, av, control("RenderingControl"),
+            manufacturer = tag("manufacturer", xml)?.takeIf { it.isNotEmpty() },
+            modelName = tag("modelName", xml)?.takeIf { it.isNotEmpty() },
+        )
     }
 
     fun serviceType(service: String) = when (service) {

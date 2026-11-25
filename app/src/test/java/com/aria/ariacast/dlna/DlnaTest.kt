@@ -69,6 +69,14 @@ class DlnaTest {
         assertEquals(null, Dlna.parseRemoteDescription(mediaServer))
     }
 
+    @Test fun remoteDescriptionReadsManufacturerAndModel() {
+        val xml = """<root><device><friendlyName>Den</friendlyName><manufacturer>Linkplay Technology Inc.</manufacturer>
+<modelName>WiiM Pro Plus</modelName><serviceList>${svc("urn:schemas-upnp-org:service:AVTransport:1", "/avt")}</serviceList></device></root>"""
+        val r = Dlna.parseRemoteDescription(xml)!!
+        assertEquals("Linkplay Technology Inc.", r.manufacturer)
+        assertEquals("WiiM Pro Plus", r.modelName)
+    }
+
     @Test fun remoteDescriptionAcceptsNewerAvTransportVersions() {
         val xml = """<root><device><friendlyName>TV</friendlyName><serviceList>${svc("urn:schemas-upnp-org:service:AVTransport:3", "http://10.0.0.5:9197/avt")}</serviceList></device></root>"""
         val r = Dlna.parseRemoteDescription(xml)!!
