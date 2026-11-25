@@ -58,6 +58,12 @@ jobs:
             AriaCompanion/firmware-bt/build/partition_table/partition-table.bin
             AriaCompanion/firmware-bt/build/flasher_args.json
 
+      # The IDF container runs as root and leaves root-owned files in the workspace,
+      # which makes the next actions/checkout cleanup fail with EACCES.
+      - name: Restore workspace ownership
+        if: always()
+        run: docker run --rm -v "$PWD:/w" alpine chown -R "$(id -u):$(id -g)" /w
+
   web-remote:
     runs-on: self-hosted
     steps:
