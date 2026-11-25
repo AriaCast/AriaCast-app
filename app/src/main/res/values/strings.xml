@@ -457,4 +457,8 @@
     <string name="companion_via_usb">Over USB</string>
     <string name="companion_bt_firmware">The Bluetooth board is updated from a computer: see docs/ariacompanion-bt.md.</string>
     <string name="companion_bt_usb_priority">On hold while the USB board is plugged in.</string>
+    <string name="notification_casting_to">Casting to %1$s</string>
+    <string name="notification_casting_count">Casting to %1$d devices</string>
+    <string name="notification_error">Connection error</string>
+    <string name="notification_sendspin_ready">Ready: %1$s starts the stream when it plays this input</string>
 </resources>
