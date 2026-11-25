@@ -26,18 +26,14 @@ jobs:
       - name: Unit tests
         run: ./gradlew testGithubDebugUnitTest
 
-      # Builds both flavors (github, fdroid) in Debug and Release
+      # Both flavors (github, fdroid), debug only
       - name: Build APKs
-        run: ./gradlew assembleDebug assembleRelease
+        run: ./gradlew assembleDebug
 
+      # Debug APKs are "AriaCast Test": a separate app (com.aria.ariacast.test) signed with the
+      # debug key, so testers can install it next to the real app without touching its data.
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: debug-apk
           path: app/build/outputs/apk/*/debug/*.apk
-
-      - name: Upload Release APK (Unsigned)
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-apk
-          path: app/build/outputs/apk/*/release/*.apk

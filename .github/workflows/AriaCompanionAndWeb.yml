@@ -2,6 +2,7 @@ name: AriaCompanion firmware and web remote
 
 on:
   push:
+    branches: [ "main" ]
     paths: [ "AriaCompanion/**", "web-remote/**", ".github/workflows/AriaCompanionAndWeb.yml" ]
   pull_request:
     paths: [ "AriaCompanion/**", "web-remote/**" ]

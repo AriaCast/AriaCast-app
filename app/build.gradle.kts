@@ -56,6 +56,12 @@ android {
     }
 
     buildTypes {
+        // Debug builds (the CI artifact) install next to the real app as "AriaCast Test",
+        // with their own data, and are signed with the debug key: no release key is needed.
+        debug {
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(
