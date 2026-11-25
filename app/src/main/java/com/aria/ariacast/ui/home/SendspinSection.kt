@@ -39,7 +39,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.aria.ariacast.R
-import com.aria.ariacast.receiver.ReceiverHub
 import com.aria.ariacast.sendspin.SendspinHub
 import com.aria.ariacast.ui.LeadingIcon
 import com.aria.ariacast.ui.ListGroup
@@ -48,49 +47,55 @@ import com.aria.ariacast.ui.SwitchListRow
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.SpeakerGroup
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Input
 import com.aria.ariacast.ui.qrBitmap
 
-/** Sendspin (Music Assistant) group of the Receive destination. */
+/**
+ * Sendspin (Music Assistant) settings, under Settings > Protocols. Music Assistant plays
+ * here while Receive is on; the switch only adds the Live input (source@v1).
+ */
 @Composable
 fun SendspinSection() {
     val context = LocalContext.current
     val hub = remember { SendspinHub.get(context) }
-    val receiver = remember { ReceiverHub.get(context) }
     val status by hub.status.collectAsState()
-    var enabled by remember { mutableStateOf(hub.enabled) }
+    var liveInput by remember { mutableStateOf(hub.liveInputEnabled) }
     var unpaired by remember { mutableStateOf(hub.identity.unpairedAccess) }
     var pairDialog by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
 
-    ListGroup(title = stringResource(R.string.ma_title)) {
-        SwitchListRow(stringResource(R.string.sendspin_title), stringResource(R.string.sendspin_desc), enabled, {
-            enabled = it; hub.enabled = it
-            if (it) hub.start(receiver.name) else hub.stop()
-        }, Icons.Filled.SpeakerGroup)
-        if (enabled) {
+    ListGroup(title = stringResource(R.string.sendspin_title)) {
+        ListRow(
+            headline = when {
+                !status.running -> stringResource(R.string.sendspin_inactive)
+                status.serverName == null -> stringResource(R.string.sendspin_waiting)
+                else -> stringResource(if (status.paired) R.string.sendspin_connected_paired else R.string.sendspin_connected_unpaired, status.serverName!!)
+            },
+            supporting = if (!status.running) stringResource(R.string.sendspin_inactive_desc) else null,
+            leading = { LeadingIcon(Icons.Filled.Link, active = status.serverName != null) },
+        )
+        SwitchListRow(stringResource(R.string.sendspin_live_input), stringResource(R.string.sendspin_live_input_desc), liveInput, {
+            liveInput = it; hub.liveInputEnabled = it
+        }, Icons.Filled.Input)
+        // Its own row: a trailing button this long squeezed the status text unreadably.
+        ListRow(
+            headline = stringResource(R.string.sendspin_pair),
+            supporting = stringResource(R.string.sendspin_pair_row_desc),
+            leading = { LeadingIcon(Icons.Filled.QrCode) },
+            onClick = { pairDialog = true },
+        )
+        SwitchListRow(stringResource(R.string.sendspin_unpaired), stringResource(R.string.sendspin_unpaired_desc), unpaired, {
+            unpaired = it; hub.identity.unpairedAccess = it
+        }, Icons.Filled.LockOpen)
+        val paired = remember(refresh, status) { hub.identity.pairedServers() }
+        paired.forEach { p ->
             ListRow(
-                headline = when {
-                    status.serverName == null -> stringResource(R.string.sendspin_waiting)
-                    status.sourceStreaming -> stringResource(R.string.sendspin_source_streaming, status.serverName!!)
-                    status.playing -> stringResource(R.string.sendspin_playing, status.serverName!!)
-                    else -> stringResource(if (status.paired) R.string.sendspin_connected_paired else R.string.sendspin_connected_unpaired, status.serverName!!)
-                },
-                leading = { LeadingIcon(Icons.Filled.Link, active = status.serverName != null) },
-                trailing = { TextButton(onClick = { pairDialog = true }) { Text(stringResource(R.string.sendspin_pair)) } },
+                headline = p.name,
+                supporting = stringResource(R.string.sendspin_paired_servers),
+                leading = { LeadingIcon(Icons.Filled.Lock) },
+                trailing = { IconButton(onClick = { hub.forgetServer(p.serverId); refresh++ }) { Icon(Icons.Filled.Delete, stringResource(R.string.sendspin_forget)) } },
             )
-            SwitchListRow(stringResource(R.string.sendspin_unpaired), stringResource(R.string.sendspin_unpaired_desc), unpaired, {
-                unpaired = it; hub.identity.unpairedAccess = it
-            }, Icons.Filled.LockOpen)
-            val paired = remember(refresh, status) { hub.identity.pairedServers() }
-            paired.forEach { p ->
-                ListRow(
-                    headline = p.name,
-                    supporting = stringResource(R.string.sendspin_paired_servers),
-                    leading = { LeadingIcon(Icons.Filled.Lock) },
-                    trailing = { IconButton(onClick = { hub.forgetServer(p.serverId); refresh++ }) { Icon(Icons.Filled.Delete, stringResource(R.string.sendspin_forget)) } },
-                )
-            }
         }
     }
     if (pairDialog) PairDialog(hub.identity.pairingToken) { pairDialog = false }

@@ -347,6 +347,11 @@ class SendspinSession(
                 }
                 put("buffer_capacity", config.bufferCapacity)
             }
+            // Required for every listed role that has one; servers don't activate a role without it.
+            // line_sense: client/state reports whether a signal is present.
+            if (config.source) putJsonObject("source@v1_support") {
+                putJsonObject("features") { put("line_sense", true) }
+            }
             putJsonObject("supported_pair_methods") {
                 putJsonObject("pairing_psk") { putJsonArray("locations") { add(JsonPrimitive("device")) } }
             }
@@ -386,7 +391,9 @@ class SendspinSession(
         val removed = activeRoles - effectiveRoles
         val playbackDropped = "playback" in activities && "playback" !in acts
         if ((("player@v1" in removed) || playbackDropped) && playerStreamActive) { playerStreamActive = false; listener.onPlayerEnd() }
-        if ((("source@v1" in removed) || playbackDropped) && sourceStreamOpen) endSourceStream()
+        // The source role doesn't depend on the playback activity: servers activate a capture
+        // device with no activities at all, so only losing the role ends its stream.
+        if ("source@v1" in removed && sourceStreamOpen) endSourceStream()
         if ("metadata@v1" in removed) listener.onMetadata(null)
         val added = effectiveRoles - activeRoles
         activities = acts
@@ -574,7 +581,7 @@ class SendspinSession(
         }
         (p["source"] as? JsonObject)?.takeIf { "source@v1" in activeRoles }?.let { c ->
             when (c["command"]?.jsonPrimitive?.contentOrNull) {
-                "start" -> if (!sourceStreamOpen && "playback" in activities) {
+                "start" -> if (!sourceStreamOpen) {
                     if (sourceSignal && listener.onSourceStart()) {
                         sendJson("client-stream/start", buildJsonObject {
                             putJsonObject("source") { put("codec", "pcm"); put("channels", 2); put("sample_rate", 48000); put("bit_depth", 16) }

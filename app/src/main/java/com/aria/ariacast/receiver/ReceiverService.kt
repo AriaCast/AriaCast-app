@@ -17,7 +17,6 @@ import androidx.core.app.NotificationCompat
 import com.aria.ariacast.DeviceIdentity
 import com.aria.ariacast.R
 import com.aria.ariacast.pipeline.FgsTypes
-import com.aria.ariacast.sendspin.SendspinHub
 import com.aria.ariacast.dlna.DlnaRenderer
 import com.aria.ariacast.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -99,7 +98,6 @@ class ReceiverService : Service() {
         hub.setRunning(true)
         registerNsd()
         startUdpResponder()
-        SendspinHub.get(this).let { if (it.enabled) it.start(hub.name) }
         if (getSharedPreferences(com.aria.ariacast.AudioCastService.PREFS_NAME, MODE_PRIVATE).getBoolean(DlnaRenderer.KEY_ENABLED, true)) {
             DlnaRenderer.get(this).start(hub.name)
         }

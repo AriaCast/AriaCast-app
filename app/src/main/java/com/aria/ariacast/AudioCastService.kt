@@ -35,7 +35,6 @@ import android.os.PowerManager
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
-import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
@@ -58,6 +57,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import org.json.JSONArray
 import org.json.JSONObject
@@ -1207,7 +1208,10 @@ class AudioCastService : Service() {
         _state.value = CastState.CASTING
         updateNotification()
         try {
-            _audioBufferFlow.collect { hub.pushSourceFrame(it) }
+            coroutineScope {
+                launch { hub.status.map { it.sourceStreaming to it.serverName }.distinctUntilChanged().collect { updateNotification() } }
+                _audioBufferFlow.collect { hub.pushSourceFrame(it) }
+            }
         } finally {
             hub.setSourceSignal(false)
         }
@@ -2176,28 +2180,37 @@ class AudioCastService : Service() {
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
 
-        val remoteViews = RemoteViews(packageName, R.layout.notification_casting)
-        remoteViews.setTextViewText(R.id.notification_title, getString(R.string.app_name))
-
+        // Plain title and text, no custom layout: Android shows a silent (low importance)
+        // notification in compact form with only these, so a custom view alone ends up blank.
         val destinations = _activeDestinations.value
-        val statusText = when(state.value) {
-            CastState.CASTING -> {
-                if (destinations.size > 1) "Casting to ${destinations.size} devices"
-                else getString(R.string.casting_to, destinations.firstOrNull()?.name ?: "Unknown", "")
-            }
-            CastState.CONNECTING -> "Connecting..."
-            CastState.ERROR -> "Connection Error"
+        val single = destinations.singleOrNull()
+        val title = when (state.value) {
+            CastState.CASTING -> if (destinations.size > 1) getString(R.string.notification_casting_count, destinations.size)
+                else getString(R.string.notification_casting_to, single?.name ?: getString(R.string.app_name))
+            CastState.CONNECTING -> getString(R.string.connecting)
+            CastState.ERROR -> getString(R.string.notification_error)
             else -> getString(R.string.not_casting)
         }
-        remoteViews.setTextViewText(R.id.notification_text, statusText)
+        // A Sendspin input only carries audio while the server pulls it.
+        val text = if (state.value == CastState.CASTING && single?.platform == SendspinHub.PLATFORM) {
+            val status = SendspinHub.get(this).status.value
+            val server = status.serverName?.ifBlank { null } ?: "Music Assistant"
+            getString(if (status.sourceStreaming) R.string.sendspin_source_streaming else R.string.notification_sendspin_ready, server)
+        } else if (destinations.size > 1) destinations.joinToString(", ") { it.name } else null
 
         val stopIntent = Intent(this, AudioCastService::class.java).apply { action = ACTION_STOP }
         val stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE)
-        remoteViews.setOnClickPendingIntent(R.id.notification_stop_button, stopPendingIntent)
+        val openPendingIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_tile_icon)
-            .setCustomContentView(remoteViews)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setContentIntent(openPendingIntent)
+            .addAction(0, getString(R.string.stop), stopPendingIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }
 

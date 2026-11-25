@@ -111,6 +111,8 @@ class SendspinSessionTest {
         val hello = takeJson()
         assertEquals("client/hello", hello["type"]!!.jsonPrimitive.content)
         assertTrue(hello["payload"]!!.jsonObject["supported_pair_methods"]!!.jsonObject.containsKey("pairing_psk"))
+        // Servers don't activate a listed role whose support object is missing.
+        for (role in listOf("player@v1", "source@v1")) assertTrue(role, hello["payload"]!!.jsonObject.containsKey("${role}_support"))
 
         // Operator entered our pairing token: re-handshake to the pairing PSK (prologue = previous h)
         fun rehandshake(psk: ByteArray, category: String) {
@@ -171,12 +173,20 @@ class SendspinSessionTest {
         assertEquals(1, audio.size)
         assertTrue("local play time ${audio[0].first}", kotlin.math.abs(audio[0].first - (clock + 300_000)) < 2_000)
 
-        // Source: signal present, server starts it, audio flows as binary type 12
+        // Source: Music Assistant activates a capture device with no activities, only the role.
+        session.onBinary(server.json("server/activate", buildJsonObject {
+            putJsonArray("activities") {}
+            putJsonArray("active_roles") { add(JsonPrimitive("source@v1")) }
+        }))
+        assertEquals(setOf("source@v1"), session.activeRoles)
+        // Signal present, server starts it, client-stream/start, audio flows as binary type 12
         session.setSourceSignal(true)
         session.onBinary(server.json("server/command", buildJsonObject { putJsonObject("source") { put("command", "start") } }))
         assertTrue(sourceStarted)
         session.sendSourceAudio(clock, ByteArray(3840))
-        val types = bins.map { server.decrypt(it)[0].toInt() }
+        val msgs = bins.map { server.decrypt(it) } // once each: the receive nonce advances
+        assertTrue(msgs.any { it[0].toInt() == 0 && String(it, 1, it.size - 1).contains("\"client-stream/start\"") })
+        val types = msgs.map { it[0].toInt() }
         assertTrue("got $types", 12 in types)
         assertEquals(null, closed)
     }
