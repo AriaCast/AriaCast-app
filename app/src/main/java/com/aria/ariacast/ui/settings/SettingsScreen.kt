@@ -13,6 +13,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -60,6 +63,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
 import com.aria.ariacast.AirPlayPinsActivity
@@ -256,7 +261,29 @@ fun SettingsScreen(controller: AppController, onBack: (() -> Unit)?) {
             onDismissRequest = { dialog = null },
             icon = { androidx.compose.material3.Icon(Icons.Filled.Favorite, null) },
             title = { Text(stringResource(R.string.contributors_title)) },
-            text = { Text(stringResource(R.string.contributors_message), Modifier.verticalScroll(rememberScrollState())) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(stringResource(R.string.contributors_message))
+                    CONTRIBUTORS.forEach { c ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp))
+                                .clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/${c.login}"))) }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Image(
+                                painterResource(c.avatar), null,
+                                Modifier.size(40.dp).clip(CircleShape),
+                                contentScale = ContentScale.Crop,
+                            )
+                            Column(Modifier.padding(start = 12.dp)) {
+                                Text(c.name, style = MaterialTheme.typography.bodyLarge)
+                                Text("@${c.login}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(onClick = { dialog = null; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SettingsActivity.CONTRIBUTORS_URL))) }) {
                     Text(stringResource(R.string.contributors_code))
@@ -274,6 +301,19 @@ fun SettingsScreen(controller: AppController, onBack: (() -> Unit)?) {
         null -> {}
     }
 }
+
+private class Contributor(val name: String, val login: String, @androidx.annotation.DrawableRes val avatar: Int)
+
+/** Code contributors, most commits first. Avatars are bundled so the dialog works offline. */
+private val CONTRIBUTORS = listOf(
+    Contributor("Lorenzo Imbastari", "AirPlr", R.drawable.avatar_airplr),
+    Contributor("Daniel Freiermuth", "daniel-freiermuth", R.drawable.avatar_daniel_freiermuth),
+    Contributor("Peter Meiser", "meiser79", R.drawable.avatar_meiser79),
+    Contributor("Highwall2016", "Highwall2016", R.drawable.avatar_highwall2016),
+    Contributor("artbre", "arthurbre", R.drawable.avatar_arthurbre),
+    Contributor("damian5602", "damian5602", R.drawable.avatar_damian5602),
+    Contributor("TamilNeram", "TamilNeram", R.drawable.avatar_tamilneram),
+)
 
 /** The per-app language ("" = follow the system). Android 13+ keeps it in LocaleManager. */
 private fun appLanguage(context: Context): String =
