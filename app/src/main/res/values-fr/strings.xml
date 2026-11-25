@@ -275,7 +275,7 @@
     <string name="status_connected">Connecté</string>
     <string name="status_available">Disponible</string>
     <string name="groups_title">Groupes</string>
-    <string name="groups_desc">Lire sur plusieurs enceintes à la fois, p. ex. « Soirée = cuisine + salon ».</string>
+    <string name="groups_desc">Lire sur plusieurs enceintes à la fois, p. ex. « Soirée = cuisine + salon ».</string>
     <string name="group_online">%1$d sur %2$d en ligne</string>
     <string name="receive_title">Recevoir sur cet appareil</string>
     <string name="receive_off">Désactivé</string>
