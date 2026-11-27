@@ -25,7 +25,7 @@ import org.robolectric.annotation.Config
  * happens when the parts run together.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [29, 36])
+@Config(sdk = [29, 34]) // Android 15 and later need Java 21 in Robolectric; the CI runs Java 17
 class StartupSmokeTest {
     private val crashes = Collections.synchronizedList(mutableListOf<Throwable>())
     private var previous: Thread.UncaughtExceptionHandler? = null
