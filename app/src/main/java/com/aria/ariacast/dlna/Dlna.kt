@@ -8,7 +8,15 @@ object Dlna {
     private const val CM = "urn:schemas-upnp-org:service:ConnectionManager:1"
 
     /** What discovery needs from a remote device description: who it is and where to control it. */
-    data class RemoteRenderer(val udn: String?, val friendlyName: String, val avControl: String, val rcControl: String?)
+    data class RemoteRenderer(
+        val udn: String?,
+        val friendlyName: String,
+        val avControl: String,
+        val rcControl: String?,
+        /** `manufacturer` and `modelName` of the root device; they tell brands apart (see DeviceQuirks). */
+        val manufacturer: String? = null,
+        val modelName: String? = null,
+    )
 
     /**
      * Parses a UPnP device description fetched from an SSDP LOCATION. Returns null unless the
@@ -23,7 +31,11 @@ object Dlna {
         fun control(kind: String) = services.firstOrNull { tag("serviceType", it)?.contains(":service:$kind:") == true }
             ?.let { tag("controlURL", it) }?.takeIf { it.isNotEmpty() }
         val av = control("AVTransport") ?: return null
-        return RemoteRenderer(tag("UDN", xml)?.takeIf { it.isNotEmpty() }, name, av, control("RenderingControl"))
+        return RemoteRenderer(
+            tag("UDN", xml)?.takeIf { it.isNotEmpty() }, name, av, control("RenderingControl"),
+            manufacturer = tag("manufacturer", xml)?.takeIf { it.isNotEmpty() },
+            modelName = tag("modelName", xml)?.takeIf { it.isNotEmpty() },
+        )
     }
 
     fun serviceType(service: String) = when (service) {
@@ -76,6 +88,23 @@ ${service("ConnectionManager")}
     fun arg(body: String, name: String): String? =
         Regex("<(?:\\w+:)?$name(?:\\s[^>]*)?>([\\s\\S]*?)</(?:\\w+:)?$name>").find(body)?.groupValues?.get(1)
             ?: if (Regex("<(?:\\w+:)?$name\\s*/>").containsMatchIn(body)) "" else null
+
+    /**
+     * The UPnP error a renderer reports in a SOAP fault, e.g. `701 Transition not available`, or
+     * null when the body is not a fault. The text is the device's own, so it is only ever logged.
+     */
+    fun soapFault(body: String): String? {
+        val code = arg(body, "errorCode")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val description = arg(body, "errorDescription")?.let(::xmlUnescape)?.trim()?.takeIf { it.isNotEmpty() }
+        return if (description != null) "UPnP error $code: ${description.take(120)}" else "UPnP error $code"
+    }
+
+    /** Transport state and status from a GetTransportInfo reply, as `PLAYING` or `STOPPED/ERROR_OCCURRED`. */
+    fun transportState(body: String): String? {
+        val state = arg(body, "CurrentTransportState")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val status = arg(body, "CurrentTransportStatus")?.trim()?.takeIf { it.isNotEmpty() && it != "OK" }
+        return if (status != null) "$state/$status" else state
+    }
 
     fun xmlEscape(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
     fun xmlUnescape(s: String) = s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&")

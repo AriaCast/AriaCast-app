@@ -1,0 +1,255 @@
+{
+  "comment": "Shared by the apps and the bot: the same list and the same answers. Keep this file identical in AriaCast/known-speakers (tests/data) and AriaCast-app (app/src/test/resources).",
+  "list": {
+    "schema": 2,
+    "version": 1,
+    "updated": "2026-11-27",
+    "speakers": [
+      {
+        "id": "wiim",
+        "speaker": "wiim",
+        "protocol": "DLNA",
+        "status": "supported",
+        "match": {
+          "mentions": [
+            "wiim",
+            "linkplay"
+          ],
+          "platform": "DLNA"
+        },
+        "evidence": "e"
+      },
+      {
+        "id": "wiim-pro",
+        "speaker": "wiim-pro",
+        "protocol": "DLNA",
+        "status": "supported",
+        "match": {
+          "mentions": [
+            "wiim pro"
+          ],
+          "platform": "DLNA"
+        },
+        "evidence": "e"
+      },
+      {
+        "id": "sonos-airplay2",
+        "speaker": "sonos-airplay2",
+        "protocol": "AirPlay2",
+        "status": "supported",
+        "match": {
+          "mentions": [
+            "sonos"
+          ],
+          "platform": "AirPlay2"
+        },
+        "evidence": "e"
+      },
+      {
+        "id": "sonos-dlna",
+        "speaker": "sonos-dlna",
+        "protocol": "DLNA",
+        "status": "supported",
+        "match": {
+          "mentions": [
+            "sonos"
+          ],
+          "platform": "DLNA"
+        },
+        "evidence": "e"
+      },
+      {
+        "id": "echo",
+        "speaker": "echo",
+        "protocol": "No local protocol",
+        "status": "unsupported",
+        "match": {
+          "mentions": [
+            "echo show 5",
+            "echo hub"
+          ]
+        },
+        "evidence": "e",
+        "symptoms": [
+          "not found"
+        ]
+      },
+      {
+        "id": "appletv",
+        "speaker": "appletv",
+        "protocol": "No local protocol",
+        "status": "supported",
+        "match": {
+          "mentions": [
+            "appletv"
+          ]
+        },
+        "evidence": "e"
+      },
+      {
+        "id": "shairport",
+        "speaker": "shairport",
+        "protocol": "AirPlay",
+        "status": "supported",
+        "match": {
+          "mentions": [
+            "shairport"
+          ],
+          "platform": "AirPlay"
+        },
+        "evidence": "e"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "why": "a WiiM Pro Plus matches both WiiM entries, the more specific one is best",
+      "device": {
+        "platform": "DLNA",
+        "name": "Den",
+        "model": "WiiM Pro Plus",
+        "manufacturer": "Linkplay"
+      },
+      "matches": [
+        "wiim",
+        "wiim-pro"
+      ],
+      "best": "wiim-pro"
+    },
+    {
+      "why": "a WiiM Mini only the general one",
+      "device": {
+        "platform": "DLNA",
+        "name": "WiiM Mini-1234",
+        "model": "WiiM Mini"
+      },
+      "matches": [
+        "wiim"
+      ],
+      "best": "wiim"
+    },
+    {
+      "why": "the maker alone is enough",
+      "device": {
+        "platform": "DLNA",
+        "name": "Den",
+        "manufacturer": "Linkplay Technology Inc."
+      },
+      "matches": [
+        "wiim"
+      ],
+      "best": "wiim"
+    },
+    {
+      "why": "the protocol must match when the entry has one",
+      "device": {
+        "platform": "AirPlay2",
+        "name": "WiiM Pro Plus"
+      },
+      "matches": [],
+      "best": null
+    },
+    {
+      "why": "Sonos over AirPlay 2",
+      "device": {
+        "platform": "AirPlay2",
+        "name": "Living",
+        "model": "Sonos Era 100"
+      },
+      "matches": [
+        "sonos-airplay2"
+      ],
+      "best": "sonos-airplay2"
+    },
+    {
+      "why": "Sonos over DLNA",
+      "device": {
+        "platform": "DLNA",
+        "name": "Living",
+        "model": "Play:5",
+        "manufacturer": "Sonos, Inc."
+      },
+      "matches": [
+        "sonos-dlna"
+      ],
+      "best": "sonos-dlna"
+    },
+    {
+      "why": "matching ignores case",
+      "device": {
+        "platform": "DLNA",
+        "name": "Living",
+        "model": "SONOS PLAY:5"
+      },
+      "matches": [
+        "sonos-dlna"
+      ],
+      "best": "sonos-dlna"
+    },
+    {
+      "why": "an entry without a protocol matches whatever the device speaks",
+      "device": {
+        "platform": "AirPlay2",
+        "name": "Studio",
+        "model": "AppleTV11,1"
+      },
+      "matches": [
+        "appletv"
+      ],
+      "best": "appletv"
+    },
+    {
+      "why": "a device with no protocol, found by a scan, matches an entry with none",
+      "device": {
+        "platform": null,
+        "name": "Echo Show 5-3f2"
+      },
+      "matches": [
+        "echo"
+      ],
+      "best": "echo"
+    },
+    {
+      "why": "typed brand and model count as the model",
+      "device": {
+        "platform": null,
+        "model": "Amazon Echo Show 5"
+      },
+      "matches": [
+        "echo"
+      ],
+      "best": "echo"
+    },
+    {
+      "why": "a device with no protocol does not match an entry that names one",
+      "device": {
+        "platform": null,
+        "name": "Den",
+        "model": "WiiM Pro Plus"
+      },
+      "matches": [],
+      "best": null
+    },
+    {
+      "why": "a name is enough when nothing else is known",
+      "device": {
+        "platform": "AirPlay",
+        "name": "My shairport box"
+      },
+      "matches": [
+        "shairport"
+      ],
+      "best": "shairport"
+    },
+    {
+      "why": "nothing matches",
+      "device": {
+        "platform": "Google Cast",
+        "name": "Nest Mini",
+        "model": "Google Home Mini"
+      },
+      "matches": [],
+      "best": null
+    }
+  ]
+}

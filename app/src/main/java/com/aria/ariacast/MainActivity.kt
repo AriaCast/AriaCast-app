@@ -230,6 +230,7 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
 
     override fun onStart() {
         super.onStart()
+        com.aria.ariacast.ui.AppVisibility.visible = true
         bindService(Intent(this, AudioCastService::class.java), connection, Context.BIND_AUTO_CREATE)
         discoveryManager.startDiscovery()
     }
@@ -244,6 +245,7 @@ class MainActivity : ComponentActivity(), AppController, PluginHost {
 
     override fun onStop() {
         super.onStop()
+        com.aria.ariacast.ui.AppVisibility.visible = false
         if (isBound) {
             unbindService(connection)
             isBound = false

@@ -1,0 +1,146 @@
+{
+  "schema": 2,
+  "version": 1,
+  "updated": "2026-11-27",
+  "speakers": [
+    {
+      "id": "sonos-airplay2",
+      "speaker": "Sonos (tested on Play:5)",
+      "protocol": "AirPlay 2",
+      "status": "supported",
+      "match": {
+        "platform": "AirPlay2",
+        "mentions": [
+          "sonos"
+        ]
+      },
+      "symptoms": [
+        "On 1.1.9 the AirPlay 2 stream did not play, while DLNA to the same speaker did."
+      ],
+      "whatToDo": "Update. Until then, cast to it over DLNA.",
+      "since": "1.1.9_hotfix",
+      "evidence": "[#48](https://github.com/AriaCast/AriaCast-app/issues/48), confirmed by the reporter after the hotfix",
+      "locked": true,
+      "reports": {}
+    },
+    {
+      "id": "sonos-dlna",
+      "speaker": "Sonos (tested on Play:5)",
+      "protocol": "DLNA",
+      "status": "supported",
+      "match": {
+        "platform": "DLNA",
+        "mentions": [
+          "sonos"
+        ]
+      },
+      "evidence": "[#48](https://github.com/AriaCast/AriaCast-app/issues/48), reporter: DLNA was working",
+      "locked": true,
+      "reports": {}
+    },
+    {
+      "id": "wiim-dlna-restart",
+      "speaker": "WiiM (tested on Pro Plus)",
+      "protocol": "DLNA",
+      "status": "supported",
+      "match": {
+        "platform": "DLNA",
+        "mentions": [
+          "wiim",
+          "linkplay"
+        ]
+      },
+      "symptoms": [
+        "The track title changes but playback stays paused at 0:00 after every track change.",
+        "Pressing play in the WiiM app starts it again."
+      ],
+      "whatToDo": "Update: AriaCast now sends Play after every track change. If it still stops, press play once in the WiiM app and report it.",
+      "since": "2.0.0",
+      "evidence": "[#50](https://github.com/AriaCast/AriaCast-app/issues/50), fixed in the 2.0 line; the reporter's confirmation is not recorded",
+      "notes": {
+        "en": "WiiM players pause at 0:00 whenever they receive a new stream address. AriaCast starts playback again after every track change. If it still stops, press play once in the WiiM app and report it.",
+        "it": "I WiiM si fermano a 0:00 ogni volta che ricevono un nuovo indirizzo di stream. AriaCast riavvia la riproduzione a ogni cambio traccia. Se si ferma comunque, premi play una volta nell'app WiiM e segnalalo."
+      },
+      "config": {
+        "dlnaPlayAfterSetUri": true
+      },
+      "locked": true,
+      "reports": {}
+    },
+    {
+      "id": "shairport-airplay1",
+      "speaker": "shairport-sync",
+      "protocol": "AirPlay 1",
+      "status": "supported",
+      "match": {
+        "platform": "AirPlay",
+        "mentions": [
+          "shairport"
+        ]
+      },
+      "evidence": "Maintainer's own test in [#48](https://github.com/AriaCast/AriaCast-app/issues/48); the AirPlay version is not stated there, so it is listed under AirPlay 1",
+      "locked": true,
+      "reports": {}
+    },
+    {
+      "id": "shairport-airplay2-ptp",
+      "speaker": "shairport-sync",
+      "protocol": "AirPlay 2",
+      "status": "quirks",
+      "match": {
+        "platform": "AirPlay2",
+        "mentions": [
+          "shairport"
+        ]
+      },
+      "symptoms": [
+        "The speaker accepts the connection but timing is off, or AriaCast drops to AirPlay 1."
+      ],
+      "whatToDo": "Nothing to do: AriaCast tries NTP timing and falls back to AirPlay 1 on its own. Real PTP needs root.",
+      "evidence": "Code: PtpMaster (shairport-sync with nqptp accepts only PTP timing)",
+      "notes": {
+        "en": "AirPlay 2 receivers built on shairport-sync need PTP timing, which Android apps can't provide without root. AriaCast tries NTP timing and falls back to AirPlay 1 on its own.",
+        "it": "I ricevitori AirPlay 2 basati su shairport-sync richiedono la sincronizzazione PTP, che le app Android non possono offrire senza root. AriaCast prova con NTP e passa da solo ad AirPlay 1."
+      },
+      "locked": true,
+      "reports": {}
+    },
+    {
+      "id": "appletv-airplay-video-pairing",
+      "speaker": "Apple TV",
+      "protocol": "AirPlay (video)",
+      "status": "quirks",
+      "match": {
+        "mentions": [
+          "appletv"
+        ]
+      },
+      "symptoms": [
+        "On Apple TVs that require pairing, casting a video fails with \"This AirPlay device requires pairing for video\". Audio casting is not affected."
+      ],
+      "whatToDo": "Cast audio only. Video works with Apple TVs that allow unpaired access.",
+      "evidence": "Roadmap status table and VideoTargets.kt",
+      "locked": true,
+      "reports": {}
+    },
+    {
+      "id": "echo-show5-hub-no-airplay",
+      "speaker": "Amazon Echo Show 5 (1st gen), Echo Hub",
+      "protocol": "No local protocol",
+      "status": "unsupported",
+      "match": {
+        "mentions": [
+          "echo show 5",
+          "echo hub"
+        ]
+      },
+      "symptoms": [
+        "The speaker does not appear in AriaCast, and it has no AirPlay."
+      ],
+      "whatToDo": "Bluetooth is the only local way in, and AriaCast does not send to Bluetooth speakers yet.",
+      "evidence": "Maintainer's own devices; Alexa has no local streaming protocol",
+      "locked": true,
+      "reports": {}
+    }
+  ]
+}

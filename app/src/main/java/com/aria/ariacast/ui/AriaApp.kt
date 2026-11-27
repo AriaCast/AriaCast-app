@@ -68,6 +68,7 @@ import com.aria.ariacast.ui.nowplaying.NowPlayingScreen
 import com.aria.ariacast.ui.onboarding.OnboardingScreen
 import com.aria.ariacast.ui.receive.ReceiveScreen
 import com.aria.ariacast.ui.receive.ReceiveTab
+import com.aria.ariacast.ui.settings.KnownSpeakersScreen
 import com.aria.ariacast.ui.settings.SettingsScreen
 
 private data class Destination(val screen: Screen, val label: Int, val icon: ImageVector, val selectedIcon: ImageVector)
@@ -114,6 +115,7 @@ fun AriaApp(controller: AppController) {
                         Screen.NOW_PLAYING -> NowPlayingScreen(controller, onClose = back)
                         Screen.RECEIVER_DISPLAY -> ReceiveScreen(controller, onBack = back)
                         Screen.DOCTOR -> DoctorScreen(controller, onBack = back)
+                        Screen.KNOWN_SPEAKERS -> KnownSpeakersScreen(controller, onBack = back)
                         else -> {}
                     }
                 }

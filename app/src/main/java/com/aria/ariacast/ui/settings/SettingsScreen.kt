@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Extension
@@ -185,6 +186,7 @@ fun SettingsScreen(controller: AppController, onBack: (() -> Unit)?) {
             item {
                 ListGroup(title = stringResource(R.string.settings_diagnostics)) {
                     ListRow(stringResource(R.string.doctor_title), supporting = stringResource(R.string.doctor_desc), leading = { LeadingIcon(Icons.Filled.HealthAndSafety) }) { controller.navigate(Screen.DOCTOR) }
+                    ListRow(stringResource(R.string.known_speakers), supporting = stringResource(R.string.known_speakers_desc), leading = { LeadingIcon(Icons.Filled.Speaker) }) { controller.navigate(Screen.KNOWN_SPEAKERS) }
                     ListRow(stringResource(R.string.packet_logs), supporting = stringResource(R.string.packet_logs_desc), leading = { LeadingIcon(Icons.AutoMirrored.Filled.ReceiptLong) }) { open(PacketLogActivity::class.java) }
                 }
             }

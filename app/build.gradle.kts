@@ -22,6 +22,9 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
     namespace = "com.aria.ariacast"
     compileSdk = 36
     ndkVersion = "27.1.12297006"
@@ -146,6 +149,9 @@ dependencies {
     implementation(libs.jmdns)
 
     testImplementation(libs.junit)
+    // Starts the real app on the JVM: StartupSmokeTest catches crashes that only show at runtime.
+    testImplementation("org.robolectric:robolectric:4.18.1")
+    testImplementation("androidx.test:core-ktx:1.6.1")
     // Self-signed TLS certificates for the fake Google Cast receiver in CastClientTest.
     testImplementation(libs.bouncycastle.bcpkix)
     androidTestImplementation(libs.androidx.junit)

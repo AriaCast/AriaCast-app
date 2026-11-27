@@ -38,6 +38,61 @@ casting, a new interface, and AriaCompanion 2.
   recognizes apps that block audio capture.
 - **Onboarding**, Material You colors on Android 12+, home-screen **widget**.
 
+### Sound and timing
+- **Sleep timer** on Now Playing (15 to 90 minutes). The sound fades out over the last 30
+  seconds, then the cast stops. Every cast also starts with a one-second fade-in.
+- **Sound per speaker**: bass, treble and level (-12 to +12 dB) and an optional loudness
+  leveler, set for each speaker while casting and remembered for next time. Works with
+  AriaCast, AirPlay, Cast, DLNA, Snapcast and VBAN speakers.
+- **Rooms stay lined up**: each speaker's sync delay is now saved and applied the next time
+  that speaker joins a cast.
+- **Known speakers**: a public list of which speakers are **supported**, **supported with quirks** or
+  **unsupported**, with what to look for and what to do, kept in its own repository,
+  [AriaCast/known-speakers](https://github.com/AriaCast/known-speakers), so that adding a speaker
+  never rebuilds the app. The app downloads it once a day (Settings → Known speakers, where it can be
+  switched off, updated by hand and browsed) and ships no copy, so the list is empty until the first
+  download. Only a newer, valid list is taken, and what the file may change is limited to five
+  settings (whether DLNA gets a Stop first or a Play after each track, the stream's content type, a
+  starting delay, and whether titles and artwork are sent), each within fixed limits and written only
+  by maintainers. The connection doctor shows a note, in your language where the list has one, while
+  you cast to a speaker with a documented quirk. DLNA speakers now report manufacturer and model.
+- **More speaker logging**: every line logged while casting to a speaker is now attributed to it,
+  and each speaker keeps its own history, so a chatty one can't push another's out. New lines:
+  session start and end (with the speaker's model and why it ended); for DLNA the HTTP status and
+  timing of every Stop, SetAVTransportURI, Play and SetVolume, the UPnP error when a renderer
+  refuses, what the renderer does with the stream (its user-agent, how long it listened), and
+  its transport state (`PLAYING`, `PAUSED_PLAYBACK`, `STOPPED`) a moment after Play and on every
+  change; for Google Cast every player state change and why it went idle; for AriaCast the
+  receiver's handshake, how long a connection lasted and each reconnect, and the receiver's own
+  underrun and overrun counts. DLNA speakers are asked their state every 10 seconds while you
+  cast to them, which is one small request.
+- **"Does it work?"**: the first time you have cast to a speaker for a minute, AriaCast asks once
+  whether it works: a dialog if the app is open, a notification with the two answers if not. "It
+  works" is kept on the phone, and offered for the public list only if the list does not already say the
+  speaker is supported. "There's a problem" asks whether it plays with something wrong or not at all and
+  what happens, then opens the pre-filled report with that written in. Nothing is sent unless you open
+  the report; speakers that a Sendspin server pulls from are not asked about. If casting to a single
+  speaker fails in that first minute, it asks instead whether to report it, with "doesn't work"
+  already chosen.
+  Only speakers are asked about or reported: AriaCast receivers, Snapcast, VBAN and Sendspin are
+  software on a phone, a computer or a server, so they are left out. A speaker is told apart by its
+  brand and model, never by the name you gave it: if it does not say its model, the report form
+  leaves "Speaker" empty for you to fill in. For "it works" no log is copied, since there is nothing
+  to explain.
+- **Look for other devices** (Settings → Known speakers): a scan of about eight seconds, started by
+  you, for devices AriaCast cannot play to: UPnP devices that are not renderers, and mDNS services such
+  as Spotify Connect, Sonos, Amazon, HomeKit, HEOS and Bose SoundTouch. Speakers the app already lists
+  are left out. Tapping one opens a pre-filled report with what the scan learned (name, maker, model,
+  service types; addresses shortened), so a speaker the app cannot find can still be added to the list.
+  Nothing is kept or sent unless you open the report.
+- **Report speaker**: long-press a speaker (or use the doctor) to open a pre-filled report on GitHub
+  with who the speaker is and what is known about it; its log lines are copied to paste in, with
+  addresses shortened. A bot in the known-speakers repository records it: a speaker already listed has
+  the report counted (the listed status follows the most reported one, and entries a maintainer
+  checked never change), a new one is added. The log is never copied into the list, and a person can
+  send three reports a day. "Share log" in the same menu sends the whole report through the share
+  sheet instead.
+
 ### Built in, previously plugins
 - Music Assistant player picker, connection doctor, visualizer, add speaker by address.
 - **Plugin API v2**: plugins describe their UI with `ui.render()`; the v1 view methods

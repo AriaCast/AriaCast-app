@@ -32,6 +32,7 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
@@ -58,7 +59,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.Json
 import org.json.JSONArray
 import org.json.JSONObject
@@ -84,6 +87,16 @@ import com.aria.ariacast.pipeline.FgsTypes
 import com.aria.ariacast.pipeline.MicrophoneSource
 import com.aria.ariacast.pipeline.ProjectionCaptureSource
 import com.aria.ariacast.pipeline.SourceKind
+import com.aria.ariacast.pipeline.SpeakerDsp
+import com.aria.ariacast.pipeline.SpeakerSound
+import com.aria.ariacast.dlna.Dlna
+import com.aria.ariacast.quirks.DeviceIdentity
+import com.aria.ariacast.quirks.DeviceQuirks
+import com.aria.ariacast.quirks.FeedbackLedger
+import com.aria.ariacast.quirks.SpeakerFeedback
+import com.aria.ariacast.ui.AppVisibility
+import com.aria.ariacast.ui.SpeakerFeedbackActivity
+import com.aria.ariacast.quirks.SpeakerConfig
 import com.aria.ariacast.receiver.ReceiverHub
 import com.aria.ariacast.sendspin.SendspinHub
 import com.aria.ariacast.pipeline.PcmFormat
@@ -274,6 +287,42 @@ class AudioCastService : Service() {
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
     private var mutedForSource = false
+
+    /** Fade-in at the start of a cast and the sleep timer's fade-out, ahead of every sink. */
+    private val masterGain = com.aria.ariacast.pipeline.MasterGain()
+    private var sleepTimerJob: Job? = null
+
+    private val _sleepTimerRemainingMs = MutableStateFlow<Long?>(null)
+    /** Time left on the sleep timer, or null when none is set. */
+    val sleepTimerRemainingMs: StateFlow<Long?> = _sleepTimerRemainingMs.asStateFlow()
+
+    /** Stops the cast after [minutes], fading the sound out over the last 30 seconds. */
+    fun setSleepTimer(minutes: Int) {
+        if (minutes <= 0) { cancelSleepTimer(); return }
+        if (_state.value != CastState.CASTING && _state.value != CastState.CONNECTING) return
+        sleepTimerJob?.cancel()
+        masterGain.startTimer(minutes * 60_000L)
+        _sleepTimerRemainingMs.value = masterGain.remainingMs()
+        sleepTimerJob = scope.launch {
+            while (isActive) {
+                val left = masterGain.remainingMs() ?: break
+                _sleepTimerRemainingMs.value = left
+                if (left == 0L) {
+                    PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Sleep timer ended: stopping the cast")
+                    withContext(Dispatchers.Main) { stopCasting() }
+                    break
+                }
+                delay(minOf(left, 1_000L))
+            }
+        }
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        masterGain.cancelTimer()
+        _sleepTimerRemainingMs.value = null
+    }
 
     private val _metadata = MutableStateFlow<TrackMetadata?>(null)
     val metadata: StateFlow<TrackMetadata?> = _metadata.asStateFlow()
@@ -524,7 +573,7 @@ class AudioCastService : Service() {
     ) {
         sessionJob?.cancel()
 
-        _activeDestinations.value = destinations
+        _activeDestinations.value = destinations.map(::withSavedDelay)
         _state.value = CastState.CONNECTING
         sessionJob = SupervisorJob()
         val sessionScope = CoroutineScope(Dispatchers.IO + sessionJob!!)
@@ -568,6 +617,8 @@ class AudioCastService : Service() {
             return
         }
         currentSource = source
+        cancelSleepTimer()
+        masterGain.beginSession()
         _sourceKind.value = source.kind
         if (source.muteLocalPlayback) {
             // Playback capture happens before the volume is applied, so muting the phone
@@ -608,6 +659,7 @@ class AudioCastService : Service() {
                                 else "Source is producing a real audio signal"
                             )
                         }
+                        masterGain.process(frame)
                         _audioBufferFlow.emit(frame)
                     }
                     PacketLogger.log(PacketDirection.IN, PacketType.AUDIO, "Source ${source.kind.id} ended")
@@ -628,12 +680,76 @@ class AudioCastService : Service() {
         }
     }
 
+    private suspend fun askAboutSpeakerLater(dest: CastDestination) {
+        val ledger = FeedbackLedger.of(sharedPreferences)
+        val key = SpeakerFeedback.key(dest.platform, dest.name)
+        // Either a minute passes, or the cast fails first: then the question is whether to report it.
+        val failedEarly = withTimeoutOrNull(SpeakerFeedback.ASK_AFTER_MS) { _state.first { it == CastState.ERROR }; true } == true
+        if (failedEarly) {
+            if (SpeakerFeedback.shouldAskAfterFailure(_activeDestinations.value.size, ledger.asked(key), dest.platform)) {
+                ledger.markAsked(key, System.currentTimeMillis())
+                askAboutSpeaker(dest, failed = true)
+            }
+            return
+        }
+        val stillInCast = _activeDestinations.value.any { destKey(it) == destKey(dest) }
+        if (!SpeakerFeedback.shouldAsk(_state.value == CastState.CASTING, stillInCast, ledger.asked(key), dest.platform)) return
+        ledger.markAsked(key, System.currentTimeMillis())
+        askAboutSpeaker(dest)
+    }
+
+    /** A dialog if the app is on screen, a notification with the two answers if not. */
+    private fun askAboutSpeaker(dest: CastDestination, failed: Boolean = false) {
+        val castState = listOfNotNull(_state.value.name, _lastError.value?.let { "last error: $it" }).joinToString(", ")
+        fun open(answer: String? = null) = Intent(this, SpeakerFeedbackActivity::class.java)
+            .putExtra(SpeakerFeedbackActivity.EXTRA_CAST_STATE, castState)
+            .putExtra(SpeakerFeedbackActivity.EXTRA_PLATFORM, dest.platform)
+            .putExtra(SpeakerFeedbackActivity.EXTRA_NAME, dest.name)
+            .putExtra(SpeakerFeedbackActivity.EXTRA_HOST, dest.host)
+            .putExtra(SpeakerFeedbackActivity.EXTRA_EXTRA, dest.extra)
+            .apply { answer?.let { putExtra(SpeakerFeedbackActivity.EXTRA_ANSWER, it) } }
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (AppVisibility.visible) {
+            startActivity(open(if (failed) SpeakerFeedbackActivity.ANSWER_FAILED else null))
+            return
+        }
+        fun pending(code: Int, answer: String?) =
+            PendingIntent.getActivity(this, code, open(answer), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(NotificationChannel(FEEDBACK_CHANNEL_ID, getString(R.string.feedback_channel), NotificationManager.IMPORTANCE_LOW))
+        manager.notify(
+            SpeakerFeedbackActivity.NOTIFICATION_ID,
+            NotificationCompat.Builder(this, FEEDBACK_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_tile_icon)
+                .setContentTitle(getString(if (failed) R.string.feedback_failed_title else R.string.feedback_title, dest.name))
+                .setContentText(getString(if (failed) R.string.feedback_notification_failed else R.string.feedback_notification))
+                .setContentIntent(pending(FEEDBACK_REQUEST_OPEN, if (failed) SpeakerFeedbackActivity.ANSWER_FAILED else null))
+                .apply {
+                    if (!failed) {
+                        addAction(0, getString(R.string.feedback_works), pending(FEEDBACK_REQUEST_WORKS, SpeakerFeedbackActivity.ANSWER_WORKS))
+                        addAction(0, getString(R.string.feedback_problem), pending(FEEDBACK_REQUEST_PROBLEM, SpeakerFeedbackActivity.ANSWER_PROBLEM))
+                    }
+                }
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .build()
+        )
+    }
+
     /** One job per destination, so speakers can be added or removed while casting. */
     private val destinationJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
     private fun destKey(d: CastDestination) = "${d.platform}|${d.host}|${d.port}"
 
     private fun launchDestination(scope: CoroutineScope, dest: CastDestination, withVideo: Boolean) {
-        destinationJobs[destKey(dest)] = scope.launch {
+        val started = SystemClock.elapsedRealtime()
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE,
+            "Session start: ${DeviceIdentity.of(dest.platform, dest.name, dest.extra).reportLine()}, address=${dest.host}:${dest.port}", device = dest.host)
+        DeviceQuirks.matching(DeviceIdentity.of(dest.platform, dest.name, dest.extra)).takeIf { it.isNotEmpty() }?.let { known ->
+            val config = configFor(dest)
+            PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE,
+                "Known speaker: ${known.joinToString { it.id }}${if (config == SpeakerConfig()) "" else ", settings from the list: $config"}", device = dest.host)
+        }
+        val job = scope.launch(DeviceContext.element(dest.host)) {
             when (dest.platform) {
                 "DLNA" -> startDlnaSession(dest)
                 "Google Cast" -> startGoogleCastSession(dest)
@@ -650,6 +766,18 @@ class AudioCastService : Service() {
                 }
             }
         }
+        // After a minute of playing, ask once whether the speaker works (see SpeakerFeedback).
+        if (SpeakerFeedback.isAskable(dest.platform)) scope.launch { askAboutSpeakerLater(dest) }
+        job.invokeOnCompletion { cause ->
+            val how = when (cause) {
+                null -> "finished"
+                is CancellationException -> "stopped"
+                else -> "failed: ${cause.message ?: cause.javaClass.simpleName}"
+            }
+            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE,
+                "Session end: ${dest.name} after ${(SystemClock.elapsedRealtime() - started) / 1000} s ($how)", device = dest.host)
+        }
+        destinationJobs[destKey(dest)] = job
     }
 
     /**
@@ -664,9 +792,10 @@ class AudioCastService : Service() {
             startDlnaHttpServer(); startArtworkServer()
         }
         if ((dest.platform == "AirPlay" || dest.platform == "AirPlay2") && dacpServer == null) startDacpServer()
-        _activeDestinations.value = _activeDestinations.value + dest
-        launchDestination(scope, dest, withVideo = false)
-        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Added ${dest.name} to the cast")
+        val withDelay = withSavedDelay(dest)
+        _activeDestinations.value = _activeDestinations.value + withDelay
+        launchDestination(scope, withDelay, withVideo = false)
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Added ${dest.name} to the cast", device = dest.host)
         _metadata.value?.let { sendMetadata(it) }
         updateNotification()
     }
@@ -684,7 +813,7 @@ class AudioCastService : Service() {
             controlSessions.remove(dest.host)
         }
         _activeDestinations.value = remaining
-        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Removed ${dest.name} from the cast")
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Removed ${dest.name} from the cast", device = dest.host)
         updateNotification()
     }
 
@@ -706,6 +835,10 @@ class AudioCastService : Service() {
                 while (isActive) {
                     val clientSocket = try { serverSocket.accept() } catch (e: Exception) { null } ?: continue
                     launch {
+                        val peer = clientSocket.inetAddress?.hostAddress
+                        var streamStarted = 0L
+                        var streamedBytes = 0L
+                        var streamEnd = "cast stopped"
                         try {
                             clientSocket.setTcpNoDelay(true)
                             clientSocket.soTimeout = 30000
@@ -730,7 +863,10 @@ class AudioCastService : Service() {
                                            ua.contains("Darwin", ignoreCase = true) ||
                                            ua.contains("libmpv", ignoreCase = true)
                             
-                            val contentType = if (isApple) "audio/x-wav" else "audio/wav"
+                            val listed = _activeDestinations.value.firstOrNull { it.host == peer }?.let(::configFor)?.dlnaContentType
+                            val contentType = listed ?: if (isApple) "audio/x-wav" else "audio/wav"
+                            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE,
+                                "Stream request from $peer: $requestLine, user-agent=\"${ua.take(80)}\"${headers["range"]?.let { ", range=$it" } ?: ""}, answering $contentType", device = peer)
 
                             val responseHeaders = StringBuilder()
                             responseHeaders.append("HTTP/1.1 200 OK\r\n")
@@ -749,6 +885,7 @@ class AudioCastService : Service() {
 
                             if (requestLine.startsWith("HEAD")) {
                                 output.flush()
+                                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Answered a HEAD request from $peer", device = peer)
                                 return@launch
                             }
 
@@ -771,17 +908,27 @@ class AudioCastService : Service() {
                             }
                             output.write(header.array())
 
-                            audioBufferFlow.collect { buffer ->
+                            val dsp = dspFor(peer ?: "")
+                            streamStarted = SystemClock.elapsedRealtime()
+                            PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "Streaming to $peer", device = peer)
+                            audioBufferFlow.collect { raw ->
+                                val buffer = dsp.process(raw)
                                 try {
                                     output.write(buffer)
                                     output.flush()
+                                    streamedBytes += buffer.size
                                 } catch (e: Exception) {
+                                    streamEnd = "write failed: ${e.message ?: e.javaClass.simpleName}"
                                     throw CancellationException("Client disconnected")
                                 }
                             }
                         } catch (e: Exception) {
                             Log.d(TAG, "Streaming session ended: ${e.message}")
                         } finally {
+                            if (streamStarted != 0L) {
+                                PacketLogger.log(PacketDirection.IN, PacketType.AUDIO,
+                                    "Stream to $peer ended after ${(SystemClock.elapsedRealtime() - streamStarted) / 1000} s, ${streamedBytes / 1024} KB sent ($streamEnd)", device = peer)
+                            }
                             try { clientSocket.close() } catch (e: Exception) {}
                         }
                     }
@@ -794,6 +941,77 @@ class AudioCastService : Service() {
         }
     }
 
+    /**
+     * Posts one SOAP action to a renderer and logs what came back: the HTTP status, how long it
+     * took and the UPnP error if it sent one. Network errors are logged and rethrown; an HTTP
+     * error status is only logged, as it always was.
+     */
+    private suspend fun dlnaSoap(dest: CastDestination, url: String, service: String, action: String, body: String): HttpResponse {
+        val started = SystemClock.elapsedRealtime()
+        try {
+            val response = client.post(url) {
+                header("SoapAction", "\"urn:schemas-upnp-org:service:$service:1#$action\"")
+                contentType(ContentType.parse("text/xml; charset=utf-8"))
+                setBody(body)
+            }
+            val ms = SystemClock.elapsedRealtime() - started
+            val fault = if (response.status.isSuccess()) null else runCatching { Dlna.soapFault(response.bodyAsText()) }.getOrNull()
+            PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL,
+                "DLNA $action -> ${response.status.value} in $ms ms${fault?.let { " ($it)" } ?: ""}", device = dest.host)
+            return response
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            PacketLogger.log(PacketDirection.IN, PacketType.CONTROL,
+                "DLNA $action failed after ${SystemClock.elapsedRealtime() - started} ms: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
+            throw e
+        }
+    }
+
+    private fun soapEnvelope(service: String, action: String, args: String) =
+        "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>" +
+            "<u:$action xmlns:u=\"urn:schemas-upnp-org:service:$service:1\">$args</u:$action></s:Body></s:Envelope>"
+
+    /**
+     * Asks the renderer what it is doing, a moment after Play and then every few seconds, and logs
+     * every change. "Play was accepted" and "it is playing" are different facts, and renderers
+     * that stall (paused at 0:00, stopped after a track) only show it here.
+     */
+    private suspend fun watchDlnaTransport(dest: CastDestination, controlUrl: String) {
+        var last: String? = null
+        var failures = 0
+        delay(DLNA_FIRST_CHECK_MS)
+        while (currentCoroutineContext().isActive) {
+            try {
+                val text = dlnaStateCheck(controlUrl)
+                val state = Dlna.transportState(text) ?: "unknown"
+                if (state != last) {
+                    PacketLogger.log(PacketDirection.IN, PacketType.CONTROL,
+                        "DLNA transport state: $state${last?.let { " (was $it)" } ?: ""}", device = dest.host)
+                    last = state
+                }
+                failures = 0
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failures++
+                if (failures == 1 || failures == DLNA_CHECK_GIVE_UP) {
+                    PacketLogger.log(PacketDirection.IN, PacketType.CONTROL,
+                        "DLNA state check failed ($failures in a row): ${e.message ?: e.javaClass.simpleName}", device = dest.host)
+                }
+                if (failures >= DLNA_CHECK_GIVE_UP) return
+            }
+            delay(DLNA_CHECK_EVERY_MS)
+        }
+    }
+
+    private suspend fun dlnaStateCheck(controlUrl: String): String =
+        client.post(controlUrl) {
+            header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#GetTransportInfo\"")
+            contentType(ContentType.parse("text/xml; charset=utf-8"))
+            setBody(soapEnvelope("AVTransport", "GetTransportInfo", "<InstanceID>0</InstanceID>"))
+        }.bodyAsText()
+
     private suspend fun startDlnaSession(dest: CastDestination) {
         val (controlUrl, _) = getDlnaControlUrls(dest.extra)
         if (controlUrl == null) return
@@ -801,45 +1019,34 @@ class AudioCastService : Service() {
         val streamUrl = "http://$myIp:$STREAM_PORT/stream.wav"
 
         try {
-            try {
-                val stopBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-                        <s:Body>
-                            <u:Stop xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
-                                <InstanceID>0</InstanceID>
-                            </u:Stop>
-                        </s:Body>
-                    </s:Envelope>""".trimIndent()
-                client.post(controlUrl) {
-                    header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#Stop\"")
-                    contentType(ContentType.parse("text/xml; charset=utf-8"))
-                    setBody(stopBody)
-                }
-            } catch (e: Exception) {}
+            if (configFor(dest).dlnaSkipInitialStop == true) {
+                PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL, "DLNA Stop skipped (setting from the list)", device = dest.host)
+            } else {
+                try {
+                    dlnaSoap(dest, controlUrl, "AVTransport", "Stop", soapEnvelope("AVTransport", "Stop", "<InstanceID>0</InstanceID>"))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {}
+            }
 
             val metadataXml = createDidlMetadata(streamUrl, _metadata.value)
 
             val setUriBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><CurrentURI>${escapeXml(streamUrl)}</CurrentURI><CurrentURIMetaData>${escapeXml(metadataXml)}</CurrentURIMetaData></u:SetAVTransportURI></s:Body></s:Envelope>"""
 
-            client.post(controlUrl) {
-                header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI\"")
-                contentType(ContentType.parse("text/xml; charset=utf-8"))
-                setBody(setUriBody)
-            }
+            dlnaSoap(dest, controlUrl, "AVTransport", "SetAVTransportURI", setUriBody)
 
             val playBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><Speed>1</Speed></u:Play></s:Body></s:Envelope>"""
 
-            client.post(controlUrl) {
-                header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#Play\"")
-                contentType(ContentType.parse("text/xml; charset=utf-8"))
-                setBody(playBody)
-            }
+            dlnaSoap(dest, controlUrl, "AVTransport", "Play", playBody)
 
             _state.value = CastState.CASTING
             updateNotification()
+            watchDlnaTransport(dest, controlUrl)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "DLNA session failed for ${dest.name}: ${e.message}")
+            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "DLNA session failed: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
             _state.value = CastState.ERROR
         }
     }
@@ -872,14 +1079,14 @@ class AudioCastService : Service() {
                 client.launch(sharedPreferences.getString(KEY_CAST_RECEIVER_APP_ID, null)
                     ?.trim()?.uppercase()?.takeIf { it.matches(Regex("[0-9A-F]{8}")) } ?: CastClient.DEFAULT_MEDIA_RECEIVER)
                 client.load(streamUrl, "audio/wav", castMetadata(_metadata.value))
-                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Google Cast: ${dest.name} playing $streamUrl")
+                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Google Cast: ${dest.name} playing $streamUrl", device = dest.host)
             } catch (e: CancellationException) {
                 client.close()
                 throw e
             } catch (e: Exception) {
                 client.close()
                 Log.e(TAG, "Google Cast session failed for ${dest.name}: ${e.message}")
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Google Cast ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Google Cast ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
                 if (++failures >= 3) {
                     _state.value = CastState.ERROR
                     return@withContext
@@ -895,7 +1102,7 @@ class AudioCastService : Service() {
             try {
                 val reason = ended.await()
                 Log.w(TAG, "Google Cast ${dest.name} ended: $reason")
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Google Cast ${dest.name} ended: $reason")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Google Cast ${dest.name} ended: $reason", device = dest.host)
                 if (reason == "receiver app stopped" || reason == "receiver app closed") {
                     // The user switched the device to something else - don't fight them for it.
                     _state.value = CastState.ERROR
@@ -945,7 +1152,7 @@ class AudioCastService : Service() {
             } catch (e: Exception) {
                 val label = if (airplay2) "AirPlay 2" else "AirPlay"
                 Log.e(TAG, "$label session failed for ${dest.name}: ${e.message}")
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "$label ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "$label ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
                 if (e is AirPlayBusyException || e is AirPlayAuthRequiredException || ++failures >= 3) {
                     _state.value = CastState.ERROR
                     return@withContext
@@ -962,7 +1169,7 @@ class AudioCastService : Service() {
             airplayStreamers[dest.host] = streamer
             lastSentMetadata.remove(dest.host)
             lastSentArtwork.remove(dest.host)
-            PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "${dest.name}: streaming (${streamer.javaClass.simpleName})")
+            PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "${dest.name}: streaming (${streamer.javaClass.simpleName})", device = dest.host)
             _state.value = CastState.CASTING
             updateNotification()
             _metadata.value?.let { pushAirPlayMetadata(dest.host, streamer, it) }
@@ -971,7 +1178,8 @@ class AudioCastService : Service() {
             try {
                 val reason = coroutineScope {
                     val feeder = launch {
-                        audioBufferFlow.collect { chunk -> streamer.writePcm(resampler.resample(chunk)) }
+                        val dsp = dspFor(dest.host)
+                        audioBufferFlow.collect { chunk -> streamer.writePcm(resampler.resample(dsp.process(chunk))) }
                     }
                     // "Streaming" alone doesn't say whether the receiver is playing: log what it
                     // has asked for (timing requests, resends) once it has had time to start.
@@ -979,7 +1187,7 @@ class AudioCastService : Service() {
                         var elapsed = 0L
                         for (at in longArrayOf(5_000, 30_000)) {
                             delay(at - elapsed); elapsed = at
-                            PacketLogger.log(PacketDirection.OUT, PacketType.STATS, "${dest.name} after ${at / 1000}s: ${streamer.statsSummary()}")
+                            PacketLogger.log(PacketDirection.OUT, PacketType.STATS, "${dest.name} after ${at / 1000}s: ${streamer.statsSummary()}", device = dest.host)
                         }
                     }
                     val r = ended.await()
@@ -988,7 +1196,7 @@ class AudioCastService : Service() {
                     r
                 }
                 Log.w(TAG, "AirPlay ${dest.name} dropped: $reason (${streamer.statsSummary()})")
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "${dest.name} dropped the session: $reason - reconnecting")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "${dest.name} dropped the session: $reason - reconnecting", device = dest.host)
             } finally {
                 airplayStreamers.remove(dest.host, streamer)
                 withContext(NonCancellable) {
@@ -1037,7 +1245,7 @@ class AudioCastService : Service() {
                         // e.g. shairport-sync in AirPlay 2 mode, which needs PTP (privileged ports
                         // on Android). Every AirPlay 2 receiver also speaks AirPlay 1 on the same port.
                         Log.i(TAG, "${dest.name}: ${e.message}; falling back to AirPlay 1")
-                        PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "${dest.name}: AirPlay 2 timing unsupported, using AirPlay 1")
+                        PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "${dest.name}: AirPlay 2 timing unsupported, using AirPlay 1", device = dest.host)
                         val raop = RaopClient(
                             host = dest.host,
                             port = if (dest.port > 0) dest.port else 7000,
@@ -1230,14 +1438,15 @@ class AudioCastService : Service() {
                 _state.value = CastState.CASTING
                 updateNotification()
                 PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE,
-                    "VBAN stream '$streamName' to ${dest.name} (${dest.host}:$port), ${PcmFormat.SAMPLE_RATE} Hz stereo 16-bit PCM")
-                audioBufferFlow.collect { streamer.send(it) }
+                    "VBAN stream '$streamName' to ${dest.name} (${dest.host}:$port), ${PcmFormat.SAMPLE_RATE} Hz stereo 16-bit PCM", device = dest.host)
+                val dsp = dspFor(dest.host)
+                audioBufferFlow.collect { streamer.send(dsp.process(it)) }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "VBAN session failed for ${dest.name}: ${e.message}")
-            PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "VBAN to ${dest.name} failed: ${e.message}")
+            PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "VBAN to ${dest.name} failed: ${e.message}", device = dest.host)
             _state.value = CastState.ERROR
         }
     }
@@ -1375,8 +1584,9 @@ class AudioCastService : Service() {
 
             // 5. Stream audio
             try {
-                audioBufferFlow.collect { buffer ->
-                    audioOut.write(buffer)
+                val dsp = dspFor(dest.host)
+                audioBufferFlow.collect { raw ->
+                    audioOut.write(dsp.process(raw))
                 }
             } finally {
                 try { audioSocket.close() } catch (_: Exception) {}
@@ -1416,26 +1626,30 @@ class AudioCastService : Service() {
     private suspend fun startAudioSession(dest: CastDestination) {
         var sentFramesCount = 0L
         var reconnectAttempts = 0
+        var connectedAt = 0L
 
         while (currentCoroutineContext().isActive) {
             try {
                 client.webSocket(host = dest.host, port = dest.port, path = "/audio") audioSocket@{
                     reconnectAttempts = 0
-                    PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Audio socket connected to ${dest.name} (${dest.host}:${dest.port})")
+                    connectedAt = SystemClock.elapsedRealtime()
+                    PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Audio socket connected to ${dest.name} (${dest.host}:${dest.port})", device = dest.host)
 
                     if (dest.platform != "AriaCast") {
                         val handshakeFrame = try {
                             withTimeout(3000L) { incoming.receive() }
                         } catch (e: Exception) {
                             Log.w(TAG, "Audio handshake timed out for ${dest.host}: ${e.message}")
-                            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Handshake timed out for ${dest.name}: ${e.message}")
+                            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Handshake timed out for ${dest.name}: ${e.message}", device = dest.host)
                             return@audioSocket
                         }
 
                         if (handshakeFrame !is Frame.Text) {
-                            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Unexpected handshake frame type from ${dest.name}")
+                            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Unexpected handshake frame type from ${dest.name}", device = dest.host)
                             return@audioSocket
                         }
+                        // The receiver's own words (sample rate, frame size) say what it expects of us.
+                        PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Receiver handshake: ${handshakeFrame.readText().take(200)}", device = dest.host)
                     }
 
                     _state.value = CastState.CASTING
@@ -1443,8 +1657,9 @@ class AudioCastService : Service() {
 
                     val delayQueue = java.util.LinkedList<ByteArray>()
                     
-                    audioBufferFlow.collect { buffer: ByteArray ->
-                        delayQueue.add(buffer)
+                    val dsp = dspFor(dest.host)
+                    audioBufferFlow.collect { raw: ByteArray ->
+                        delayQueue.add(dsp.process(raw))
                         
                         val currentDelay = _activeDestinations.value.find { it.host == dest.host }?.delayMs ?: 0
                         val requiredFrames = currentDelay / 20 
@@ -1473,9 +1688,12 @@ class AudioCastService : Service() {
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Audio WS connection to ${dest.host}:${dest.port} failed: ${e.message}", e)
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Audio connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                val upFor = if (connectedAt != 0L) " after ${(SystemClock.elapsedRealtime() - connectedAt) / 1000} s, $sentFramesCount frames sent" else ""
+                connectedAt = 0L
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Audio connection to ${dest.name} failed$upFor: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
                 reconnectAttempts++
                 val delayTime = (RECONNECT_INITIAL_BACKOFF * 2.0.pow(reconnectAttempts.toDouble().coerceAtMost(5.0))).toLong()
+                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Reconnecting to ${dest.name} in $delayTime ms (attempt $reconnectAttempts)", device = dest.host)
                 delay(delayTime)
             }
         }
@@ -1619,14 +1837,17 @@ class AudioCastService : Service() {
         val dB = AirPlayVolume.percentToDb(p)
         Log.d(TAG, "Setting receiver volume to $p% ($dB dB)")
         scope.launch {
-            val airplay = synchronized(airplayStreamers) { airplayStreamers.values.toList() }
-            airplay.forEach { try { it.setVolume(dB) } catch (_: Exception) {} }
+            PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL, "Volume set to $p%")
+            val airplay = synchronized(airplayStreamers) { airplayStreamers.toMap() }
+            airplay.forEach { (host, streamer) ->
+                try { streamer.setVolume(dB) } catch (e: Exception) { logVolumeFailure(host, "AirPlay", p, e) }
+            }
 
-            val casts = synchronized(castClients) { castClients.values.toList() }
-            casts.forEach { c ->
+            val casts = synchronized(castClients) { castClients.toMap() }
+            casts.forEach { (host, c) ->
                 try {
                     if (p == 0) c.setMuted(true) else { if (c.muted) c.setMuted(false); c.setVolume(p / 100.0) }
-                } catch (_: Exception) {}
+                } catch (e: Exception) { logVolumeFailure(host, "Google Cast", p, e) }
             }
 
             val controlSnapshot = synchronized(controlSessions) { controlSessions.values.toList() }
@@ -1641,7 +1862,7 @@ class AudioCastService : Service() {
 
             _activeDestinations.value.filter { it.platform == "DLNA" }.forEach { dest ->
                 val (_, rcUrl) = getDlnaControlUrls(dest.extra)
-                if (rcUrl != null) setDlnaVolume(rcUrl, p)
+                if (rcUrl != null) setDlnaVolume(dest.host, rcUrl, p)
             }
         }
     }
@@ -1659,18 +1880,81 @@ class AudioCastService : Service() {
         PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Receiver volume changed to $p%")
     }
 
-    private suspend fun setDlnaVolume(rcUrl: String, percent: Int) {
+    private fun logVolumeFailure(host: String, protocol: String, percent: Int, e: Exception) {
+        PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL,
+            "$protocol volume $percent% failed: ${e.message ?: e.javaClass.simpleName}", device = host)
+    }
+
+    private suspend fun setDlnaVolume(host: String, rcUrl: String, percent: Int) {
         try {
             val body = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:SetVolume xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1"><InstanceID>0</InstanceID><Channel>Master</Channel><DesiredVolume>$percent</DesiredVolume></u:SetVolume></s:Body></s:Envelope>"""
-            client.post(rcUrl) {
+            val response = client.post(rcUrl) {
                 header("SoapAction", "\"urn:schemas-upnp-org:service:RenderingControl:1#SetVolume\"")
                 contentType(ContentType.parse("text/xml; charset=utf-8"))
                 setBody(body)
             }
-        } catch (_: Exception) {}
+            if (!response.status.isSuccess()) {
+                PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL,
+                    "DLNA SetVolume($percent) -> ${response.status.value}${runCatching { Dlna.soapFault(response.bodyAsText()) }.getOrNull()?.let { " ($it)" } ?: ""}", device = host)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL, "DLNA SetVolume($percent) failed: ${e.message ?: e.javaClass.simpleName}", device = host)
+        }
+    }
+
+    private val _speakerSounds = MutableStateFlow<Map<String, SpeakerSound>>(emptyMap())
+    /** Sound settings per speaker host, saved across sessions. */
+    val speakerSounds: StateFlow<Map<String, SpeakerSound>> = _speakerSounds.asStateFlow()
+
+    private fun speakerKey(host: String, field: String) = "spk.$host.$field"
+
+    /** The saved sound for [host]; read from storage once, then served from memory. */
+    fun soundFor(host: String): SpeakerSound {
+        _speakerSounds.value[host]?.let { return it }
+        val loaded = SpeakerSound(
+            bassDb = sharedPreferences.getInt(speakerKey(host, "bass"), 0),
+            trebleDb = sharedPreferences.getInt(speakerKey(host, "treble"), 0),
+            trimDb = sharedPreferences.getInt(speakerKey(host, "trim"), 0),
+            leveling = sharedPreferences.getBoolean(speakerKey(host, "leveling"), false),
+        ).clamped()
+        _speakerSounds.update { it + (host to loaded) }
+        return loaded
+    }
+
+    /** Applies the sound to the running stream at once and remembers it for next time. */
+    fun setSpeakerSound(host: String, sound: SpeakerSound) {
+        val s = sound.clamped()
+        _speakerSounds.update { it + (host to s) }
+        sharedPreferences.edit()
+            .putInt(speakerKey(host, "bass"), s.bassDb)
+            .putInt(speakerKey(host, "treble"), s.trebleDb)
+            .putInt(speakerKey(host, "trim"), s.trimDb)
+            .putBoolean(speakerKey(host, "leveling"), s.leveling)
+            .apply()
+    }
+
+    /** One processor per consumer of the audio bus; it follows this speaker's live settings. */
+    private fun dspFor(host: String) = SpeakerDsp { soundFor(host) }
+
+    /** What the list of known speakers says this speaker needs, if anything. */
+    private fun configFor(dest: CastDestination): SpeakerConfig =
+        DeviceQuirks.configFor(DeviceIdentity.of(dest.platform, dest.name, dest.extra))
+
+    /**
+     * Gives [dest] the delay saved for its host, unless one was already set. A speaker the user
+     * never adjusted starts from the delay the list suggests for it, if any.
+     */
+    private fun withSavedDelay(dest: CastDestination): CastDestination {
+        if (dest.delayMs != 0) return dest
+        val key = speakerKey(dest.host, "delay")
+        val delay = if (sharedPreferences.contains(key)) sharedPreferences.getInt(key, 0) else configFor(dest).defaultDelayMs ?: 0
+        return if (delay != 0) dest.copy(delayMs = delay) else dest
     }
 
     fun setDelay(host: String, delayMs: Int) {
+        sharedPreferences.edit().putInt(speakerKey(host, "delay"), delayMs).apply()
         val current = _activeDestinations.value.toMutableList()
         val index = current.indexOfFirst { it.host == host }
         if (index != -1) {
@@ -1747,6 +2031,7 @@ class AudioCastService : Service() {
         }
 
         destinations.forEach { dest ->
+            if (configFor(dest).sendMetadata == false) return@forEach
             try {
                 if (dest.platform == VbanProtocol.PLATFORM) {
                     // VBAN AUDIO packets carry no metadata.
@@ -1762,18 +2047,18 @@ class AudioCastService : Service() {
                         setBody(mapOf("data" to finalMetadata))
                         timeout { requestTimeoutMillis = 5000 }
                     }
-                    PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name}")
+                    PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name}", device = dest.host)
                 } else if (dest.platform == "AirPlay" || dest.platform == "AirPlay2") {
                     airplayStreamers[dest.host]?.let { streamer ->
                         pushAirPlayMetadata(dest.host, streamer, finalMetadata)
-                        PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name} (AirPlay)")
+                        PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name} (AirPlay)", device = dest.host)
                     }
                 } else if (dest.platform == "Google Cast") {
                     val cast = castClients[dest.host]
                     if (cast != null && lastSentMetadata[dest.host] != metadataKey + currentArtworkBytes?.contentHashCode()) {
                         lastSentMetadata[dest.host] = metadataKey + currentArtworkBytes?.contentHashCode()
                         cast.updateMetadata(castMetadata(metadata))
-                        PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name} (Google Cast)")
+                        PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name} (Google Cast)", device = dest.host)
                     }
                 } else if (dest.platform == "DLNA") {
                     if (lastSentMetadata[dest.host] != metadataKey) {
@@ -1795,20 +2080,14 @@ class AudioCastService : Service() {
 
         try {
             val body = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><CurrentURI>${escapeXml(streamUrl)}</CurrentURI><CurrentURIMetaData>${escapeXml(metadataXml)}</CurrentURIMetaData></u:SetAVTransportURI></s:Body></s:Envelope>"""
-            client.post(avUrl) {
-                header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI\"")
-                contentType(ContentType.parse("text/xml; charset=utf-8"))
-                setBody(body)
-            }
+            dlnaSoap(dest, avUrl, "AVTransport", "SetAVTransportURI", body)
 
             // SetAVTransportURI resets many renderers (e.g. WiiM) to a stopped state,
             // so playback must be restarted explicitly or it stays paused at 0:00.
             val playBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><Speed>1</Speed></u:Play></s:Body></s:Envelope>"""
-            client.post(avUrl) {
-                header("SoapAction", "\"urn:schemas-upnp-org:service:AVTransport:1#Play\"")
-                contentType(ContentType.parse("text/xml; charset=utf-8"))
-                setBody(playBody)
-            }
+            if (configFor(dest).dlnaPlayAfterSetUri != false) dlnaSoap(dest, avUrl, "AVTransport", "Play", playBody)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update DLNA metadata: ${e.message}")
         }
@@ -1873,7 +2152,7 @@ class AudioCastService : Service() {
             try {
                 client.webSocket(host = dest.host, port = dest.port, path = "/control") {
                     controlSessions[dest.host] = this
-                    PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL, "Control socket connected to ${dest.name}")
+                    PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL, "Control socket connected to ${dest.name}", device = dest.host)
                     for (frame in incoming) {
                         if (frame is Frame.Text) {
                             val text = frame.readText()
@@ -1885,7 +2164,7 @@ class AudioCastService : Service() {
                                     val key = if (json.has("position_ms")) "position_ms" else "value"
                                     if (json.has(key)) {
                                         val positionMs = json.getLong(key).coerceAtLeast(0)
-                                        PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Seek to ${positionMs / 1000} s from ${dest.name}")
+                                        PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Seek to ${positionMs / 1000} s from ${dest.name}", device = dest.host)
                                         _seekRequests.emit(positionMs)
                                     }
                                     continue
@@ -1901,7 +2180,7 @@ class AudioCastService : Service() {
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Control WS connection to ${dest.host}:${dest.port} failed: ${e.message}", e)
-                PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Control connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Control connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
                 controlSessions.remove(dest.host)
                 delay(RECONNECT_INITIAL_BACKOFF)
             }
@@ -1909,10 +2188,13 @@ class AudioCastService : Service() {
     }
 
     private suspend fun startStatsSession(dest: CastDestination) {
+        var lastLoggedAt = 0L
+        var lastUnderruns = -1
+        var lastOverruns = -1
         while (currentCoroutineContext().isActive) {
             try {
                 client.webSocket(host = dest.host, port = dest.port, path = "/stats") statsSocket@{
-                    PacketLogger.log(PacketDirection.OUT, PacketType.STATS, "Stats socket connected to ${dest.name}")
+                    PacketLogger.log(PacketDirection.OUT, PacketType.STATS, "Stats socket connected to ${dest.name}", device = dest.host)
                     while(isActive) {
                         val frame = withTimeoutOrNull(STATS_TIMEOUT) { incoming.receive() }
                         if (frame is Frame.Text) {
@@ -1921,6 +2203,17 @@ class AudioCastService : Service() {
                                 bufferedFrames = json.optInt("bufferedFrames"),
                                 receivedFrames = json.optInt("receivedFrames")
                             )
+                            // Not every receiver reports underruns and overruns; -1 means it did not.
+                            val underruns = json.optInt("underruns", -1)
+                            val overruns = json.optInt("overruns", -1)
+                            val now = SystemClock.elapsedRealtime()
+                            if (now - lastLoggedAt >= RECEIVER_STATS_LOG_MS || underruns != lastUnderruns || overruns != lastOverruns) {
+                                lastLoggedAt = now; lastUnderruns = underruns; lastOverruns = overruns
+                                PacketLogger.log(PacketDirection.IN, PacketType.STATS,
+                                    "Receiver stats: received=${json.optInt("receivedFrames")}, buffered=${json.optInt("bufferedFrames")}" +
+                                        (if (underruns >= 0) ", underruns=$underruns" else "") + (if (overruns >= 0) ", overruns=$overruns" else ""),
+                                    device = dest.host)
+                            }
                             updateNotification()
                         } else if (frame == null) {
                             return@statsSocket
@@ -1930,7 +2223,7 @@ class AudioCastService : Service() {
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Stats WS connection to ${dest.host}:${dest.port} failed: ${e.message}", e)
-                PacketLogger.log(PacketDirection.IN, PacketType.STATS, "Stats connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                PacketLogger.log(PacketDirection.IN, PacketType.STATS, "Stats connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
                 delay(RECONNECT_INITIAL_BACKOFF)
             }
         }
@@ -1990,6 +2283,7 @@ class AudioCastService : Service() {
     }
 
     private fun cleanupSession() {
+        cancelSleepTimer()
         val destinations = _activeDestinations.value.toList()
         val teardownJobs = stopRemoteSessions(destinations)
         releaseWakeLock()
@@ -2226,6 +2520,10 @@ class AudioCastService : Service() {
         private const val TAG = "AudioCastService"
         private const val NOTIFICATION_ID = 1
         private const val NOTIFICATION_CHANNEL_ID = "AudioCastChannel"
+        private const val FEEDBACK_CHANNEL_ID = "SpeakerFeedback"
+        private const val FEEDBACK_REQUEST_OPEN = 71
+        private const val FEEDBACK_REQUEST_WORKS = 72
+        private const val FEEDBACK_REQUEST_PROBLEM = 73
         const val ACTION_START = "com.aria.ariacast.ACTION_START"
         const val ACTION_START_SOURCE = "com.aria.ariacast.ACTION_START_SOURCE"
         const val EXTRA_SOURCE = "com.aria.ariacast.EXTRA_SOURCE"
@@ -2273,6 +2571,14 @@ class AudioCastService : Service() {
         const val VIDEO_IFRAME_INTERVAL = 2
 
         private const val RECONNECT_INITIAL_BACKOFF = 1000L
+
+        /** First look at a DLNA renderer's state after Play, then how often to look again. */
+        private const val DLNA_FIRST_CHECK_MS = 1500L
+        private const val DLNA_CHECK_EVERY_MS = 10_000L
+        private const val DLNA_CHECK_GIVE_UP = 5
+
+        /** How often the receiver's own counters (buffer level, underruns) are written to the log. */
+        private const val RECEIVER_STATS_LOG_MS = 30_000L
         private const val STATS_TIMEOUT = 10000L 
         private const val ARTWORK_PORT = 8090
         private const val STREAM_PORT = 8091

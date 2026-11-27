@@ -1,0 +1,67 @@
+package com.aria.ariacast.quirks
+
+import java.net.URLEncoder
+
+/**
+ * The address of a pre-filled "Speaker report" issue in the AriaCast/known-speakers repository. The
+ * field names are the ids in that repository's .github/ISSUE_TEMPLATE/speaker-report.yml, and the
+ * dropdown values are its option labels (a test keeps a copy of that form to check them).
+ */
+object SpeakerIssue {
+    private const val NEW_ISSUE = "https://github.com/AriaCast/known-speakers/issues/new"
+    const val TEMPLATE = "speaker-report.yml"
+
+    /** A browser refuses very long addresses, and GitHub's limit is lower than most. */
+    const val MAX_URL = 6000
+
+    /** What the user wrote about the problem; the rest of the address is cut before this is. */
+    const val MAX_SYMPTOMS = 1000
+
+    const val STATUS_SUPPORTED = "Supported"
+    const val STATUS_QUIRKS = "Supported with quirks"
+    const val STATUS_UNSUPPORTED = "Unsupported"
+
+    /** How the app names a protocol, in the words of the form's dropdown. */
+    fun protocolLabel(platform: String?): String = when (platform) {
+        "AirPlay2" -> "AirPlay 2"
+        "AirPlay" -> "AirPlay 1"
+        "DLNA" -> "DLNA"
+        "Google Cast" -> "Google Cast"
+        null -> "No local protocol"
+        else -> "Other"
+    }
+
+    /**
+     * The name to propose: brand and model if the speaker said them, else nothing. The name its owner
+     * gave it ("Studio") says nothing about what it is, and the list is recognised by model: the form
+     * asks the reporter to write it.
+     */
+    fun speakerName(identity: DeviceIdentity): String =
+        listOfNotNull(identity.manufacturer, identity.model).joinToString(" ").trim()
+
+    fun url(identity: DeviceIdentity, details: String, appVersion: String?, status: String? = null, symptoms: String? = null): String {
+        fun build(details: String): String {
+            val fields = listOfNotNull(
+                "template" to TEMPLATE,
+                speakerName(identity).takeIf { it.isNotEmpty() }?.let { "title" to "Speaker: $it" },
+                speakerName(identity).takeIf { it.isNotEmpty() }?.let { "speaker" to it },
+                "protocol" to protocolLabel(identity.platform),
+                status?.let { "status" to it },
+                symptoms?.trim()?.takeIf { it.isNotEmpty() }?.let { "symptoms" to it.take(MAX_SYMPTOMS) },
+                "details" to details,
+                appVersion?.let { "version" to it },
+            )
+            return NEW_ISSUE + "?" + fields.joinToString("&") { (k, v) -> "$k=${encode(v)}" }
+        }
+        // The details are the long part: cut them rather than lose the address altogether.
+        var text = details
+        var url = build(text)
+        while (url.length > MAX_URL && text.length > 200) {
+            text = text.take(text.length * 3 / 4)
+            url = build(text)
+        }
+        return url
+    }
+
+    private fun encode(value: String) = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+}

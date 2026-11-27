@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
  */
 enum class Screen {
     HOME, RECEIVE, SETTINGS,
-    NOW_PLAYING, RECEIVER_DISPLAY, DOCTOR, ONBOARDING;
+    NOW_PLAYING, RECEIVER_DISPLAY, DOCTOR, KNOWN_SPEAKERS, ONBOARDING;
 
     val isDestination: Boolean get() = this == HOME || this == RECEIVE || this == SETTINGS
 }

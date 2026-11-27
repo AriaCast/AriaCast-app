@@ -231,6 +231,10 @@ class CastClient(
         val state = status.str("playerState") ?: return
         val previous = playerState
         playerState = state
+        if (previous != state) {
+            val reason = status.str("idleReason")?.let { " (idleReason=$it)" } ?: ""
+            ProtoLog.i(TAG, "$host: player state ${previous ?: "-"} -> $state$reason")
+        }
         if (state == expectedState) { expectedState = null; return }
         if (previous != null && previous != state) {
             when (state) {
