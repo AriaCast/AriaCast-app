@@ -74,4 +74,15 @@ class SpeakerReportTest {
         assertTrue(text.contains("Known: nothing recorded for this speaker yet"))
         assertTrue(text.contains("No log lines for this speaker"))
     }
+
+    @Test fun theSummaryIsTheReportWithoutTheLog() {
+        val summary = SpeakerReport.summary(
+            SpeakerReport.Context("AriaCast 2.0.0", "14 (API 34)", "Google Pixel 8", castState = "CASTING"),
+            wiim, DeviceQuirks.matching(wiim),
+        )
+        assertTrue(summary.startsWith("App: AriaCast 2.0.0"))
+        assertTrue(summary.contains("Speaker: protocol=DLNA, manufacturer=Linkplay, model=WiiM Pro Plus, name=Den"))
+        assertTrue(summary.contains("Cast: CASTING"))
+        assertFalse(summary.contains("Log"))
+    }
 }

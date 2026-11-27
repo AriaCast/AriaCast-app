@@ -25,3 +25,7 @@ fastlane/test_output
 .codegraph/
 .rtk/
 CLAUDE.md
+
+# Generated
+.kotlin/
+__pycache__/

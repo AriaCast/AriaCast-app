@@ -36,16 +36,12 @@ object SpeakerReport {
         val settings: String? = null,
     )
 
-    fun build(
+    /** Who the speaker is and what is known about it, without the log. Addresses are shortened. */
+    fun summary(
         context: Context,
         identity: DeviceIdentity,
-        host: String,
         known: List<KnownSpeaker>,
-        logs: List<PacketLog>,
     ): String = buildString {
-        appendLine("AriaCast speaker report")
-        appendLine("Addresses are shortened to their first two parts; speaker names are included.")
-        appendLine()
         appendLine("App: ${context.app}")
         appendLine("Phone: ${context.device}, Android ${context.android}")
         appendLine("Speaker: ${identity.reportLine()}")
@@ -56,6 +52,19 @@ object SpeakerReport {
         }
         context.castState?.let { appendLine("Cast: $it") }
         context.settings?.let { appendLine("Settings: $it") }
+    }.trimEnd().let(::maskAddresses)
+
+    fun build(
+        context: Context,
+        identity: DeviceIdentity,
+        host: String,
+        known: List<KnownSpeaker>,
+        logs: List<PacketLog>,
+    ): String = buildString {
+        appendLine("AriaCast speaker report")
+        appendLine("Addresses are shortened to their first two parts; speaker names are included.")
+        appendLine()
+        appendLine(summary(context, identity, known))
         appendLine()
         val lines = logFor(logs, host, identity.name)
         if (lines.isEmpty()) {

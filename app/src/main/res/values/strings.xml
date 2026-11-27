@@ -370,6 +370,8 @@
     <string name="report_speaker">Report speaker</string>
     <string name="report_speaker_named">Report %1$s</string>
     <string name="report_speaker_subject">AriaCast report: %1$s</string>
+    <string name="report_speaker_log_copied">Log copied. Paste it in the “Log” field of the report.</string>
+    <string name="share_speaker_log">Share log</string>
     <string name="known_speakers">Known speakers</string>
     <string name="known_speakers_desc">What works, what has a catch, and what AriaCast cannot reach.</string>
     <string name="known_speakers_intro">Speakers other people have tried, with what to look for and what to do. The list comes from the project and updates itself. Descriptions are in English.</string>

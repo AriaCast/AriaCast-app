@@ -66,9 +66,12 @@ casting, a new interface, and AriaCompanion 2.
   receiver's handshake, how long a connection lasted and each reconnect, and the receiver's own
   underrun and overrun counts. DLNA speakers are asked their state every 10 seconds while you
   cast to them, which is one small request.
-- **Report speaker**: long-press a speaker (or use the doctor) to share a report with who the
-  speaker is, what is known about it, the cast state and its log lines, with addresses shortened.
-  Works for speakers you never managed to connect to.
+- **Report speaker**: long-press a speaker (or use the doctor) to open a pre-filled report on GitHub
+  with who the speaker is, what is known about it and the cast state; its log lines are copied to
+  paste in, with addresses shortened. Works for speakers you never managed to connect to. A bot turns
+  the report into a proposed entry for the list of known speakers in a pull request, which a
+  maintainer reviews; the log is never copied into the list. "Share log" in the same menu sends
+  the whole report through the share sheet instead.
 
 ### Built in, previously plugins
 - Music Assistant player picker, connection doctor, visualizer, add speaker by address.

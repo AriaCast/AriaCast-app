@@ -15,7 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import com.aria.ariacast.quirks.DeviceIdentity
-import com.aria.ariacast.ui.shareSpeakerReport
+import com.aria.ariacast.ui.reportSpeaker
 import androidx.compose.material.icons.filled.BugReport
 import com.aria.ariacast.quirks.DeviceQuirks
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -219,7 +219,7 @@ fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
                     }
                     service?.activeDestinations?.value?.forEach { d ->
                         ListRow(stringResource(R.string.report_speaker_named, d.name), leading = { LeadingIcon(Icons.Filled.BugReport) }) {
-                            shareSpeakerReport(context, service, d.platform, d.name, d.host, d.extra)
+                            reportSpeaker(context, service, d.platform, d.name, d.host, d.extra)
                         }
                     }
                 }

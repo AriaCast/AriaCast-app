@@ -1,0 +1,56 @@
+name: Speaker report
+
+# Turns a "Speaker report" issue into a pull request that proposes an entry for data/speakers.json.
+# A maintainer reviews and merges it; nothing reaches the list, or the apps that read it, before that.
+#
+# The issue text is written by anyone, so:
+#  - it only reaches the script through environment variables, never inside a shell command;
+#  - the script validates every field and writes the file with a JSON serializer;
+#  - the job runs on a GitHub-hosted runner, not the self-hosted one the build uses.
+# The repository setting "Allow GitHub Actions to create and approve pull requests" must be on.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  propose:
+    if: contains(github.event.issue.labels.*.name, 'speaker-report')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make the proposed entry
+        id: entry
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: python3 scripts/speaker_report.py data/speakers.json "$RUNNER_TEMP/comment.md"
+
+      - name: Open a pull request
+        if: steps.entry.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          branch="speaker-report/${ISSUE_NUMBER}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add data/speakers.json
+          git commit -m "Propose a speaker entry from issue #${ISSUE_NUMBER}"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "Speaker report #${ISSUE_NUMBER}" \
+            --body "Proposed from #${ISSUE_NUMBER}. The entry is unverified: check the verdict and the symptoms against the issue's log, then regenerate docs/SPEAKERS.md with \`UPDATE_SPEAKERS_DOC=1 ./gradlew :app:testGithubDebugUnitTest --tests '*SpeakersDocTest*'\` before merging."
+
+      - name: Reply on the issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: gh issue comment "$ISSUE_NUMBER" --body-file "$RUNNER_TEMP/comment.md"

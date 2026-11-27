@@ -267,6 +267,8 @@
     <string name="report_speaker">Segnala altoparlante</string>
     <string name="report_speaker_named">Segnala %1$s</string>
     <string name="report_speaker_subject">Segnalazione AriaCast: %1$s</string>
+    <string name="report_speaker_log_copied">Log copiato. Incollalo nel campo «Log» della segnalazione.</string>
+    <string name="share_speaker_log">Condividi il log</string>
     <string name="known_speakers">Altoparlanti noti</string>
     <string name="known_speakers_desc">Cosa funziona, cosa ha un limite e cosa AriaCast non può raggiungere.</string>
     <string name="known_speakers_intro">Altoparlanti provati da altri, con cosa osservare e cosa fare. L\'elenco viene dal progetto e si aggiorna da solo. Le descrizioni sono in inglese.</string>

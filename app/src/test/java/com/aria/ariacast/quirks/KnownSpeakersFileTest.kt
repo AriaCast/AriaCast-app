@@ -136,4 +136,17 @@ class KnownSpeakersFileTest {
         assertSame(newer, KnownSpeakersStore.choose(null, newer))
         assertEquals(0, KnownSpeakersStore.choose(null, null).speakers.size)
     }
+
+    @Test fun whatTheBotProposesIsAcceptedByTheApp() {
+        // scripts/testdata/generated-sample.json is written by scripts/speaker_report.py, and its own
+        // tests check the script still produces exactly this file.
+        val list = KnownSpeakersFile.parse(java.io.File("../scripts/testdata/generated-sample.json").readText())!!
+        assertEquals(emptyList<String>(), list.skipped)
+        assertEquals(listOf("wiim-dlna-restart", "acme-play-3-dlna"), list.speakers.map { it.id })
+        val acme = list.speakers.last()
+        assertEquals(Verdict.PARTIAL, acme.verdict)
+        assertTrue(acme.evidence.contains("unverified"))
+        assertTrue(acme.appliesTo(DeviceIdentity("DLNA", "Den", "Play 3 Pro", "Acme Audio")))
+        assertFalse(acme.appliesTo(DeviceIdentity("AirPlay2", "Den", "Play 3 Pro")))
+    }
 }

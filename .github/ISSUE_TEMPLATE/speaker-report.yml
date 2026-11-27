@@ -1,0 +1,67 @@
+name: Speaker report
+description: Tell us how a speaker works, or doesn't, with AriaCast
+title: "Speaker: "
+labels: ["speaker-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. A bot turns this into a proposed entry for the [list of known speakers](../blob/main/docs/SPEAKERS.md),
+        and a maintainer reviews it before it is added. **Only the fields below are used; the log is never copied into the list.**
+        The app fills most of this in for you (Long-press a speaker, **Report speaker**).
+  - type: input
+    id: speaker
+    attributes:
+      label: Speaker
+      description: Brand and model, for example "WiiM Pro Plus".
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol
+      options:
+        - AirPlay 2
+        - AirPlay 1
+        - DLNA
+        - Google Cast
+        - Snapcast
+        - Sendspin
+        - AriaCast
+        - VBAN
+        - No local protocol
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: verdict
+    attributes:
+      label: How does it work?
+      options:
+        - Works
+        - Works with a catch
+        - Does not work
+        - Not supported (AriaCast cannot find or reach it)
+    validations:
+      required: true
+  - type: textarea
+    id: symptoms
+    attributes:
+      label: What happens
+      description: What you see or hear when something goes wrong. One thing per line. Leave empty if it works.
+  - type: textarea
+    id: fingerprint
+    attributes:
+      label: Speaker details
+      description: Filled in by the app. Addresses are shortened.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: The app copied it for you; paste it here. It helps us, and stays in this issue.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: AriaCast version
