@@ -74,6 +74,11 @@ casting, a new interface, and AriaCompanion 2.
   the report; speakers that a Sendspin server pulls from are not asked about. If casting to a single
   speaker fails in that first minute, it asks instead whether to report it, with "doesn't work"
   already chosen.
+  Only speakers are asked about or reported: AriaCast receivers, Snapcast, VBAN and Sendspin are
+  software on a phone, a computer or a server, so they are left out. A speaker is told apart by its
+  brand and model, never by the name you gave it: if it does not say its model, the report form
+  leaves "Speaker" empty for you to fill in. For "it works" no log is copied, since there is nothing
+  to explain.
 - **Look for other devices** (Settings → Known speakers): a scan of about eight seconds, started by
   you, for devices AriaCast cannot play to: UPnP devices that are not renderers, and mDNS services such
   as Spotify Connect, Sonos, Amazon, HomeKit, HEOS and Bose SoundTouch. Speakers the app already lists

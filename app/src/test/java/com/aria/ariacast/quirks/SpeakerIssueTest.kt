@@ -41,7 +41,7 @@ class SpeakerIssueTest {
     @Test fun everyProtocolTheAppUsesIsAnOptionInTheForm() {
         // A copy of the known-speakers repository's form: keep it in step with that file.
         val form = TestSpeakers.text("speaker-report-form.yml")
-        listOf("AirPlay2", "AirPlay", "DLNA", "Google Cast", "Snapcast", "Sendspin", "AriaCast", "VBAN", null, "x").forEach {
+        listOf("AirPlay2", "AirPlay", "DLNA", "Google Cast", null, "x").forEach {
             assertTrue("${SpeakerIssue.protocolLabel(it)} is not an option in the form", form.contains("- ${SpeakerIssue.protocolLabel(it)}\n"))
         }
         listOf(SpeakerIssue.STATUS_SUPPORTED, SpeakerIssue.STATUS_QUIRKS, SpeakerIssue.STATUS_UNSUPPORTED).forEach {
@@ -50,9 +50,9 @@ class SpeakerIssueTest {
     }
 
     @Test fun textThatLooksLikeUrlSyntaxIsEncoded() {
-        val nasty = DeviceIdentity("DLNA", "a&b=c#d")
+        val nasty = DeviceIdentity("DLNA", "a&b=c#d", "Mod&el=1#")
         val q = query(SpeakerIssue.url(nasty, "line one\nline two & more = # ?", null))
-        assertEquals("a&b=c#d", q["speaker"])
+        assertEquals("Mod&el=1#", q["speaker"])
         assertEquals("line one\nline two & more = # ?", q["details"])
         assertFalse(SpeakerIssue.url(nasty, "x", null).contains(" "))
     }
@@ -64,8 +64,17 @@ class SpeakerIssueTest {
         assertTrue(query(url)["details"]!!.isNotEmpty())
     }
 
-    @Test fun aSpeakerThatNamesNothingIsCalledByItsName() {
-        assertEquals("Kitchen", SpeakerIssue.speakerName(DeviceIdentity("AirPlay2", "Kitchen")))
+    @Test fun aSpeakerThatSaysNothingAboutItselfIsLeftForTheReporterToName() {
+        // "Kitchen" is what its owner called it, not what it is: the form must ask for the model.
+        assertEquals("", SpeakerIssue.speakerName(DeviceIdentity("AirPlay2", "Kitchen")))
+        val q = query(SpeakerIssue.url(DeviceIdentity("AirPlay2", "Kitchen"), "d", null))
+        assertNull(q["speaker"])
+        assertNull(q["title"])
+        assertEquals("AirPlay 2", q["protocol"])
+    }
+
+    @Test fun softwareReceiversAreNotOffered() {
+        listOf("AriaCast", "Snapcast", "VBAN", "Sendspin").forEach { assertEquals("Other", SpeakerIssue.protocolLabel(it)) }
     }
 
     @Test fun whatTheUserWroteGoesInTheSymptomsField() {

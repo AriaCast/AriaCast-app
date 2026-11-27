@@ -16,8 +16,14 @@ object SpeakerFeedback {
      */
     fun key(platform: String?, name: String) = "${platform ?: "-"}|${name.trim().lowercase()}"
 
-    /** A Sendspin server pulls the stream itself, so there is no speaker of ours to judge. */
-    fun isAskable(platform: String?) = platform != "Sendspin"
+    /**
+     * Only things that are speakers are asked about. An AriaCast receiver, a Snapcast or VBAN server
+     * or a Sendspin server is software on a phone, a computer or a server: there is no speaker to
+     * judge, and a list of speakers has no place for it.
+     */
+    fun isAskable(platform: String?) = platform in ASKABLE
+
+    private val ASKABLE = setOf("AirPlay", "AirPlay2", "DLNA", "Google Cast")
 
     /** Ask when the minute is up and the speaker is still playing in a cast, and was never asked. */
     fun shouldAsk(casting: Boolean, stillInCast: Boolean, alreadyAsked: Boolean, platform: String?) =
@@ -32,10 +38,10 @@ object SpeakerFeedback {
 
     /**
      * After "it works": offer to add the speaker to the public list unless the list already says it
-     * is supported. One more "it works" for a speaker everybody knows adds little, and sending it
+     * is supported ([best] is the entry the speaker's report would be counted in, if any). One more "it works" for a speaker everybody knows adds little, and sending it
      * takes a GitHub account.
      */
-    fun offerSharingAfterWorks(known: List<KnownSpeaker>) = known.none { it.status == Status.SUPPORTED }
+    fun offerSharingAfterWorks(best: KnownSpeaker?) = best?.status != Status.SUPPORTED
 
     /** The word of the report form's dropdown for a status. */
     fun formLabel(status: Status) = when (status) {

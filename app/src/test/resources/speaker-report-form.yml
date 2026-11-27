@@ -25,10 +25,6 @@ body:
         - AirPlay 1
         - DLNA
         - Google Cast
-        - Snapcast
-        - Sendspin
-        - AriaCast
-        - VBAN
         - No local protocol
         - Other
     validations:

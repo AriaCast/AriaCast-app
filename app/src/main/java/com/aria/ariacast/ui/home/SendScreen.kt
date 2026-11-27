@@ -114,6 +114,7 @@ import com.aria.ariacast.ui.ListGroup
 import com.aria.ariacast.ui.ListRow
 import com.aria.ariacast.ui.Screen
 import com.aria.ariacast.ui.ScreenList
+import com.aria.ariacast.quirks.SpeakerFeedback
 import com.aria.ariacast.ui.reportSpeaker
 import com.aria.ariacast.ui.shareSpeakerLog
 import com.aria.ariacast.ui.SectionHeader
@@ -309,7 +310,9 @@ private fun Speakers(controller: AppController, selection: SourceSelection) {
                     SpeakerRow(server, isActive(server),
                         onClick = { controller.castTo(listOf(server), selection.source, selection.inputDeviceId) },
                         onRemove = { controller.removeServer(server) },
-                        onReport = { reportSpeaker(context, service, server.platform, server.name, server.host, server.extra) },
+                        onReport = if (SpeakerFeedback.isAskable(server.platform)) {
+                            { reportSpeaker(context, service, server.platform, server.name, server.host, server.extra) }
+                        } else null,
                         onShareLog = { shareSpeakerLog(context, service, server.platform, server.name, server.host, server.extra) })
                 }
             }
@@ -319,7 +322,7 @@ private fun Speakers(controller: AppController, selection: SourceSelection) {
 }
 
 @Composable
-private fun SpeakerRow(server: Server, active: Boolean, onClick: () -> Unit, onRemove: () -> Unit, onReport: () -> Unit, onShareLog: () -> Unit) {
+private fun SpeakerRow(server: Server, active: Boolean, onClick: () -> Unit, onRemove: () -> Unit, onReport: (() -> Unit)?, onShareLog: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Box {
         ListRow(
@@ -333,7 +336,8 @@ private fun SpeakerRow(server: Server, active: Boolean, onClick: () -> Unit, onR
             onClick = onClick,
         )
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.report_speaker)) }, leadingIcon = { Icon(Icons.Filled.BugReport, null) },
+            // Software receivers (AriaCast, Snapcast, VBAN, Sendspin) are not speakers to report.
+            if (onReport != null) DropdownMenuItem(text = { Text(stringResource(R.string.report_speaker)) }, leadingIcon = { Icon(Icons.Filled.BugReport, null) },
                 onClick = { menu = false; onReport() })
             DropdownMenuItem(text = { Text(stringResource(R.string.share_speaker_log)) }, leadingIcon = { Icon(Icons.Filled.Share, null) },
                 onClick = { menu = false; onShareLog() })

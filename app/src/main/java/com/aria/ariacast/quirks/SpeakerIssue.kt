@@ -27,24 +27,24 @@ object SpeakerIssue {
         "AirPlay" -> "AirPlay 1"
         "DLNA" -> "DLNA"
         "Google Cast" -> "Google Cast"
-        "Snapcast" -> "Snapcast"
-        "Sendspin" -> "Sendspin"
-        "AriaCast" -> "AriaCast"
-        "VBAN" -> "VBAN"
         null -> "No local protocol"
         else -> "Other"
     }
 
-    /** The name to propose: brand and model if the speaker said them, else what it is called. */
+    /**
+     * The name to propose: brand and model if the speaker said them, else nothing. The name its owner
+     * gave it ("Studio") says nothing about what it is, and the list is recognised by model: the form
+     * asks the reporter to write it.
+     */
     fun speakerName(identity: DeviceIdentity): String =
-        listOfNotNull(identity.manufacturer, identity.model).joinToString(" ").trim().ifEmpty { identity.name }
+        listOfNotNull(identity.manufacturer, identity.model).joinToString(" ").trim()
 
     fun url(identity: DeviceIdentity, details: String, appVersion: String?, status: String? = null, symptoms: String? = null): String {
         fun build(details: String): String {
             val fields = listOfNotNull(
                 "template" to TEMPLATE,
-                "title" to "Speaker: ${speakerName(identity)}",
-                "speaker" to speakerName(identity),
+                speakerName(identity).takeIf { it.isNotEmpty() }?.let { "title" to "Speaker: $it" },
+                speakerName(identity).takeIf { it.isNotEmpty() }?.let { "speaker" to it },
                 "protocol" to protocolLabel(identity.platform),
                 status?.let { "status" to it },
                 symptoms?.trim()?.takeIf { it.isNotEmpty() }?.let { "symptoms" to it.take(MAX_SYMPTOMS) },

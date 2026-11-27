@@ -22,7 +22,13 @@ class SpeakerFeedbackTest {
         assertFalse(SpeakerFeedback.shouldAsk(casting = false, stillInCast = true, alreadyAsked = false, platform = "DLNA"))
         assertFalse("removed from the cast meanwhile", SpeakerFeedback.shouldAsk(true, false, false, "DLNA"))
         assertFalse("never twice", SpeakerFeedback.shouldAsk(true, true, true, "DLNA"))
-        assertFalse("a Sendspin server is not a speaker to judge", SpeakerFeedback.shouldAsk(true, true, false, "Sendspin"))
+        // Software on a phone, a computer or a server is not a speaker to judge.
+        listOf("Sendspin", "AriaCast", "Snapcast", "VBAN", null).forEach {
+            assertFalse("$it", SpeakerFeedback.shouldAsk(true, true, false, it))
+        }
+        listOf("AirPlay", "AirPlay2", "DLNA", "Google Cast").forEach {
+            assertTrue("$it", SpeakerFeedback.shouldAsk(true, true, false, it))
+        }
     }
 
     @Test fun aFailureIsAskedAboutOnlyForASingleSpeaker() {
@@ -30,6 +36,7 @@ class SpeakerFeedbackTest {
         assertFalse("which of two failed?", SpeakerFeedback.shouldAskAfterFailure(2, false, "DLNA"))
         assertFalse("never twice", SpeakerFeedback.shouldAskAfterFailure(1, true, "DLNA"))
         assertFalse(SpeakerFeedback.shouldAskAfterFailure(1, false, "Sendspin"))
+        assertFalse(SpeakerFeedback.shouldAskAfterFailure(1, false, "VBAN"))
         assertFalse(SpeakerFeedback.shouldAskAfterFailure(0, false, "DLNA"))
     }
 
@@ -38,10 +45,10 @@ class SpeakerFeedbackTest {
     }
 
     @Test fun sharingIsOfferedUnlessTheListAlreadySaysSupported() {
-        fun known(platform: String, name: String, model: String?) = DeviceQuirks.matching(DeviceIdentity(platform, name, model))
-        assertTrue("not in the list", SpeakerFeedback.offerSharingAfterWorks(known("DLNA", "Den", "Acme Box")))
-        assertFalse("listed as supported", SpeakerFeedback.offerSharingAfterWorks(known("DLNA", "Den", "WiiM Pro Plus")))
-        assertTrue("listed with quirks: a confirmation is news", SpeakerFeedback.offerSharingAfterWorks(known("AirPlay2", "Den", "ShairportSync")))
+        fun best(platform: String, name: String, model: String?) = DeviceQuirks.bestMatch(DeviceIdentity(platform, name, model))
+        assertTrue("not in the list", SpeakerFeedback.offerSharingAfterWorks(best("DLNA", "Den", "Acme Box")))
+        assertFalse("listed as supported", SpeakerFeedback.offerSharingAfterWorks(best("DLNA", "Den", "WiiM Pro Plus")))
+        assertTrue("listed with quirks: a confirmation is news", SpeakerFeedback.offerSharingAfterWorks(best("AirPlay2", "Den", "ShairportSync")))
     }
 
     @Test fun answersMapToTheFormsWords() {

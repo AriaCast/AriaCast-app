@@ -69,10 +69,14 @@ fun reportSpeaker(
 ) {
     val identity = DeviceIdentity.of(platform, name, extra)
     val ctx = reportContext(context, service, host, castState)
-    val log = SpeakerReport.build(ctx, identity, host, DeviceQuirks.matching(identity), PacketLogger.logsFor(host, name))
-    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AriaCast speaker report", log))
+    // The log is for finding out what went wrong: a speaker that works has nothing to explain.
+    val copyLog = status != SpeakerIssue.STATUS_SUPPORTED
     val url = SpeakerIssue.url(identity, SpeakerReport.summary(ctx, identity, DeviceQuirks.matching(identity)), ctx.app.substringAfter(' '), status, symptoms)
-    Toast.makeText(context, context.getString(R.string.report_speaker_log_copied), Toast.LENGTH_LONG).show()
+    if (copyLog) {
+        val log = SpeakerReport.build(ctx, identity, host, DeviceQuirks.matching(identity), PacketLogger.logsFor(host, name))
+        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AriaCast speaker report", log))
+        Toast.makeText(context, context.getString(R.string.report_speaker_log_copied), Toast.LENGTH_LONG).show()
+    }
     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
 

@@ -96,7 +96,7 @@ private fun FeedbackFlow(platform: String?, name: String, host: String, extra: S
 
     fun works(): Step {
         ledger.record(key, Status.SUPPORTED)
-        if (SpeakerFeedback.offerSharingAfterWorks(DeviceQuirks.matching(identity))) return Step.SHARE
+        if (SpeakerFeedback.offerSharingAfterWorks(DeviceQuirks.bestMatch(identity))) return Step.SHARE
         Toast.makeText(context, context.getString(R.string.feedback_thanks), Toast.LENGTH_SHORT).show()
         onFinish()
         return Step.NONE

@@ -38,6 +38,12 @@ object DeviceQuirks {
     /** Every known entry that applies to [device]. */
     fun matching(device: DeviceIdentity): List<KnownSpeaker> = all.filter { it.appliesTo(device) }
 
+    /**
+     * The one entry that fits [device] best, if any: the report of a device is counted there. The first
+     * in the list wins a tie.
+     */
+    fun bestMatch(device: DeviceIdentity): KnownSpeaker? = all.maxByOrNull { it.match.specificity(device) }?.takeIf { it.appliesTo(device) }
+
     /** The entries the connection doctor should explain while casting to [device], in [locale]. */
     fun notesFor(device: DeviceIdentity, locale: Locale): List<Pair<KnownSpeaker, String>> =
         matching(device).mapNotNull { k -> k.noteFor(locale)?.let { k to it } }

@@ -54,13 +54,27 @@ data class SpeakerConfig(
     }
 }
 
-/** Which speakers an entry is about: this protocol, and a name, model or maker containing one of these words. */
+/**
+ * Which speakers an entry is about: this protocol, and a name, model or maker containing one of these
+ * words. The known-speakers bot applies the same rule (tests/resources/matching-cases.json holds the
+ * cases both must answer alike).
+ */
 data class Match(val platform: String?, val mentions: List<String>) {
-    fun appliesTo(device: DeviceIdentity): Boolean {
-        if (platform != null && device.platform != platform) return false
-        val haystack = listOfNotNull(device.name, device.model, device.manufacturer).joinToString(" ").lowercase()
-        return mentions.any { haystack.contains(it) }
+    /**
+     * How well this fits [device], or 0 if it does not. A word found in the name or model scores its
+     * length, so "wiim pro" beats "wiim"; a word found only in the maker's name scores 1, so a model
+     * word always beats a maker's.
+     */
+    fun specificity(device: DeviceIdentity): Int {
+        if (platform != null && device.platform != platform) return 0
+        val own = listOfNotNull(device.name, device.model).joinToString(" ").lowercase()
+        val best = mentions.filter { own.contains(it) }.maxOfOrNull { it.length } ?: 0
+        if (best > 0) return best
+        val maker = device.manufacturer?.lowercase().orEmpty()
+        return if (mentions.any { maker.contains(it) }) 1 else 0
     }
+
+    fun appliesTo(device: DeviceIdentity): Boolean = specificity(device) > 0
 }
 
 /**
