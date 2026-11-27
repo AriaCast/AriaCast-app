@@ -1,5 +1,6 @@
 package com.aria.ariacast.video
 
+import com.aria.ariacast.net.startOrNull
 import android.content.ContentResolver
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -77,7 +78,8 @@ class MediaServer(private val resolver: ContentResolver, val port: Int = PORT) {
                     call.respondText(s.second, ContentType.parse("text/vtt; charset=utf-8"))
                 }
             }
-        }.start(wait = false)
+        }.startOrNull("MediaServer", "Media server on port $port")
+            ?: throw java.io.IOException("Port $port is in use")
     }
 
     private fun entryFor(token: String?): Entry? = media?.takeIf { it.first == token }?.second

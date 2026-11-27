@@ -1,5 +1,6 @@
 package com.aria.ariacast.receiver
 
+import com.aria.ariacast.net.startOrNull
 import android.util.Log
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -162,7 +163,8 @@ class ReceiverServer(
                     }
                 }
             }
-        }.start(wait = false)
+        }.startOrNull(TAG, "Receiver on port $port")
+            ?: throw java.io.IOException("Port $port is in use")
     }
 
     private suspend fun io.ktor.util.pipeline.PipelineContext<Unit, io.ktor.server.application.ApplicationCall>.respondArtwork() {

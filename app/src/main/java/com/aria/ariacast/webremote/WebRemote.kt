@@ -1,5 +1,6 @@
 package com.aria.ariacast.webremote
 
+import com.aria.ariacast.net.startOrNull
 import android.content.Context
 import com.aria.ariacast.AudioCastService
 import com.aria.ariacast.CastDestination
@@ -122,7 +123,11 @@ object WebRemote {
                     call.respondText("""{"ok":$ok}""", ContentType.Application.Json, if (ok) HttpStatusCode.OK else HttpStatusCode.Conflict)
                 }
             }
-        }.start(wait = false)
+        }.startOrNull("WebRemote", "Web remote on port $PORT")
+        if (engine == null) {
+            discovery?.stopDiscovery()
+            discovery = null
+        }
     }
 
     @Synchronized

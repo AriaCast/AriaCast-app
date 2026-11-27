@@ -1,5 +1,6 @@
 package com.aria.ariacast.sendspin
 
+import com.aria.ariacast.net.startOrNull
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
@@ -160,7 +161,12 @@ class SendspinHub private constructor(private val app: Context) {
                     }
                 }
             }
-        }.start(wait = false)
+        }.startOrNull(TAG, "Sendspin on port $PORT")
+        if (engine == null) {
+            log("Sendspin could not listen on port $PORT: is another app using it?")
+            _status.value = SendspinStatus(running = false, lastEvent = "Port $PORT is in use")
+            return
+        }
         register(name)
         _status.value = SendspinStatus(running = true)
         // Keep Sendspin playback on the phone speaker while AriaCompanion is the default output.

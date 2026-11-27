@@ -1,5 +1,6 @@
 package com.aria.ariacast.dlna
 
+import com.aria.ariacast.net.startOrNull
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -111,7 +112,13 @@ class DlnaRenderer private constructor(private val app: Context) {
                     method(HttpMethod("UNSUBSCRIBE")) { handle { call.respondText("", status = HttpStatusCode.OK) } }
                 }
             }
-        }.start(wait = false)
+        }.startOrNull(TAG, "DLNA renderer on port $PORT")
+        if (engine == null) {
+            // Leave it as if never started, so a later start can try again.
+            scope.cancel()
+            main.post { _player?.release(); _player = null }
+            return
+        }
         startSsdp()
         _running.value = true
     }
