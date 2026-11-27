@@ -31,7 +31,7 @@ this section before releasing.
 | Cast mirroring (libcast), AirPlay mirroring | Not done | |
 | Sleep timer with fades, per-speaker EQ/loudness, saved per-speaker delay | Done | `MasterGain`, `SpeakerDsp`. Sendspin speakers aren't shaped (the server pulls the stream) |
 | Per-app routing | Not done | Spike |
-| Quirk profiles | Partial | `DeviceQuirks`: notes in the doctor for WiiM (DLNA) and shairport-sync (AirPlay 2); more entries come from "Copy report" |
+| Quirk profiles, "report my device" | Done | `DeviceQuirks` table, published as `docs/SPEAKERS.md`; "Report speaker" shares identity and the speaker's log lines. The list only holds speakers with evidence, so it grows from reports |
 | Home Assistant `media_player`, auto-cast on speaker appearance | Not done | |
 | Ktor 3 | Not done | Client and server on 2.3.8 |
 | Retire the standalone receiver repo | Not done | Needs a final release there pointing to AriaCast |

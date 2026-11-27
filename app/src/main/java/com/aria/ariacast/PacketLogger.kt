@@ -15,7 +15,9 @@ data class PacketLog(
     val type: PacketType,
     val message: String,
     val payloadSize: Int = 0,
-    var count: Int = 1
+    var count: Int = 1,
+    /** Host of the speaker this line is about, when it is about one (used by "Report speaker"). */
+    val device: String? = null,
 )
 
 object PacketLogger {
@@ -32,14 +34,15 @@ object PacketLogger {
         override fun initialValue(): SimpleDateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
     }
 
-    fun log(direction: PacketDirection, type: PacketType, message: String, payloadSize: Int = 0) {
+    fun log(direction: PacketDirection, type: PacketType, message: String, payloadSize: Int = 0, device: String? = null) {
         val timestamp = dateFormat.get()!!.format(Date())
         val entry = PacketLog(
             timestamp = timestamp,
             direction = direction,
             type = type,
             message = message,
-            payloadSize = payloadSize
+            payloadSize = payloadSize,
+            device = device,
         )
         
         synchronized(_logs) {
@@ -47,7 +50,8 @@ object PacketLogger {
             if (lastLog != null && 
                 lastLog.direction == direction && 
                 lastLog.type == type && 
-                lastLog.message == message) {
+                lastLog.message == message &&
+                lastLog.device == device) {
                 lastLog.count++
                 lastLog.timestamp = timestamp
                 // We still emit it to let the UI know something happened, 

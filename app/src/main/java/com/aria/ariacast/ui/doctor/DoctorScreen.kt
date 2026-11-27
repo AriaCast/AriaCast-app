@@ -15,6 +15,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import com.aria.ariacast.quirks.DeviceIdentity
+import com.aria.ariacast.ui.shareSpeakerReport
+import androidx.compose.material.icons.filled.BugReport
 import com.aria.ariacast.quirks.DeviceQuirks
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
@@ -144,8 +146,8 @@ fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
 
                 // Known behavior of this brand or model, so a quirk isn't mistaken for a bug.
                 s.activeDestinations.value.forEach { d ->
-                    DeviceQuirks.matching(DeviceIdentity.of(d.platform, d.name, d.extra)).forEach { q ->
-                        list += Check(context.getString(R.string.doctor_known_behavior, d.name), CheckStatus.INFO, context.getString(q.note))
+                    DeviceQuirks.notesFor(DeviceIdentity.of(d.platform, d.name, d.extra)).forEach { q ->
+                        list += Check(context.getString(R.string.doctor_known_behavior, d.name), CheckStatus.INFO, context.getString(q.note!!))
                     }
                 }
 
@@ -214,6 +216,11 @@ fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
                     }
                     ListRow(stringResource(R.string.packet_exchange), leading = { LeadingIcon(Icons.AutoMirrored.Filled.ReceiptLong) }) {
                         controller.openActivity(PacketLogActivity::class.java)
+                    }
+                    service?.activeDestinations?.value?.forEach { d ->
+                        ListRow(stringResource(R.string.report_speaker_named, d.name), leading = { LeadingIcon(Icons.Filled.BugReport) }) {
+                            shareSpeakerReport(context, service, d.platform, d.name, d.host, d.extra)
+                        }
                     }
                 }
             }

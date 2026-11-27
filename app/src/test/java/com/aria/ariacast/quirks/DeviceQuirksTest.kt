@@ -17,10 +17,23 @@ class DeviceQuirksTest {
         assertTrue(ids(DeviceIdentity("AirPlay2", "WiiM Pro Plus")).isEmpty())
     }
 
-    @Test fun matchesShairportOnAirPlay2Only() {
+    @Test fun matchesShairportPerAirPlayVersion() {
         assertEquals(listOf("shairport-airplay2-ptp"), ids(DeviceIdentity("AirPlay2", "Kitchen", "ShairportSync")))
-        assertTrue(ids(DeviceIdentity("AirPlay", "Kitchen", "ShairportSync")).isEmpty())
+        assertEquals(listOf("shairport-airplay1"), ids(DeviceIdentity("AirPlay", "Kitchen", "ShairportSync")))
     }
+
+    @Test fun sonosMatchesByProtocol() {
+        assertEquals(listOf("sonos-airplay2"), ids(DeviceIdentity("AirPlay2", "Living", "Sonos Play:5")))
+        assertEquals(listOf("sonos-dlna"), ids(DeviceIdentity("DLNA", "Living", "Play:5", "Sonos, Inc.")))
+        assertTrue(ids(DeviceIdentity("Google Cast", "Living", "Sonos Play:5")).isEmpty())
+    }
+
+    @Test fun onlyEntriesWithAMessageReachTheDoctor() {
+        assertEquals(listOf("wiim-dlna-restart"), DeviceQuirks.notesFor(wiimDevice).map { it.id })
+        assertTrue(DeviceQuirks.notesFor(DeviceIdentity("DLNA", "Living", "Play:5", "Sonos, Inc.")).isEmpty())
+    }
+
+    private val wiimDevice = DeviceIdentity("DLNA", "Den", "WiiM Pro Plus", "Linkplay")
 
     @Test fun ordinarySpeakersMatchNothing() {
         assertTrue(ids(DeviceIdentity("Google Cast", "Nest Mini", "Google Home Mini")).isEmpty())

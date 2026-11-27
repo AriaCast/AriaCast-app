@@ -709,7 +709,7 @@ class AudioCastService : Service() {
         val withDelay = withSavedDelay(dest)
         _activeDestinations.value = _activeDestinations.value + withDelay
         launchDestination(scope, withDelay, withVideo = false)
-        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Added ${dest.name} to the cast")
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Added ${dest.name} to the cast", device = dest.host)
         _metadata.value?.let { sendMetadata(it) }
         updateNotification()
     }
@@ -727,7 +727,7 @@ class AudioCastService : Service() {
             controlSessions.remove(dest.host)
         }
         _activeDestinations.value = remaining
-        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Removed ${dest.name} from the cast")
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Removed ${dest.name} from the cast", device = dest.host)
         updateNotification()
     }
 
@@ -917,14 +917,14 @@ class AudioCastService : Service() {
                 client.launch(sharedPreferences.getString(KEY_CAST_RECEIVER_APP_ID, null)
                     ?.trim()?.uppercase()?.takeIf { it.matches(Regex("[0-9A-F]{8}")) } ?: CastClient.DEFAULT_MEDIA_RECEIVER)
                 client.load(streamUrl, "audio/wav", castMetadata(_metadata.value))
-                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Google Cast: ${dest.name} playing $streamUrl")
+                PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Google Cast: ${dest.name} playing $streamUrl", device = dest.host)
             } catch (e: CancellationException) {
                 client.close()
                 throw e
             } catch (e: Exception) {
                 client.close()
                 Log.e(TAG, "Google Cast session failed for ${dest.name}: ${e.message}")
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Google Cast ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Google Cast ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
                 if (++failures >= 3) {
                     _state.value = CastState.ERROR
                     return@withContext
@@ -940,7 +940,7 @@ class AudioCastService : Service() {
             try {
                 val reason = ended.await()
                 Log.w(TAG, "Google Cast ${dest.name} ended: $reason")
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Google Cast ${dest.name} ended: $reason")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Google Cast ${dest.name} ended: $reason", device = dest.host)
                 if (reason == "receiver app stopped" || reason == "receiver app closed") {
                     // The user switched the device to something else - don't fight them for it.
                     _state.value = CastState.ERROR
@@ -990,7 +990,7 @@ class AudioCastService : Service() {
             } catch (e: Exception) {
                 val label = if (airplay2) "AirPlay 2" else "AirPlay"
                 Log.e(TAG, "$label session failed for ${dest.name}: ${e.message}")
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "$label ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "$label ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
                 if (e is AirPlayBusyException || e is AirPlayAuthRequiredException || ++failures >= 3) {
                     _state.value = CastState.ERROR
                     return@withContext
@@ -1007,7 +1007,7 @@ class AudioCastService : Service() {
             airplayStreamers[dest.host] = streamer
             lastSentMetadata.remove(dest.host)
             lastSentArtwork.remove(dest.host)
-            PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "${dest.name}: streaming (${streamer.javaClass.simpleName})")
+            PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "${dest.name}: streaming (${streamer.javaClass.simpleName})", device = dest.host)
             _state.value = CastState.CASTING
             updateNotification()
             _metadata.value?.let { pushAirPlayMetadata(dest.host, streamer, it) }
@@ -1025,7 +1025,7 @@ class AudioCastService : Service() {
                         var elapsed = 0L
                         for (at in longArrayOf(5_000, 30_000)) {
                             delay(at - elapsed); elapsed = at
-                            PacketLogger.log(PacketDirection.OUT, PacketType.STATS, "${dest.name} after ${at / 1000}s: ${streamer.statsSummary()}")
+                            PacketLogger.log(PacketDirection.OUT, PacketType.STATS, "${dest.name} after ${at / 1000}s: ${streamer.statsSummary()}", device = dest.host)
                         }
                     }
                     val r = ended.await()
@@ -1034,7 +1034,7 @@ class AudioCastService : Service() {
                     r
                 }
                 Log.w(TAG, "AirPlay ${dest.name} dropped: $reason (${streamer.statsSummary()})")
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "${dest.name} dropped the session: $reason - reconnecting")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "${dest.name} dropped the session: $reason - reconnecting", device = dest.host)
             } finally {
                 airplayStreamers.remove(dest.host, streamer)
                 withContext(NonCancellable) {
@@ -1083,7 +1083,7 @@ class AudioCastService : Service() {
                         // e.g. shairport-sync in AirPlay 2 mode, which needs PTP (privileged ports
                         // on Android). Every AirPlay 2 receiver also speaks AirPlay 1 on the same port.
                         Log.i(TAG, "${dest.name}: ${e.message}; falling back to AirPlay 1")
-                        PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "${dest.name}: AirPlay 2 timing unsupported, using AirPlay 1")
+                        PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "${dest.name}: AirPlay 2 timing unsupported, using AirPlay 1", device = dest.host)
                         val raop = RaopClient(
                             host = dest.host,
                             port = if (dest.port > 0) dest.port else 7000,
@@ -1276,7 +1276,7 @@ class AudioCastService : Service() {
                 _state.value = CastState.CASTING
                 updateNotification()
                 PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE,
-                    "VBAN stream '$streamName' to ${dest.name} (${dest.host}:$port), ${PcmFormat.SAMPLE_RATE} Hz stereo 16-bit PCM")
+                    "VBAN stream '$streamName' to ${dest.name} (${dest.host}:$port), ${PcmFormat.SAMPLE_RATE} Hz stereo 16-bit PCM", device = dest.host)
                 val dsp = dspFor(dest.host)
                 audioBufferFlow.collect { streamer.send(dsp.process(it)) }
             }
@@ -1284,7 +1284,7 @@ class AudioCastService : Service() {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "VBAN session failed for ${dest.name}: ${e.message}")
-            PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "VBAN to ${dest.name} failed: ${e.message}")
+            PacketLogger.log(PacketDirection.OUT, PacketType.AUDIO, "VBAN to ${dest.name} failed: ${e.message}", device = dest.host)
             _state.value = CastState.ERROR
         }
     }
@@ -1469,19 +1469,19 @@ class AudioCastService : Service() {
             try {
                 client.webSocket(host = dest.host, port = dest.port, path = "/audio") audioSocket@{
                     reconnectAttempts = 0
-                    PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Audio socket connected to ${dest.name} (${dest.host}:${dest.port})")
+                    PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "Audio socket connected to ${dest.name} (${dest.host}:${dest.port})", device = dest.host)
 
                     if (dest.platform != "AriaCast") {
                         val handshakeFrame = try {
                             withTimeout(3000L) { incoming.receive() }
                         } catch (e: Exception) {
                             Log.w(TAG, "Audio handshake timed out for ${dest.host}: ${e.message}")
-                            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Handshake timed out for ${dest.name}: ${e.message}")
+                            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Handshake timed out for ${dest.name}: ${e.message}", device = dest.host)
                             return@audioSocket
                         }
 
                         if (handshakeFrame !is Frame.Text) {
-                            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Unexpected handshake frame type from ${dest.name}")
+                            PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Unexpected handshake frame type from ${dest.name}", device = dest.host)
                             return@audioSocket
                         }
                     }
@@ -1522,7 +1522,7 @@ class AudioCastService : Service() {
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Audio WS connection to ${dest.host}:${dest.port} failed: ${e.message}", e)
-                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Audio connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE, "Audio connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
                 reconnectAttempts++
                 val delayTime = (RECONNECT_INITIAL_BACKOFF * 2.0.pow(reconnectAttempts.toDouble().coerceAtMost(5.0))).toLong()
                 delay(delayTime)
@@ -1853,18 +1853,18 @@ class AudioCastService : Service() {
                         setBody(mapOf("data" to finalMetadata))
                         timeout { requestTimeoutMillis = 5000 }
                     }
-                    PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name}")
+                    PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name}", device = dest.host)
                 } else if (dest.platform == "AirPlay" || dest.platform == "AirPlay2") {
                     airplayStreamers[dest.host]?.let { streamer ->
                         pushAirPlayMetadata(dest.host, streamer, finalMetadata)
-                        PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name} (AirPlay)")
+                        PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name} (AirPlay)", device = dest.host)
                     }
                 } else if (dest.platform == "Google Cast") {
                     val cast = castClients[dest.host]
                     if (cast != null && lastSentMetadata[dest.host] != metadataKey + currentArtworkBytes?.contentHashCode()) {
                         lastSentMetadata[dest.host] = metadataKey + currentArtworkBytes?.contentHashCode()
                         cast.updateMetadata(castMetadata(metadata))
-                        PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name} (Google Cast)")
+                        PacketLogger.log(PacketDirection.OUT, PacketType.METADATA, "Metadata sent to ${dest.name} (Google Cast)", device = dest.host)
                     }
                 } else if (dest.platform == "DLNA") {
                     if (lastSentMetadata[dest.host] != metadataKey) {
@@ -1964,7 +1964,7 @@ class AudioCastService : Service() {
             try {
                 client.webSocket(host = dest.host, port = dest.port, path = "/control") {
                     controlSessions[dest.host] = this
-                    PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL, "Control socket connected to ${dest.name}")
+                    PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL, "Control socket connected to ${dest.name}", device = dest.host)
                     for (frame in incoming) {
                         if (frame is Frame.Text) {
                             val text = frame.readText()
@@ -1976,7 +1976,7 @@ class AudioCastService : Service() {
                                     val key = if (json.has("position_ms")) "position_ms" else "value"
                                     if (json.has(key)) {
                                         val positionMs = json.getLong(key).coerceAtLeast(0)
-                                        PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Seek to ${positionMs / 1000} s from ${dest.name}")
+                                        PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Seek to ${positionMs / 1000} s from ${dest.name}", device = dest.host)
                                         _seekRequests.emit(positionMs)
                                     }
                                     continue
@@ -1992,7 +1992,7 @@ class AudioCastService : Service() {
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Control WS connection to ${dest.host}:${dest.port} failed: ${e.message}", e)
-                PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Control connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                PacketLogger.log(PacketDirection.IN, PacketType.CONTROL, "Control connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
                 controlSessions.remove(dest.host)
                 delay(RECONNECT_INITIAL_BACKOFF)
             }
@@ -2003,7 +2003,7 @@ class AudioCastService : Service() {
         while (currentCoroutineContext().isActive) {
             try {
                 client.webSocket(host = dest.host, port = dest.port, path = "/stats") statsSocket@{
-                    PacketLogger.log(PacketDirection.OUT, PacketType.STATS, "Stats socket connected to ${dest.name}")
+                    PacketLogger.log(PacketDirection.OUT, PacketType.STATS, "Stats socket connected to ${dest.name}", device = dest.host)
                     while(isActive) {
                         val frame = withTimeoutOrNull(STATS_TIMEOUT) { incoming.receive() }
                         if (frame is Frame.Text) {
@@ -2021,7 +2021,7 @@ class AudioCastService : Service() {
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Stats WS connection to ${dest.host}:${dest.port} failed: ${e.message}", e)
-                PacketLogger.log(PacketDirection.IN, PacketType.STATS, "Stats connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}")
+                PacketLogger.log(PacketDirection.IN, PacketType.STATS, "Stats connection to ${dest.name} failed: ${e.message ?: e.javaClass.simpleName}", device = dest.host)
                 delay(RECONNECT_INITIAL_BACKOFF)
             }
         }

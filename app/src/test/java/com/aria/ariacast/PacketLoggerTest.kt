@@ -81,4 +81,16 @@ class PacketLoggerTest {
         assertEquals(1, logs.size)
         assertEquals(5, logs[0].count)
     }
+
+    @Test
+    fun `the same message about two speakers is two lines, and the tag is kept`() {
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "connected", device = "10.0.0.1")
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "connected", device = "10.0.0.2")
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, "connected", device = "10.0.0.2")
+        val logs = PacketLogger.logs
+        assertEquals(2, logs.size)
+        assertEquals("10.0.0.2", logs[0].device)
+        assertEquals(2, logs[0].count)
+        assertEquals("10.0.0.1", logs[1].device)
+    }
 }

@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Delete
@@ -112,6 +113,7 @@ import com.aria.ariacast.ui.ListGroup
 import com.aria.ariacast.ui.ListRow
 import com.aria.ariacast.ui.Screen
 import com.aria.ariacast.ui.ScreenList
+import com.aria.ariacast.ui.shareSpeakerReport
 import com.aria.ariacast.ui.SectionHeader
 import com.aria.ariacast.ui.StatusBanner
 import com.aria.ariacast.ui.SubScreenScaffold
@@ -270,6 +272,7 @@ private fun Speakers(controller: AppController, selection: SourceSelection) {
     val servers by controller.servers.collectAsState()
     val discovery by controller.discoveryState.collectAsState()
     val service by controller.service.collectAsState()
+    val context = LocalContext.current
     val active by (service?.activeDestinations ?: remember { MutableStateFlow(emptyList<CastDestination>()) }).collectAsState()
     var addDialog by remember { mutableStateOf(false) }
     fun isActive(s: Server) = active.any { it.host == s.host && it.platform == s.platform }
@@ -285,7 +288,6 @@ private fun Speakers(controller: AppController, selection: SourceSelection) {
         }
         if (servers.isEmpty()) {
             // Every protocol but AriaCast starts off: say so, or the user hunts for network problems.
-            val context = LocalContext.current
             val protocolsOff = remember(discovery) { !ProtocolsActivity.anyOptionalEnabled(context) }
             EmptyState(
                 Icons.Filled.Speaker, stringResource(R.string.speakers_empty_title),
@@ -304,7 +306,8 @@ private fun Speakers(controller: AppController, selection: SourceSelection) {
                 sorted.forEach { server ->
                     SpeakerRow(server, isActive(server),
                         onClick = { controller.castTo(listOf(server), selection.source, selection.inputDeviceId) },
-                        onRemove = { controller.removeServer(server) })
+                        onRemove = { controller.removeServer(server) },
+                        onReport = { shareSpeakerReport(context, service, server.platform, server.name, server.host, server.extra) })
                 }
             }
         }
@@ -313,7 +316,7 @@ private fun Speakers(controller: AppController, selection: SourceSelection) {
 }
 
 @Composable
-private fun SpeakerRow(server: Server, active: Boolean, onClick: () -> Unit, onRemove: () -> Unit) {
+private fun SpeakerRow(server: Server, active: Boolean, onClick: () -> Unit, onRemove: () -> Unit, onReport: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Box {
         ListRow(
@@ -327,6 +330,8 @@ private fun SpeakerRow(server: Server, active: Boolean, onClick: () -> Unit, onR
             onClick = onClick,
         )
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.report_speaker)) }, leadingIcon = { Icon(Icons.Filled.BugReport, null) },
+                onClick = { menu = false; onReport() })
             DropdownMenuItem(text = { Text(stringResource(R.string.remove)) }, leadingIcon = { Icon(Icons.Filled.Delete, null) },
                 onClick = { menu = false; onRemove() })
         }

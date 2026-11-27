@@ -367,6 +367,9 @@
     <string name="doctor_companion">Firmware %1$s, %2$d dropouts.</string>
     <string name="doctor_copy">Copy report</string>
     <string name="doctor_known_behavior">%1$s: known behavior</string>
+    <string name="report_speaker">Report speaker</string>
+    <string name="report_speaker_named">Report %1$s</string>
+    <string name="report_speaker_subject">AriaCast report: %1$s</string>
     <string name="quirk_wiim_dlna">WiiM players pause at 0:00 whenever they receive a new stream address. AriaCast starts playback again after every track change. If it still stops, press play once in the WiiM app and report it.</string>
     <string name="quirk_shairport_ptp">AirPlay 2 receivers built on shairport-sync need PTP timing, which Android apps can\'t provide without root. AriaCast tries NTP timing and falls back to AirPlay 1 on its own.</string>
     <string name="doctor_copied">Report copied</string>

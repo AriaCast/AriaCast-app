@@ -46,9 +46,14 @@ casting, a new interface, and AriaCompanion 2.
   AriaCast, AirPlay, Cast, DLNA, Snapcast and VBAN speakers.
 - **Rooms stay lined up**: each speaker's sync delay is now saved and applied the next time
   that speaker joins a cast.
-- **Known speaker behavior**: the connection doctor now shows notes for brands and models with
-  documented quirks (WiiM over DLNA, shairport-sync over AirPlay 2) and adds the speaker's
-  manufacturer and model to the copied report. DLNA speakers now report both.
+- **Known speakers**: [docs/SPEAKERS.md](docs/SPEAKERS.md) lists speakers known to work, to work
+  with a catch, or not to work, with the symptom to look for, what to do, and the evidence. It is
+  generated from the same table the app uses, and a test fails if the two drift apart. The
+  connection doctor shows a note while you cast to a speaker with a documented quirk (WiiM over
+  DLNA, shairport-sync over AirPlay 2). DLNA speakers now report manufacturer and model.
+- **Report speaker**: long-press a speaker (or use the doctor) to share a report with who the
+  speaker is, what is known about it, the cast state and its log lines, with addresses shortened.
+  Works for speakers you never managed to connect to.
 
 ### Built in, previously plugins
 - Music Assistant player picker, connection doctor, visualizer, add speaker by address.

@@ -264,6 +264,9 @@
     <string name="doctor_companion">Firmware %1$s, %2$d interruzioni.</string>
     <string name="doctor_copy">Copia il report</string>
     <string name="doctor_known_behavior">%1$s: comportamento noto</string>
+    <string name="report_speaker">Segnala altoparlante</string>
+    <string name="report_speaker_named">Segnala %1$s</string>
+    <string name="report_speaker_subject">Segnalazione AriaCast: %1$s</string>
     <string name="quirk_wiim_dlna">I WiiM si fermano a 0:00 ogni volta che ricevono un nuovo indirizzo di stream. AriaCast riavvia la riproduzione a ogni cambio traccia. Se si ferma comunque, premi play una volta nell\'app WiiM e segnalalo.</string>
     <string name="quirk_shairport_ptp">I ricevitori AirPlay 2 basati su shairport-sync richiedono la sincronizzazione PTP, che le app Android non possono offrire senza root. AriaCast prova con NTP e passa da solo ad AirPlay 1.</string>
     <string name="doctor_copied">Report copiato</string>
