@@ -41,7 +41,7 @@ fun shareSpeakerReport(
         identity = identity,
         host = host,
         known = DeviceQuirks.matching(identity),
-        logs = PacketLogger.logs,
+        logs = PacketLogger.logsFor(host, name),
     )
     val send = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"

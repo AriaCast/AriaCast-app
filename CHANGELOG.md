@@ -51,6 +51,16 @@ casting, a new interface, and AriaCompanion 2.
   generated from the same table the app uses, and a test fails if the two drift apart. The
   connection doctor shows a note while you cast to a speaker with a documented quirk (WiiM over
   DLNA, shairport-sync over AirPlay 2). DLNA speakers now report manufacturer and model.
+- **More speaker logging**: every line logged while casting to a speaker is now attributed to it,
+  and each speaker keeps its own history, so a chatty one can't push another's out. New lines:
+  session start and end (with the speaker's model and why it ended); for DLNA the HTTP status and
+  timing of every Stop, SetAVTransportURI, Play and SetVolume, the UPnP error when a renderer
+  refuses, what the renderer does with the stream (its user-agent, how long it listened), and
+  its transport state (`PLAYING`, `PAUSED_PLAYBACK`, `STOPPED`) a moment after Play and on every
+  change; for Google Cast every player state change and why it went idle; for AriaCast the
+  receiver's handshake, how long a connection lasted and each reconnect, and the receiver's own
+  underrun and overrun counts. DLNA speakers are asked their state every 10 seconds while you
+  cast to them, which is one small request.
 - **Report speaker**: long-press a speaker (or use the doctor) to share a report with who the
   speaker is, what is known about it, the cast state and its log lines, with addresses shortened.
   Works for speakers you never managed to connect to.

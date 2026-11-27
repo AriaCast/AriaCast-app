@@ -93,4 +93,55 @@ class PacketLoggerTest {
         assertEquals(2, logs[0].count)
         assertEquals("10.0.0.1", logs[1].device)
     }
+
+    private fun log(message: String, device: String?) =
+        PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE, message, device = device)
+
+    @Test
+    fun `a chatty speaker cannot push another speaker's history out`() {
+        log("quiet speaker: connected", "10.0.0.1")
+        repeat(PacketLogger.GLOBAL_LIMIT + 200) { log("noise $it", "10.0.0.2") }
+        assertTrue(PacketLogger.logs.none { it.message == "quiet speaker: connected" })
+        assertEquals(listOf("quiet speaker: connected"), PacketLogger.logsFor("10.0.0.1", "").map { it.message })
+        assertEquals(PacketLogger.DEVICE_LIMIT, PacketLogger.logsFor("10.0.0.2", "").size)
+    }
+
+    @Test
+    fun `repeats are merged per speaker even when other speakers log in between`() {
+        repeat(3) {
+            log("tick", "10.0.0.1")
+            log("tock", "10.0.0.2")
+        }
+        val a = PacketLogger.logsFor("10.0.0.1", "")
+        assertEquals(1, a.size)
+        assertEquals(3, a[0].count)
+    }
+
+    @Test
+    fun `logsFor adds untagged lines that name the speaker, in the order they were logged`() {
+        log("first, tagged", "10.0.0.5")
+        log("[AirPlay2Client] 10.0.0.5 info: model=X", null)
+        log("Added Den to the cast", null)
+        log("about someone else", null)
+        log("last, tagged", "10.0.0.5")
+        val lines = PacketLogger.logsFor("10.0.0.5", "Den")
+        assertEquals(
+            listOf("last, tagged", "Added Den to the cast", "[AirPlay2Client] 10.0.0.5 info: model=X", "first, tagged"),
+            lines.map { it.message },
+        )
+    }
+
+    @Test
+    fun `only the most recently active speakers are remembered`() {
+        repeat(40) { log("hello", "10.1.0.$it") }
+        assertTrue(PacketLogger.logsFor("10.1.0.0", "").isEmpty())
+        assertEquals(1, PacketLogger.logsFor("10.1.0.39", "").size)
+    }
+
+    @Test
+    fun `clear forgets every speaker`() {
+        log("hello", "10.0.0.1")
+        PacketLogger.clear()
+        assertTrue(PacketLogger.logsFor("10.0.0.1", "").isEmpty())
+    }
 }

@@ -8,7 +8,7 @@ import com.aria.ariacast.PacketLog
  */
 object SpeakerReport {
     /** Newest lines kept, so a long session does not bury the handshake in noise. */
-    const val MAX_LOG_LINES = 300
+    const val MAX_LOG_LINES = 500
 
     private val ipv4 = Regex("""\b(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}\b""")
 

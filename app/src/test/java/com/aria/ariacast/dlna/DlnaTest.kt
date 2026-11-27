@@ -84,4 +84,27 @@ class DlnaTest {
         assertEquals("http://10.0.0.5:9197/avt", r.avControl)
         assertEquals(null, r.rcControl)
     }
+
+    @Test fun soapFaultNamesTheUpnpError() {
+        val fault = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><faultcode>s:Client</faultcode>
+<detail><UPnPError xmlns="urn:schemas-upnp-org:control-1-0"><errorCode>701</errorCode><errorDescription>Transition not available</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>"""
+        assertEquals("UPnP error 701: Transition not available", Dlna.soapFault(fault))
+        assertEquals("UPnP error 718", Dlna.soapFault("<UPnPError><errorCode>718</errorCode></UPnPError>"))
+        assertEquals(null, Dlna.soapFault("<s:Envelope><s:Body><u:PlayResponse/></s:Body></s:Envelope>"))
+    }
+
+    @Test fun soapFaultTextFromADeviceIsTrimmedAndUnescaped() {
+        val long = "x".repeat(500)
+        val text = Dlna.soapFault("<UPnPError><errorCode>500</errorCode><errorDescription>a &amp; $long</errorDescription></UPnPError>")!!
+        assertTrue(text.startsWith("UPnP error 500: a & x"))
+        assertTrue(text.length < 160)
+    }
+
+    @Test fun transportStateIsReadFromGetTransportInfo() {
+        fun reply(state: String, status: String) = """<s:Envelope><s:Body><u:GetTransportInfoResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+<CurrentTransportState>$state</CurrentTransportState><CurrentTransportStatus>$status</CurrentTransportStatus><CurrentSpeed>1</CurrentSpeed></u:GetTransportInfoResponse></s:Body></s:Envelope>"""
+        assertEquals("PLAYING", Dlna.transportState(reply("PLAYING", "OK")))
+        assertEquals("STOPPED/ERROR_OCCURRED", Dlna.transportState(reply("STOPPED", "ERROR_OCCURRED")))
+        assertEquals(null, Dlna.transportState("<s:Envelope><s:Body/></s:Envelope>"))
+    }
 }
