@@ -2,10 +2,14 @@ package com.aria.ariacast.quirks
 
 import com.aria.ariacast.ExtraFields
 import org.junit.Assert.assertEquals
+import java.util.Locale
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class DeviceQuirksTest {
+    @Before fun loadTheList() { TestSpeakers.load() }
+
     private fun ids(d: DeviceIdentity) = DeviceQuirks.matching(d).map { it.id }
 
     @Test fun matchesWiimOverDlnaByNameOrManufacturer() {
@@ -28,12 +32,43 @@ class DeviceQuirksTest {
         assertTrue(ids(DeviceIdentity("Google Cast", "Living", "Sonos Play:5")).isEmpty())
     }
 
-    @Test fun onlyEntriesWithAMessageReachTheDoctor() {
-        assertEquals(listOf("wiim-dlna-restart"), DeviceQuirks.notesFor(wiimDevice).map { it.id })
-        assertTrue(DeviceQuirks.notesFor(DeviceIdentity("DLNA", "Living", "Play:5", "Sonos, Inc.")).isEmpty())
+    @Test fun theDoctorGetsTheNoteInTheUsersLanguage() {
+        val english = DeviceQuirks.notesFor(wiimDevice, Locale.ENGLISH)
+        assertEquals(listOf("wiim-dlna-restart"), english.map { it.first.id })
+        assertTrue(english.single().second.startsWith("WiiM players pause"))
+        assertTrue(DeviceQuirks.notesFor(wiimDevice, Locale.ITALIAN).single().second.startsWith("I WiiM si fermano"))
+        // A language the list has no text for falls back to English.
+        assertTrue(DeviceQuirks.notesFor(wiimDevice, Locale.JAPANESE).single().second.startsWith("WiiM players pause"))
+        assertTrue(DeviceQuirks.notesFor(DeviceIdentity("DLNA", "Living", "Play:5", "Sonos, Inc."), Locale.ENGLISH).isEmpty())
+    }
+
+    @Test fun configComesFromTheMatchingEntries() {
+        assertEquals(true, DeviceQuirks.configFor(wiimDevice).dlnaPlayAfterSetUri)
+        assertEquals(SpeakerConfig(), DeviceQuirks.configFor(DeviceIdentity("Google Cast", "Nest Mini", "Google Home Mini")))
+    }
+
+    @Test fun theFirstEntryThatSetsAFieldDecidesIt() {
+        val entry = { id: String, config: SpeakerConfig ->
+            KnownSpeaker(id, "x", "DLNA", Verdict.GOOD, Match("DLNA", listOf("box")), evidence = "e", config = config)
+        }
+        KnownSpeakersStore.setForTesting(
+            KnownSpeakersFile(
+                1, "", listOf(
+                    entry("a", SpeakerConfig(defaultDelayMs = 300)),
+                    entry("b", SpeakerConfig(defaultDelayMs = 900, sendMetadata = false)),
+                )
+            )
+        )
+        val config = DeviceQuirks.configFor(DeviceIdentity("DLNA", "Kitchen box"))
+        assertEquals(300, config.defaultDelayMs)
+        assertEquals(false, config.sendMetadata)
     }
 
     private val wiimDevice = DeviceIdentity("DLNA", "Den", "WiiM Pro Plus", "Linkplay")
+
+    @Test fun anEchoIsListedAsNotSupported() {
+        assertEquals(Verdict.UNSUPPORTED, DeviceQuirks.matching(DeviceIdentity(null, "Echo Show 5 kitchen")).single().verdict)
+    }
 
     @Test fun ordinarySpeakersMatchNothing() {
         assertTrue(ids(DeviceIdentity("Google Cast", "Nest Mini", "Google Home Mini")).isEmpty())

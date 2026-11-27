@@ -1,10 +1,11 @@
 # Known speakers
 
-<!-- Generated from app/src/main/java/com/aria/ariacast/quirks/DeviceQuirks.kt. Do not edit by hand:
-     run `UPDATE_SPEAKERS_DOC=1 ./gradlew :app:testGithubDebugUnitTest --tests '*SpeakersDocTest*'`. -->
+<!-- Generated from data/speakers.json (list version 1). Do not edit by hand:
+     change the JSON, then run `UPDATE_SPEAKERS_DOC=1 ./gradlew :app:testGithubDebugUnitTest --tests '*SpeakersDocTest*'`. -->
 
 How speakers behave with AriaCast, what you see when something is wrong, and what to do.
 Only behavior with evidence is listed; a speaker that is not here is untested, not broken.
+The app reads the same list (Settings → Known speakers) and keeps it up to date.
 
 ## Works
 
@@ -26,9 +27,15 @@ Only behavior with evidence is listed; a speaker that is not here is untested, n
 
 Nothing recorded yet.
 
+## Not supported
+
+| Speaker | Protocol | If it goes wrong | What to do | Since | Evidence |
+|---|---|---|---|---|---|
+| Amazon Echo Show 5 (1st gen), Echo Hub | No local protocol | The speaker does not appear in AriaCast, and it has no AirPlay. | Bluetooth is the only local way in, and AriaCast does not send to Bluetooth speakers yet. |  | Maintainer's own devices; Alexa has no local streaming protocol |
+
 ## Add a speaker
 
-Long-press the speaker in the Send tab and choose **Report speaker** (or use the button in the
-connection doctor). It shares who the speaker is and the log lines about it, with addresses
-shortened. Paste that into a [new issue](https://github.com/AriaCast/AriaCast-app/issues/new) and
-say whether it worked.
+In the app, long-press the speaker in the Send tab and choose **Report speaker**, or answer the
+question that appears the first time you cast to a new one. It opens a pre-filled
+[issue](https://github.com/AriaCast/AriaCast-app/issues/new?template=speaker-report.yml); the logs are
+copied for you to paste in. A maintainer reviews it and it joins the list.

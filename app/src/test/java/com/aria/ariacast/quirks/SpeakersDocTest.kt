@@ -10,7 +10,7 @@ class SpeakersDocTest {
     private val file = File("../docs/SPEAKERS.md")
 
     @Test fun docIsInSyncWithTheTable() {
-        val expected = SpeakersDoc.render()
+        val expected = SpeakersDoc.render(TestSpeakers.load())
         if (System.getenv("UPDATE_SPEAKERS_DOC") == "1") file.writeText(expected)
         assertEquals(
             "docs/SPEAKERS.md is out of date. Regenerate it with: " +
@@ -20,12 +20,17 @@ class SpeakersDocTest {
     }
 
     @Test fun entriesAreUniqueAndBackedByEvidence() {
-        assertEquals(DeviceQuirks.ALL.size, DeviceQuirks.ALL.map { it.id }.toSet().size)
-        DeviceQuirks.ALL.forEach { assertTrue("${it.id} has no evidence", it.evidence.isNotBlank()) }
+        val list = TestSpeakers.load().speakers
+        assertEquals(list.size, list.map { it.id }.toSet().size)
+        list.forEach { assertTrue("${it.id} has no evidence", it.evidence.isNotBlank()) }
+    }
+
+    @Test fun theShippedListHasNoRejectedEntries() {
+        assertEquals(emptyList<String>(), TestSpeakers.load().skipped)
     }
 
     @Test fun anythingThatIsNotPlainGoodSaysWhatTheUserWillSee() {
-        DeviceQuirks.ALL.filter { it.verdict != Verdict.GOOD }.forEach {
+        TestSpeakers.load().speakers.filter { it.verdict != Verdict.GOOD }.forEach {
             assertTrue("${it.id} lists no symptoms", it.symptoms.isNotEmpty())
         }
     }

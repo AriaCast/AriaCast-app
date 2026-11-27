@@ -6,9 +6,12 @@ import com.aria.ariacast.PacketType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class SpeakerReportTest {
+    @Before fun loadTheList() { TestSpeakers.load() }
+
     private fun line(message: String, device: String? = null, count: Int = 1, time: String = "10:00:00.000") =
         PacketLog(time, PacketDirection.OUT, PacketType.HANDSHAKE, message, 0, count, device)
 

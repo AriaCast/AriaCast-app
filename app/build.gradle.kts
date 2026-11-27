@@ -26,6 +26,12 @@ android {
     compileSdk = 36
     ndkVersion = "27.1.12297006"
 
+    // data/speakers.json is both the list of known speakers published for everyone and the copy
+    // the app ships, so there is one file and no second copy to forget.
+    sourceSets {
+        getByName("main") { assets.srcDir(rootProject.file("data")) }
+    }
+
     // SBC decoder for the AriaCompanion BT board (docs/ariacompanion-bt.md).
     externalNativeBuild {
         cmake {

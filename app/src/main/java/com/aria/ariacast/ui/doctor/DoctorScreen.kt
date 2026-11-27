@@ -146,8 +146,8 @@ fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
 
                 // Known behavior of this brand or model, so a quirk isn't mistaken for a bug.
                 s.activeDestinations.value.forEach { d ->
-                    DeviceQuirks.notesFor(DeviceIdentity.of(d.platform, d.name, d.extra)).forEach { q ->
-                        list += Check(context.getString(R.string.doctor_known_behavior, d.name), CheckStatus.INFO, context.getString(q.note!!))
+                    DeviceQuirks.notesFor(DeviceIdentity.of(d.platform, d.name, d.extra), context.resources.configuration.locales[0]).forEach { (_, note) ->
+                        list += Check(context.getString(R.string.doctor_known_behavior, d.name), CheckStatus.INFO, note)
                     }
                 }
 

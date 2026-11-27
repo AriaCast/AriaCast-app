@@ -46,11 +46,16 @@ casting, a new interface, and AriaCompanion 2.
   AriaCast, AirPlay, Cast, DLNA, Snapcast and VBAN speakers.
 - **Rooms stay lined up**: each speaker's sync delay is now saved and applied the next time
   that speaker joins a cast.
-- **Known speakers**: [docs/SPEAKERS.md](docs/SPEAKERS.md) lists speakers known to work, to work
-  with a catch, or not to work, with the symptom to look for, what to do, and the evidence. It is
-  generated from the same table the app uses, and a test fails if the two drift apart. The
-  connection doctor shows a note while you cast to a speaker with a documented quirk (WiiM over
-  DLNA, shairport-sync over AirPlay 2). DLNA speakers now report manufacturer and model.
+- **Known speakers**: the list of speakers known to work, to work with a catch, to fail, or that
+  AriaCast cannot reach is now a public file, [data/speakers.json](data/speakers.json), with
+  [docs/SPEAKERS.md](docs/SPEAKERS.md) generated from it (a test fails if they drift apart). The app
+  ships a copy, reads the file from GitHub once a day to stay current (Settings → Known speakers,
+  where it can be switched off, updated by hand and browsed), and only takes a newer, valid list.
+  The file can also carry settings for a speaker that needs something different from the usual:
+  whether DLNA gets a Stop first or a Play after each track, the stream's content type, a starting
+  delay, and whether titles and artwork are sent. Those five are the only things it can change, each
+  within fixed limits. The connection doctor shows a note, in your language where the list has one,
+  while you cast to a speaker with a documented quirk. DLNA speakers now report manufacturer and model.
 - **More speaker logging**: every line logged while casting to a speaker is now attributed to it,
   and each speaker keeps its own history, so a chatty one can't push another's out. New lines:
   session start and end (with the speaker's model and why it ended); for DLNA the HTTP status and

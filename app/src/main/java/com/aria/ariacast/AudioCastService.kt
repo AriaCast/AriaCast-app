@@ -90,6 +90,8 @@ import com.aria.ariacast.pipeline.SpeakerDsp
 import com.aria.ariacast.pipeline.SpeakerSound
 import com.aria.ariacast.dlna.Dlna
 import com.aria.ariacast.quirks.DeviceIdentity
+import com.aria.ariacast.quirks.DeviceQuirks
+import com.aria.ariacast.quirks.SpeakerConfig
 import com.aria.ariacast.receiver.ReceiverHub
 import com.aria.ariacast.sendspin.SendspinHub
 import com.aria.ariacast.pipeline.PcmFormat
@@ -681,6 +683,11 @@ class AudioCastService : Service() {
         val started = SystemClock.elapsedRealtime()
         PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE,
             "Session start: ${DeviceIdentity.of(dest.platform, dest.name, dest.extra).reportLine()}, address=${dest.host}:${dest.port}", device = dest.host)
+        DeviceQuirks.matching(DeviceIdentity.of(dest.platform, dest.name, dest.extra)).takeIf { it.isNotEmpty() }?.let { known ->
+            val config = configFor(dest)
+            PacketLogger.log(PacketDirection.OUT, PacketType.HANDSHAKE,
+                "Known speaker: ${known.joinToString { it.id }}${if (config == SpeakerConfig()) "" else ", settings from the list: $config"}", device = dest.host)
+        }
         val job = scope.launch(DeviceContext.element(dest.host)) {
             when (dest.platform) {
                 "DLNA" -> startDlnaSession(dest)
@@ -793,7 +800,8 @@ class AudioCastService : Service() {
                                            ua.contains("Darwin", ignoreCase = true) ||
                                            ua.contains("libmpv", ignoreCase = true)
                             
-                            val contentType = if (isApple) "audio/x-wav" else "audio/wav"
+                            val listed = _activeDestinations.value.firstOrNull { it.host == peer }?.let(::configFor)?.dlnaContentType
+                            val contentType = listed ?: if (isApple) "audio/x-wav" else "audio/wav"
                             PacketLogger.log(PacketDirection.IN, PacketType.HANDSHAKE,
                                 "Stream request from $peer: $requestLine, user-agent=\"${ua.take(80)}\"${headers["range"]?.let { ", range=$it" } ?: ""}, answering $contentType", device = peer)
 
@@ -948,18 +956,15 @@ class AudioCastService : Service() {
         val streamUrl = "http://$myIp:$STREAM_PORT/stream.wav"
 
         try {
-            try {
-                val stopBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-                        <s:Body>
-                            <u:Stop xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
-                                <InstanceID>0</InstanceID>
-                            </u:Stop>
-                        </s:Body>
-                    </s:Envelope>""".trimIndent()
-                dlnaSoap(dest, controlUrl, "AVTransport", "Stop", stopBody)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {}
+            if (configFor(dest).dlnaSkipInitialStop == true) {
+                PacketLogger.log(PacketDirection.OUT, PacketType.CONTROL, "DLNA Stop skipped (setting from the list)", device = dest.host)
+            } else {
+                try {
+                    dlnaSoap(dest, controlUrl, "AVTransport", "Stop", soapEnvelope("AVTransport", "Stop", "<InstanceID>0</InstanceID>"))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {}
+            }
 
             val metadataXml = createDidlMetadata(streamUrl, _metadata.value)
 
@@ -1870,11 +1875,19 @@ class AudioCastService : Service() {
     /** One processor per consumer of the audio bus; it follows this speaker's live settings. */
     private fun dspFor(host: String) = SpeakerDsp { soundFor(host) }
 
-    /** Gives [dest] the delay saved for its host, unless one was already set. */
+    /** What the list of known speakers says this speaker needs, if anything. */
+    private fun configFor(dest: CastDestination): SpeakerConfig =
+        DeviceQuirks.configFor(DeviceIdentity.of(dest.platform, dest.name, dest.extra))
+
+    /**
+     * Gives [dest] the delay saved for its host, unless one was already set. A speaker the user
+     * never adjusted starts from the delay the list suggests for it, if any.
+     */
     private fun withSavedDelay(dest: CastDestination): CastDestination {
         if (dest.delayMs != 0) return dest
-        val saved = sharedPreferences.getInt(speakerKey(dest.host, "delay"), 0)
-        return if (saved != 0) dest.copy(delayMs = saved) else dest
+        val key = speakerKey(dest.host, "delay")
+        val delay = if (sharedPreferences.contains(key)) sharedPreferences.getInt(key, 0) else configFor(dest).defaultDelayMs ?: 0
+        return if (delay != 0) dest.copy(delayMs = delay) else dest
     }
 
     fun setDelay(host: String, delayMs: Int) {
@@ -1955,6 +1968,7 @@ class AudioCastService : Service() {
         }
 
         destinations.forEach { dest ->
+            if (configFor(dest).sendMetadata == false) return@forEach
             try {
                 if (dest.platform == VbanProtocol.PLATFORM) {
                     // VBAN AUDIO packets carry no metadata.
@@ -2008,7 +2022,7 @@ class AudioCastService : Service() {
             // SetAVTransportURI resets many renderers (e.g. WiiM) to a stopped state,
             // so playback must be restarted explicitly or it stays paused at 0:00.
             val playBody = """<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><Speed>1</Speed></u:Play></s:Body></s:Envelope>"""
-            dlnaSoap(dest, avUrl, "AVTransport", "Play", playBody)
+            if (configFor(dest).dlnaPlayAfterSetUri != false) dlnaSoap(dest, avUrl, "AVTransport", "Play", playBody)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
