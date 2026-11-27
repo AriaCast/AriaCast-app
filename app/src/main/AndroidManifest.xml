@@ -81,6 +81,14 @@
         </activity>
         <activity android:name=".ui.CompanionActivity" android:exported="false" />
 
+        <!-- Debug builds only ever open this: a crash report, in a process of its own so it outlives the crash. -->
+        <activity
+            android:name=".crash.CrashReportActivity"
+            android:exported="false"
+            android:process=":crash"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.DeviceDefault" />
+
         <!-- "Does it work?": a dialog over whatever is on screen, opened by the cast service or by its notification. -->
         <activity
             android:name=".ui.SpeakerFeedbackActivity"

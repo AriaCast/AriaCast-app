@@ -10,6 +10,9 @@ import kotlinx.coroutines.launch
 class AriaCastApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        // The crash screen has a process of its own; it must not start the app a second time.
+        if (com.aria.ariacast.crash.CrashReporter.isCrashProcess()) return
+        com.aria.ariacast.crash.CrashReporter.install(this)
         com.aria.ariacast.airplay.ProtoLog.sink = com.aria.ariacast.airplay.PacketLogSink
         com.aria.ariacast.quirks.KnownSpeakersStore.init(this)
         // A newer list of known speakers, at most once a day and only if the user keeps this on.

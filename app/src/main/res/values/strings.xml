@@ -421,6 +421,10 @@
     <string name="scan_find">Look for other devices</string>
     <string name="scan_desc">Looks for devices AriaCast can\'t play to (Spotify Connect, Alexa, HomeKit and the like) so you can add them to the list. Takes about 8 seconds. Tap a result to report it.</string>
     <string name="scan_none">Nothing else found. Some devices only answer when they are awake.</string>
+    <string name="crash_title">AriaCast stopped unexpectedly</string>
+    <string name="crash_share">Share the report</string>
+    <string name="crash_close">Close</string>
+    <string name="crash_no_report">No report was kept.</string>
     <string name="doctor_copied">Report copied</string>
     <string name="onb_welcome_title">Cast any audio, anywhere</string>
     <string name="onb_welcome_body">AriaCast sends this device\'s audio to AirPlay, Google Cast, DLNA, Snapcast and Sendspin speakers, and can turn this device into a speaker too.</string>
