@@ -14,7 +14,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import com.aria.ariacast.CastDestination
 import com.aria.ariacast.quirks.DeviceIdentity
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.aria.ariacast.ui.reportSpeaker
 import androidx.compose.material.icons.filled.BugReport
 import com.aria.ariacast.quirks.DeviceQuirks
@@ -86,6 +88,8 @@ fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
     val context = LocalContext.current
     val service by controller.service.collectAsState()
     val servers by controller.servers.collectAsState()
+    // The speakers in the cast, as state: reading .value during composition would never update.
+    val active by (service?.activeDestinations ?: remember { MutableStateFlow(emptyList<CastDestination>()) }).collectAsState()
     var checks by remember { mutableStateOf<List<Check>>(emptyList()) }
     var silentSince by remember { mutableStateOf(0L) }
     var lastSent by remember { mutableStateOf(-1L) }
@@ -146,7 +150,7 @@ fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
 
                 // Known behavior of this brand or model, so a quirk isn't mistaken for a bug.
                 s.activeDestinations.value.forEach { d ->
-                    DeviceQuirks.notesFor(DeviceIdentity.of(d.platform, d.name, d.extra), context.resources.configuration.locales[0]).forEach { (_, note) ->
+                    DeviceQuirks.notesFor(DeviceIdentity.of(d.platform, d.name, d.extra), java.util.Locale.getDefault()).forEach { (_, note) ->
                         list += Check(context.getString(R.string.doctor_known_behavior, d.name), CheckStatus.INFO, note)
                     }
                 }
@@ -217,7 +221,7 @@ fun DoctorScreen(controller: AppController, onBack: () -> Unit) {
                     ListRow(stringResource(R.string.packet_exchange), leading = { LeadingIcon(Icons.AutoMirrored.Filled.ReceiptLong) }) {
                         controller.openActivity(PacketLogActivity::class.java)
                     }
-                    service?.activeDestinations?.value?.forEach { d ->
+                    active.forEach { d ->
                         ListRow(stringResource(R.string.report_speaker_named, d.name), leading = { LeadingIcon(Icons.Filled.BugReport) }) {
                             reportSpeaker(context, service, d.platform, d.name, d.host, d.extra)
                         }

@@ -54,6 +54,12 @@ Colors follow your wallpaper (Material You) on Android 12 and newer. Phones get 
 - **Bridge mode**: forward what this device receives to AirPlay, Cast, DLNA, Snapcast or Sendspin speakers.
 - **Full-screen receiver** for tablets and TVs: artwork colors, clock, "scan to cast here" QR code, burn-in protection. Works with the Android TV remote.
 - **Video casting** to Google Cast, DLNA and AirPlay, with subtitles and seeking.
+- **Known speakers**: a public list of which speakers are supported, supported with quirks or not
+  supported, kept in [AriaCast/known-speakers](https://github.com/AriaCast/known-speakers) and
+  downloaded by the app once a day (Settings → Known speakers; it can be switched off). The first time
+  you cast to a speaker for a minute, AriaCast asks whether it works, and you can **report** it, or look
+  for devices it cannot play to, with a pre-filled report on GitHub. A bot records it: a speaker already
+  listed has the report counted, a new one is added. Logs stay yours.
 - **Connection doctor**: checks the path from this device to the speaker step by step and tells you which step is broken.
 - **Web remote**: control AriaCast from any browser on your network through a private link.
 - **Quick Settings tiles**, a home-screen **widget**, **NFC tags** that start a cast when tapped, and **automation** intents for Tasker and MacroDroid (opt-in).
