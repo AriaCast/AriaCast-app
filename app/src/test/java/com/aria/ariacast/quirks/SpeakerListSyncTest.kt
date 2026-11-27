@@ -50,8 +50,8 @@ class SpeakerListSyncTest {
     }
 
     @Test fun readsAFile() {
-        val url = serve(ok("""{"schema":1}"""))
-        assertEquals("""{"schema":1}""", SpeakerListSync.fetch(url, requireHttps = false))
+        val url = serve(ok("""{"schema":2}"""))
+        assertEquals("""{"schema":2}""", SpeakerListSync.fetch(url, requireHttps = false))
     }
 
     @Test fun plainHttpIsRefusedUnlessAllowed() {
@@ -92,7 +92,7 @@ class SpeakerListSyncTest {
         assertEquals("bad address", failsWith { SpeakerListSync.fetch("not a url", requireHttps = false) })
     }
 
-    private fun list(version: Int) = """{"schema":1,"version":$version,"speakers":[]}"""
+    private fun list(version: Int) = """{"schema":2,"version":$version,"speakers":[]}"""
 
     @Test fun onlyAValidNewerListIsTaken() {
         assertTrue(SpeakerListSync.evaluate(list(5), currentVersion = 4) is SpeakerListSync.Verdict.Newer)

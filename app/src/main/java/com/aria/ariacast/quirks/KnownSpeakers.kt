@@ -6,18 +6,15 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /** How a speaker behaves over one protocol. */
-enum class Verdict(val id: String, val label: String) {
+enum class Status(val id: String, val label: String) {
     /** Plays as expected. */
-    GOOD("good", "Works"),
+    SUPPORTED("supported", "Supported"),
 
-    /** Plays, with a limit the user should know about. */
-    PARTIAL("partial", "Works with a catch"),
+    /** Plays, with something the user should know about (see the entry's symptoms). */
+    QUIRKS("quirks", "Supported with quirks"),
 
-    /** Does not play, or breaks in a way the app cannot work around. */
-    BAD("bad", "Does not work"),
-
-    /** Has no local way in that AriaCast offers (Bluetooth only, cloud only). */
-    UNSUPPORTED("unsupported", "Not supported"),
+    /** Does not play, or AriaCast has no way in (Bluetooth only, cloud only). The symptoms say which. */
+    UNSUPPORTED("unsupported", "Unsupported"),
     ;
 
     companion object {
@@ -67,16 +64,15 @@ data class Match(val platform: String?, val mentions: List<String>) {
 }
 
 /**
- * One entry of the list of speakers we know something about (public as data/speakers.json and
- * docs/SPEAKERS.md). Entries are added only for behavior with evidence: an issue, a maintainer's
- * own test, or the code that works around it.
+ * One entry of the list of speakers we know something about, kept in the AriaCast/known-speakers
+ * repository. An entry exists because somebody reported it or a maintainer checked it.
  */
 data class KnownSpeaker(
     val id: String,
     /** Brand and, where known, the model it was seen on. */
     val speaker: String,
     val protocol: String,
-    val verdict: Verdict,
+    val status: Status,
     val match: Match,
     /** What a user sees when it goes wrong, in their words. */
     val symptoms: List<String> = emptyList(),
@@ -88,6 +84,10 @@ data class KnownSpeaker(
     /** Message the connection doctor shows while casting to a matching speaker, by language. */
     val notes: Map<String, String> = emptyMap(),
     val config: SpeakerConfig = SpeakerConfig(),
+    /** How many reports were counted per status; the status above follows the most reported one. */
+    val reports: Map<Status, Int> = emptyMap(),
+    /** A maintainer curated this entry: reports are counted but do not change it. */
+    val locked: Boolean = false,
 ) {
     fun appliesTo(device: DeviceIdentity) = match.appliesTo(device)
 
@@ -103,7 +103,8 @@ data class KnownSpeakersFile(
     val skipped: List<String> = emptyList(),
 ) {
     companion object {
-        const val SCHEMA = 1
+        const val SCHEMA = 2
+        const val MAX_REPORTS = 1_000_000
         const val MAX_BYTES = 256 * 1024
         const val MAX_ENTRIES = 500
 
@@ -134,7 +135,7 @@ data class KnownSpeakersFile(
                 val problem = when {
                     !idPattern.matches(id) -> "bad id"
                     !seen.add(id) -> "duplicate id"
-                    Verdict.of(e.verdict) == null -> "unknown verdict"
+                    Status.of(e.status) == null -> "unknown status"
                     e.speaker.isBlank() || e.protocol.isBlank() -> "no speaker or protocol"
                     cleanMentions(e.match.mentions).isEmpty() -> "needs at least one word to match"
                     e.evidence.isBlank() -> "no evidence"
@@ -148,7 +149,7 @@ data class KnownSpeakersFile(
                     id = id,
                     speaker = clean(e.speaker, 80),
                     protocol = clean(e.protocol, 40),
-                    verdict = Verdict.of(e.verdict)!!,
+                    status = Status.of(e.status)!!,
                     match = Match(e.match.platform?.let { clean(it, 20) }?.takeIf { it.isNotEmpty() }, cleanMentions(e.match.mentions)),
                     symptoms = e.symptoms.take(8).map { clean(it, 240) }.filter { it.isNotEmpty() },
                     whatToDo = e.whatToDo?.let { clean(it, 320) }?.takeIf { it.isNotEmpty() },
@@ -156,6 +157,8 @@ data class KnownSpeakersFile(
                     evidence = clean(e.evidence, 320),
                     notes = e.notes.filterKeys { languagePattern.matches(it) }.mapValues { clean(it.value, 700) }.filterValues { it.isNotEmpty() },
                     config = e.config?.let(::validConfig) ?: SpeakerConfig(),
+                    reports = e.reports.mapNotNull { (k, v) -> Status.of(k)?.takeIf { v in 0..MAX_REPORTS }?.let { it to v } }.toMap(),
+                    locked = e.locked,
                 )
             }
             return KnownSpeakersFile(raw.version, clean(raw.updated, 24), entries, skipped)
@@ -191,7 +194,7 @@ data class KnownSpeakersFile(
         val id: String = "",
         val speaker: String = "",
         val protocol: String = "",
-        val verdict: String = "",
+        val status: String = "",
         val match: RawMatch = RawMatch(),
         val symptoms: List<String> = emptyList(),
         val whatToDo: String? = null,
@@ -199,6 +202,8 @@ data class KnownSpeakersFile(
         val evidence: String = "",
         val notes: Map<String, String> = emptyMap(),
         val config: RawConfig? = null,
+        val reports: Map<String, Int> = emptyMap(),
+        val locked: Boolean = false,
     )
 
     @Serializable

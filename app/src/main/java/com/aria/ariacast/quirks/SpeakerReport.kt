@@ -48,7 +48,7 @@ object SpeakerReport {
         if (known.isEmpty()) {
             appendLine("Known: nothing recorded for this speaker yet")
         } else {
-            known.forEach { appendLine("Known: ${it.speaker}, ${it.protocol}: ${it.verdict.label}") }
+            known.forEach { appendLine("Known: ${it.speaker}, ${it.protocol}: ${it.status.label}") }
         }
         context.castState?.let { appendLine("Cast: $it") }
         context.settings?.let { appendLine("Settings: $it") }

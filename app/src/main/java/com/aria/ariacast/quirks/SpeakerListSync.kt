@@ -13,8 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Keeps the list of known speakers up to date by reading data/speakers.json from the project's
- * repository. The only thing sent is an ordinary request for a public file; nothing about the
+ * Keeps the list of known speakers up to date by reading speakers.json from the project's
+ * AriaCast/known-speakers repository. The only thing sent is an ordinary request for a public file; nothing about the
  * user or their speakers leaves the phone.
  *
  * The file is public and changes what the app does, so a download is treated as untrusted: HTTPS
@@ -22,7 +22,7 @@ import kotlinx.coroutines.withContext
  * version than the list in use, or it is ignored.
  */
 object SpeakerListSync {
-    const val URL = "https://raw.githubusercontent.com/AriaCast/AriaCast-app/main/data/speakers.json"
+    const val URL = "https://raw.githubusercontent.com/AriaCast/known-speakers/main/speakers.json"
     const val KEY_AUTO = "speakers_sync_auto"
     const val KEY_LAST_TRY = "speakers_sync_last_try"
     const val KEY_LAST_OK = "speakers_sync_last_ok"

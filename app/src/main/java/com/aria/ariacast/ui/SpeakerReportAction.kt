@@ -51,7 +51,7 @@ fun shareSpeakerLog(context: Context, service: AudioCastService?, platform: Stri
 
 /**
  * "Report speaker": opens a pre-filled issue on GitHub and puts the log on the clipboard, since a
- * log is far too long for an address. [verdict] pre-selects how it works when the user has said so
+ * log is far too long for an address. [status] pre-selects how it works when the user has said so
  * already (see [SpeakerIssue]).
  */
 fun reportSpeaker(
@@ -61,13 +61,13 @@ fun reportSpeaker(
     name: String,
     host: String,
     extra: String?,
-    verdict: String? = null,
+    status: String? = null,
 ) {
     val identity = DeviceIdentity.of(platform, name, extra)
     val ctx = reportContext(context, service, host)
     val log = SpeakerReport.build(ctx, identity, host, DeviceQuirks.matching(identity), PacketLogger.logsFor(host, name))
     context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AriaCast speaker report", log))
-    val url = SpeakerIssue.url(identity, SpeakerReport.summary(ctx, identity, DeviceQuirks.matching(identity)), ctx.app.substringAfter(' '), verdict)
+    val url = SpeakerIssue.url(identity, SpeakerReport.summary(ctx, identity, DeviceQuirks.matching(identity)), ctx.app.substringAfter(' '), status)
     Toast.makeText(context, context.getString(R.string.report_speaker_log_copied), Toast.LENGTH_LONG).show()
     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }

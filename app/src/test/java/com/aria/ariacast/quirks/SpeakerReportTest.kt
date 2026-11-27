@@ -62,7 +62,7 @@ class SpeakerReportTest {
         assertTrue(text.contains("App: AriaCast 2.0.0"))
         assertTrue(text.contains("Phone: Google Pixel 8, Android 14 (API 34)"))
         assertTrue(text.contains("Speaker: protocol=DLNA, manufacturer=Linkplay, model=WiiM Pro Plus, name=Den"))
-        assertTrue(text.contains("Known: WiiM (tested on Pro Plus), DLNA: Works"))
+        assertTrue(text.contains("Known: WiiM (tested on Pro Plus), DLNA: Supported"))
         assertTrue(text.contains("Cast: ERROR, last error: boom"))
         assertTrue(text.contains("Settings: delay=350 ms"))
         assertTrue(text.contains("10:00:01.250 OUT HANDSHAKE x3 Audio socket connected to Den (192.168.x.x:12889)"))

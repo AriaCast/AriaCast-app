@@ -46,16 +46,16 @@ casting, a new interface, and AriaCompanion 2.
   AriaCast, AirPlay, Cast, DLNA, Snapcast and VBAN speakers.
 - **Rooms stay lined up**: each speaker's sync delay is now saved and applied the next time
   that speaker joins a cast.
-- **Known speakers**: the list of speakers known to work, to work with a catch, to fail, or that
-  AriaCast cannot reach is now a public file, [data/speakers.json](data/speakers.json), with
-  [docs/SPEAKERS.md](docs/SPEAKERS.md) generated from it (a test fails if they drift apart). The app
-  ships a copy, reads the file from GitHub once a day to stay current (Settings → Known speakers,
-  where it can be switched off, updated by hand and browsed), and only takes a newer, valid list.
-  The file can also carry settings for a speaker that needs something different from the usual:
-  whether DLNA gets a Stop first or a Play after each track, the stream's content type, a starting
-  delay, and whether titles and artwork are sent. Those five are the only things it can change, each
-  within fixed limits. The connection doctor shows a note, in your language where the list has one,
-  while you cast to a speaker with a documented quirk. DLNA speakers now report manufacturer and model.
+- **Known speakers**: a public list of which speakers are **supported**, **supported with quirks** or
+  **unsupported**, with what to look for and what to do, kept in its own repository,
+  [AriaCast/known-speakers](https://github.com/AriaCast/known-speakers), so that adding a speaker
+  never rebuilds the app. The app downloads it once a day (Settings → Known speakers, where it can be
+  switched off, updated by hand and browsed) and ships no copy, so the list is empty until the first
+  download. Only a newer, valid list is taken, and what the file may change is limited to five
+  settings (whether DLNA gets a Stop first or a Play after each track, the stream's content type, a
+  starting delay, and whether titles and artwork are sent), each within fixed limits and written only
+  by maintainers. The connection doctor shows a note, in your language where the list has one, while
+  you cast to a speaker with a documented quirk. DLNA speakers now report manufacturer and model.
 - **More speaker logging**: every line logged while casting to a speaker is now attributed to it,
   and each speaker keeps its own history, so a chatty one can't push another's out. New lines:
   session start and end (with the speaker's model and why it ended); for DLNA the HTTP status and
@@ -67,11 +67,12 @@ casting, a new interface, and AriaCompanion 2.
   underrun and overrun counts. DLNA speakers are asked their state every 10 seconds while you
   cast to them, which is one small request.
 - **Report speaker**: long-press a speaker (or use the doctor) to open a pre-filled report on GitHub
-  with who the speaker is, what is known about it and the cast state; its log lines are copied to
-  paste in, with addresses shortened. Works for speakers you never managed to connect to. A bot turns
-  the report into a proposed entry for the list of known speakers in a pull request, which a
-  maintainer reviews; the log is never copied into the list. "Share log" in the same menu sends
-  the whole report through the share sheet instead.
+  with who the speaker is and what is known about it; its log lines are copied to paste in, with
+  addresses shortened. A bot in the known-speakers repository records it: a speaker already listed has
+  the report counted (the listed status follows the most reported one, and entries a maintainer
+  checked never change), a new one is added. The log is never copied into the list, and a person can
+  send three reports a day. "Share log" in the same menu sends the whole report through the share
+  sheet instead.
 
 ### Built in, previously plugins
 - Music Assistant player picker, connection doctor, visualizer, add speaker by address.

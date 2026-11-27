@@ -5,31 +5,25 @@ import android.util.Log
 import java.io.File
 
 /**
- * The list of known speakers in use: the one shipped inside the app, or a newer one downloaded
- * from the project (see [SpeakerListSync]). A downloaded list only ever replaces the shipped one
- * if it is valid and has a higher version, so a bad download changes nothing.
+ * The list of known speakers in use: the last one downloaded from the project (see
+ * [SpeakerListSync]), kept on the phone. The app ships no copy, so before the first download the
+ * list is empty. A downloaded list only ever replaces the one in use if it is valid and has a
+ * higher version, so a bad download changes nothing.
  */
 object KnownSpeakersStore {
     private const val TAG = "KnownSpeakers"
-    private const val ASSET = "speakers.json"
     private const val CACHE = "speakers-synced.json"
 
     @Volatile
     var current: KnownSpeakersFile = KnownSpeakersFile(0, "", emptyList())
         private set
 
-    /** Which of two lists to use: the higher version, the shipped one on a tie. */
-    fun choose(shipped: KnownSpeakersFile?, synced: KnownSpeakersFile?): KnownSpeakersFile =
-        listOfNotNull(shipped, synced).maxWithOrNull(compareBy<KnownSpeakersFile> { it.version }.thenBy { if (it === shipped) 1 else 0 })
-            ?: KnownSpeakersFile(0, "", emptyList())
-
-    /** Loads the shipped list and the cached download. Safe to call more than once. */
+    /** Loads the list downloaded last time, if any. Safe to call more than once. */
     @Synchronized
     fun init(context: Context) {
         if (current.speakers.isNotEmpty()) return
-        val shipped = runCatching { context.assets.open(ASSET).use { KnownSpeakersFile.parse(it.readBytes().toString(Charsets.UTF_8)) } }.getOrNull()
-        val synced = cacheFile(context).takeIf { it.exists() }?.let { KnownSpeakersFile.parse(runCatching { it.readText() }.getOrDefault("")) }
-        current = choose(shipped, synced)
+        val cached = cacheFile(context).takeIf { it.exists() }?.let { KnownSpeakersFile.parse(runCatching { it.readText() }.getOrDefault("")) }
+        current = cached ?: KnownSpeakersFile(0, "", emptyList())
         Log.i(TAG, "Using list v${current.version} (${current.speakers.size} entries)")
     }
 

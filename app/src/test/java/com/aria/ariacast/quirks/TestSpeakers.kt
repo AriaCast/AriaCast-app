@@ -1,13 +1,16 @@
 package com.aria.ariacast.quirks
 
-import java.io.File
-
-/** The real list, read from data/speakers.json, put in use for a test. Tests run from app/. */
+/**
+ * A copy of the real list (AriaCast/known-speakers), read from the test resources and put in use
+ * for a test. It is a snapshot: refresh src/test/resources/speakers.json when the list gains
+ * entries a test relies on.
+ */
 object TestSpeakers {
-    val file = File("../data/speakers.json")
+    fun text(name: String): String =
+        TestSpeakers::class.java.getResource("/$name")?.readText() ?: error("missing test resource $name")
 
     fun load(): KnownSpeakersFile {
-        val parsed = KnownSpeakersFile.parse(file.readText()) ?: error("data/speakers.json does not parse")
+        val parsed = KnownSpeakersFile.parse(text("speakers.json")) ?: error("speakers.json does not parse")
         KnownSpeakersStore.setForTesting(parsed)
         return parsed
     }

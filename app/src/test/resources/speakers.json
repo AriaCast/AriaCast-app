@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "version": 1,
   "updated": "2026-11-27",
   "speakers": [
@@ -7,7 +7,7 @@
       "id": "sonos-airplay2",
       "speaker": "Sonos (tested on Play:5)",
       "protocol": "AirPlay 2",
-      "verdict": "good",
+      "status": "supported",
       "match": {
         "platform": "AirPlay2",
         "mentions": [
@@ -19,26 +19,30 @@
       ],
       "whatToDo": "Update. Until then, cast to it over DLNA.",
       "since": "1.1.9_hotfix",
-      "evidence": "[#48](https://github.com/AriaCast/AriaCast-app/issues/48), confirmed by the reporter after the hotfix"
+      "evidence": "[#48](https://github.com/AriaCast/AriaCast-app/issues/48), confirmed by the reporter after the hotfix",
+      "locked": true,
+      "reports": {}
     },
     {
       "id": "sonos-dlna",
       "speaker": "Sonos (tested on Play:5)",
       "protocol": "DLNA",
-      "verdict": "good",
+      "status": "supported",
       "match": {
         "platform": "DLNA",
         "mentions": [
           "sonos"
         ]
       },
-      "evidence": "[#48](https://github.com/AriaCast/AriaCast-app/issues/48), reporter: DLNA was working"
+      "evidence": "[#48](https://github.com/AriaCast/AriaCast-app/issues/48), reporter: DLNA was working",
+      "locked": true,
+      "reports": {}
     },
     {
       "id": "wiim-dlna-restart",
       "speaker": "WiiM (tested on Pro Plus)",
       "protocol": "DLNA",
-      "verdict": "good",
+      "status": "supported",
       "match": {
         "platform": "DLNA",
         "mentions": [
@@ -59,26 +63,30 @@
       },
       "config": {
         "dlnaPlayAfterSetUri": true
-      }
+      },
+      "locked": true,
+      "reports": {}
     },
     {
       "id": "shairport-airplay1",
       "speaker": "shairport-sync",
       "protocol": "AirPlay 1",
-      "verdict": "good",
+      "status": "supported",
       "match": {
         "platform": "AirPlay",
         "mentions": [
           "shairport"
         ]
       },
-      "evidence": "Maintainer's own test in [#48](https://github.com/AriaCast/AriaCast-app/issues/48); the AirPlay version is not stated there, so it is listed under AirPlay 1"
+      "evidence": "Maintainer's own test in [#48](https://github.com/AriaCast/AriaCast-app/issues/48); the AirPlay version is not stated there, so it is listed under AirPlay 1",
+      "locked": true,
+      "reports": {}
     },
     {
       "id": "shairport-airplay2-ptp",
       "speaker": "shairport-sync",
       "protocol": "AirPlay 2",
-      "verdict": "partial",
+      "status": "quirks",
       "match": {
         "platform": "AirPlay2",
         "mentions": [
@@ -93,13 +101,15 @@
       "notes": {
         "en": "AirPlay 2 receivers built on shairport-sync need PTP timing, which Android apps can't provide without root. AriaCast tries NTP timing and falls back to AirPlay 1 on its own.",
         "it": "I ricevitori AirPlay 2 basati su shairport-sync richiedono la sincronizzazione PTP, che le app Android non possono offrire senza root. AriaCast prova con NTP e passa da solo ad AirPlay 1."
-      }
+      },
+      "locked": true,
+      "reports": {}
     },
     {
       "id": "appletv-airplay-video-pairing",
       "speaker": "Apple TV",
       "protocol": "AirPlay (video)",
-      "verdict": "partial",
+      "status": "quirks",
       "match": {
         "mentions": [
           "appletv"
@@ -109,13 +119,15 @@
         "On Apple TVs that require pairing, casting a video fails with \"This AirPlay device requires pairing for video\". Audio casting is not affected."
       ],
       "whatToDo": "Cast audio only. Video works with Apple TVs that allow unpaired access.",
-      "evidence": "Roadmap status table and VideoTargets.kt"
+      "evidence": "Roadmap status table and VideoTargets.kt",
+      "locked": true,
+      "reports": {}
     },
     {
       "id": "echo-show5-hub-no-airplay",
       "speaker": "Amazon Echo Show 5 (1st gen), Echo Hub",
       "protocol": "No local protocol",
-      "verdict": "unsupported",
+      "status": "unsupported",
       "match": {
         "mentions": [
           "echo show 5",
@@ -126,7 +138,9 @@
         "The speaker does not appear in AriaCast, and it has no AirPlay."
       ],
       "whatToDo": "Bluetooth is the only local way in, and AriaCast does not send to Bluetooth speakers yet.",
-      "evidence": "Maintainer's own devices; Alexa has no local streaming protocol"
+      "evidence": "Maintainer's own devices; Alexa has no local streaming protocol",
+      "locked": true,
+      "reports": {}
     }
   ]
 }

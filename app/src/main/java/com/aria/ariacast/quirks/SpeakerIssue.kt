@@ -3,19 +3,20 @@ package com.aria.ariacast.quirks
 import java.net.URLEncoder
 
 /**
- * The address of a pre-filled "Speaker report" issue on GitHub. The field names are the ids in
- * .github/ISSUE_TEMPLATE/speaker-report.yml, and the dropdown values are its option labels.
+ * The address of a pre-filled "Speaker report" issue in the AriaCast/known-speakers repository. The
+ * field names are the ids in that repository's .github/ISSUE_TEMPLATE/speaker-report.yml, and the
+ * dropdown values are its option labels (a test keeps a copy of that form to check them).
  */
 object SpeakerIssue {
-    private const val NEW_ISSUE = "https://github.com/AriaCast/AriaCast-app/issues/new"
+    private const val NEW_ISSUE = "https://github.com/AriaCast/known-speakers/issues/new"
     const val TEMPLATE = "speaker-report.yml"
 
     /** A browser refuses very long addresses, and GitHub's limit is lower than most. */
     const val MAX_URL = 6000
 
-    val VERDICT_WORKS = "Works"
-    val VERDICT_CATCH = "Works with a catch"
-    val VERDICT_FAILS = "Does not work"
+    const val STATUS_SUPPORTED = "Supported"
+    const val STATUS_QUIRKS = "Supported with quirks"
+    const val STATUS_UNSUPPORTED = "Unsupported"
 
     /** How the app names a protocol, in the words of the form's dropdown. */
     fun protocolLabel(platform: String?): String = when (platform) {
@@ -35,15 +36,15 @@ object SpeakerIssue {
     fun speakerName(identity: DeviceIdentity): String =
         listOfNotNull(identity.manufacturer, identity.model).joinToString(" ").trim().ifEmpty { identity.name }
 
-    fun url(identity: DeviceIdentity, details: String, appVersion: String?, verdict: String? = null): String {
+    fun url(identity: DeviceIdentity, details: String, appVersion: String?, status: String? = null): String {
         fun build(details: String): String {
             val fields = listOfNotNull(
                 "template" to TEMPLATE,
                 "title" to "Speaker: ${speakerName(identity)}",
                 "speaker" to speakerName(identity),
                 "protocol" to protocolLabel(identity.platform),
-                verdict?.let { "verdict" to it },
-                "fingerprint" to details,
+                status?.let { "status" to it },
+                "details" to details,
                 appVersion?.let { "version" to it },
             )
             return NEW_ISSUE + "?" + fields.joinToString("&") { (k, v) -> "$k=${encode(v)}" }

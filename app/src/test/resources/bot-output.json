@@ -1,0 +1,58 @@
+{
+  "schema": 2,
+  "version": 5,
+  "updated": "2026-11-27",
+  "speakers": [
+    {
+      "id": "wiim-dlna-restart",
+      "speaker": "WiiM (tested on Pro Plus)",
+      "protocol": "DLNA",
+      "status": "supported",
+      "match": {
+        "platform": "DLNA",
+        "mentions": [
+          "wiim"
+        ]
+      },
+      "evidence": "[#50](https://github.com/AriaCast/AriaCast-app/issues/50)",
+      "locked": true,
+      "reports": {}
+    },
+    {
+      "id": "open-box-dlna",
+      "speaker": "Open Box",
+      "protocol": "DLNA",
+      "status": "supported",
+      "match": {
+        "platform": "DLNA",
+        "mentions": [
+          "open box"
+        ]
+      },
+      "evidence": "[#9](https://github.com/AriaCast/known-speakers/issues/9), reported by a user",
+      "reports": {
+        "supported": 1
+      }
+    },
+    {
+      "id": "acme-play-3-dlna",
+      "speaker": "Acme Play 3",
+      "protocol": "DLNA",
+      "status": "quirks",
+      "match": {
+        "platform": "DLNA",
+        "mentions": [
+          "play 3 pro"
+        ]
+      },
+      "symptoms": [
+        "Stops after the first track",
+        "Needs a manual play in the Acme app"
+      ],
+      "evidence": "[#77](https://github.com/AriaCast/known-speakers/issues/77), reported by a user",
+      "reports": {
+        "quirks": 1
+      }
+    }
+  ]
+}

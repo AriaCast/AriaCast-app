@@ -270,7 +270,7 @@
     <string name="report_speaker_log_copied">Log copiato. Incollalo nel campo «Log» della segnalazione.</string>
     <string name="share_speaker_log">Condividi il log</string>
     <string name="known_speakers">Altoparlanti noti</string>
-    <string name="known_speakers_desc">Cosa funziona, cosa ha un limite e cosa AriaCast non può raggiungere.</string>
+    <string name="known_speakers_desc">Quali altoparlanti sono supportati, quali hanno limiti e quali no.</string>
     <string name="known_speakers_intro">Altoparlanti provati da altri, con cosa osservare e cosa fare. L\'elenco viene dal progetto e si aggiorna da solo. Le descrizioni sono in inglese.</string>
     <string name="known_speakers_auto">Aggiorna l\'elenco automaticamente</string>
     <string name="known_speakers_auto_desc">Una volta al giorno AriaCast legge un file pubblico su GitHub. Non viene inviato nulla su di te o sui tuoi altoparlanti.</string>
@@ -287,10 +287,12 @@
     <string name="known_speakers_what_to_do">Cosa fare</string>
     <string name="known_speakers_since">Da</string>
     <string name="known_speakers_evidence">Prove</string>
-    <string name="verdict_good">Funziona</string>
-    <string name="verdict_partial">Funziona con un limite</string>
-    <string name="verdict_bad">Non funziona</string>
-    <string name="verdict_unsupported">Non supportato</string>
+    <string name="status_supported">Supportato</string>
+    <string name="status_quirks">Supportato con limiti</string>
+    <string name="status_unsupported">Non supportato</string>
+    <string name="known_speakers_reports">Segnalazioni</string>
+    <string name="known_speakers_locked">Un manutentore ha verificato questa voce; le nuove segnalazioni vengono contate ma non la cambiano.</string>
+    <string name="known_speakers_empty">Nessun elenco per ora. Si scarica la prima volta che sei online; tocca «Aggiorna ora» per averlo.</string>
     <string name="doctor_copied">Report copiato</string>
     <string name="onb_welcome_title">Trasmetti qualsiasi audio, ovunque</string>
     <string name="onb_welcome_body">AriaCast invia l\'audio di questo dispositivo ad altoparlanti AirPlay, Google Cast, DLNA, Snapcast e Sendspin, e può trasformare questo dispositivo in un altoparlante.</string>

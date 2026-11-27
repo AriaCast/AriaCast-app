@@ -373,7 +373,7 @@
     <string name="report_speaker_log_copied">Log copied. Paste it in the “Log” field of the report.</string>
     <string name="share_speaker_log">Share log</string>
     <string name="known_speakers">Known speakers</string>
-    <string name="known_speakers_desc">What works, what has a catch, and what AriaCast cannot reach.</string>
+    <string name="known_speakers_desc">Which speakers are supported, which have quirks, and which are not.</string>
     <string name="known_speakers_intro">Speakers other people have tried, with what to look for and what to do. The list comes from the project and updates itself. Descriptions are in English.</string>
     <string name="known_speakers_auto">Update the list automatically</string>
     <string name="known_speakers_auto_desc">Once a day, AriaCast reads a public file from GitHub. Nothing about you or your speakers is sent.</string>
@@ -390,10 +390,12 @@
     <string name="known_speakers_what_to_do">What to do</string>
     <string name="known_speakers_since">Since</string>
     <string name="known_speakers_evidence">Evidence</string>
-    <string name="verdict_good">Works</string>
-    <string name="verdict_partial">Works with a catch</string>
-    <string name="verdict_bad">Does not work</string>
-    <string name="verdict_unsupported">Not supported</string>
+    <string name="status_supported">Supported</string>
+    <string name="status_quirks">Supported with quirks</string>
+    <string name="status_unsupported">Unsupported</string>
+    <string name="known_speakers_reports">Reports</string>
+    <string name="known_speakers_locked">A maintainer checked this entry; new reports are counted but do not change it.</string>
+    <string name="known_speakers_empty">No list yet. The list is downloaded the first time you are online; tap “Update now” to get it.</string>
     <string name="doctor_copied">Report copied</string>
     <string name="onb_welcome_title">Cast any audio, anywhere</string>
     <string name="onb_welcome_body">AriaCast sends this device\'s audio to AirPlay, Google Cast, DLNA, Snapcast and Sendspin speakers, and can turn this device into a speaker too.</string>

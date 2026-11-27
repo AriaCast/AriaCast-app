@@ -5,33 +5,32 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class KnownSpeakersFileTest {
     private fun entry(
         id: String = "wiim-dlna",
-        verdict: String = "good",
+        status: String = "supported",
         mentions: String = """["wiim"]""",
         evidence: String = "an issue",
         extra: String = "",
-    ) = """{"id":"$id","speaker":"WiiM","protocol":"DLNA","verdict":"$verdict","match":{"platform":"DLNA","mentions":$mentions},"evidence":"$evidence"$extra}"""
+    ) = """{"id":"$id","speaker":"WiiM","protocol":"DLNA","status":"$status","match":{"platform":"DLNA","mentions":$mentions},"evidence":"$evidence"$extra}"""
 
-    private fun file(vararg entries: String, schema: Int = 1, version: Int = 3) =
+    private fun file(vararg entries: String, schema: Int = 2, version: Int = 3) =
         """{"schema":$schema,"version":$version,"updated":"2026-11-27","speakers":[${entries.joinToString(",")}]}"""
 
     @Test fun readsAGoodFile() {
         val list = KnownSpeakersFile.parse(file(entry()))!!
         assertEquals(3, list.version)
         assertEquals("wiim-dlna", list.speakers.single().id)
-        assertEquals(Verdict.GOOD, list.speakers.single().verdict)
+        assertEquals(Status.SUPPORTED, list.speakers.single().status)
         assertTrue(list.skipped.isEmpty())
     }
 
     @Test fun refusesWholeFilesThatCannotBeTrusted() {
         assertNull(KnownSpeakersFile.parse("not json"))
-        assertNull(KnownSpeakersFile.parse(file(entry(), schema = 2)))
+        assertNull(KnownSpeakersFile.parse(file(entry(), schema = 3)))
         assertNull(KnownSpeakersFile.parse(file(entry(), version = -1)))
         assertNull(KnownSpeakersFile.parse(file(entry(evidence = "x".repeat(KnownSpeakersFile.MAX_BYTES)))))
         assertNull(KnownSpeakersFile.parse(""))
@@ -43,7 +42,7 @@ class KnownSpeakersFileTest {
                 entry(id = "ok-one"),
                 entry(id = "BAD ID"),
                 entry(id = "ok-one"),
-                entry(id = "weird-verdict", verdict = "great"),
+                entry(id = "weird-status", status = "great"),
                 entry(id = "no-words", mentions = "[]"),
                 entry(id = "short-words", mentions = """["ab","x"]"""),
                 entry(id = "no-evidence", evidence = " "),
@@ -52,7 +51,7 @@ class KnownSpeakersFileTest {
         )!!
         assertEquals(listOf("ok-one", "ok-two"), list.speakers.map { it.id })
         assertEquals(
-            listOf("BAD ID: bad id", "ok-one: duplicate id", "weird-verdict: unknown verdict", "no-words: needs at least one word to match",
+            listOf("BAD ID: bad id", "ok-one: duplicate id", "weird-status: unknown status", "no-words: needs at least one word to match",
                 "short-words: needs at least one word to match", "no-evidence: no evidence"),
             list.skipped,
         )
@@ -73,7 +72,7 @@ class KnownSpeakersFileTest {
 
     @Test fun anEntryWithoutAProtocolMatchesAnyProtocol() {
         val k = KnownSpeakersFile.parse(
-            """{"schema":1,"version":1,"speakers":[{"id":"any-proto","speaker":"S","protocol":"p","verdict":"bad","match":{"mentions":["thing"]},"evidence":"e"}]}"""
+            """{"schema":2,"version":1,"speakers":[{"id":"any-proto","speaker":"S","protocol":"p","status":"unsupported","match":{"mentions":["thing"]},"evidence":"e"}]}"""
         )!!.speakers.single()
         assertTrue(k.appliesTo(DeviceIdentity("DLNA", "a thing")))
         assertTrue(k.appliesTo(DeviceIdentity(null, "a thing")))
@@ -115,7 +114,7 @@ class KnownSpeakersFileTest {
     }
 
     @Test fun unknownFieldsAreIgnoredSoNewerFilesStillLoad() {
-        val list = KnownSpeakersFile.parse("""{"schema":1,"version":2,"future":true,"speakers":[${entry(extra = ""","newField":{"a":1}""")}]}""")
+        val list = KnownSpeakersFile.parse("""{"schema":2,"version":2,"future":true,"speakers":[${entry(extra = ""","newField":{"a":1}""")}]}""")
         assertNotNull(list)
         assertEquals(1, list!!.speakers.size)
     }
@@ -125,28 +124,42 @@ class KnownSpeakersFileTest {
         assertEquals(KnownSpeakersFile.MAX_ENTRIES, KnownSpeakersFile.parse(file(*many))!!.speakers.size)
     }
 
-    @Test fun theHigherVersionIsUsedAndTheShippedOneWinsATie() {
-        val shipped = KnownSpeakersFile(5, "", emptyList())
-        val newer = KnownSpeakersFile(6, "", emptyList())
-        val same = KnownSpeakersFile(5, "", emptyList())
-        assertSame(newer, KnownSpeakersStore.choose(shipped, newer))
-        assertSame(shipped, KnownSpeakersStore.choose(shipped, KnownSpeakersFile(4, "", emptyList())))
-        assertSame(shipped, KnownSpeakersStore.choose(shipped, same))
-        assertSame(shipped, KnownSpeakersStore.choose(shipped, null))
-        assertSame(newer, KnownSpeakersStore.choose(null, newer))
-        assertEquals(0, KnownSpeakersStore.choose(null, null).speakers.size)
+    @Test fun reportsAndTheLockAreReadAndBadCountsAreDropped() {
+        val k = KnownSpeakersFile.parse(
+            file(entry(extra = ""","reports":{"supported":3,"quirks":1,"unsupported":-2,"great":9,"quirks2":1},"locked":true"""))
+        )!!.speakers.single()
+        assertEquals(mapOf(Status.SUPPORTED to 3, Status.QUIRKS to 1), k.reports)
+        assertTrue(k.locked)
+        val plain = KnownSpeakersFile.parse(file(entry()))!!.speakers.single()
+        assertEquals(emptyMap<Status, Int>(), plain.reports)
+        assertFalse(plain.locked)
+    }
+
+    @Test fun anAbsurdReportCountIsDropped() {
+        val k = KnownSpeakersFile.parse(file(entry(extra = ""","reports":{"supported":99999999}""")))!!.speakers.single()
+        assertEquals(emptyMap<Status, Int>(), k.reports)
+    }
+
+    @Test fun aFileOfTheOldSchemaIsRefused() {
+        assertNull(KnownSpeakersFile.parse(file(entry(), schema = 1)))
     }
 
     @Test fun whatTheBotProposesIsAcceptedByTheApp() {
-        // scripts/testdata/generated-sample.json is written by scripts/speaker_report.py, and its own
-        // tests check the script still produces exactly this file.
-        val list = KnownSpeakersFile.parse(java.io.File("../scripts/testdata/generated-sample.json").readText())!!
+        // bot-output.json is what the known-speakers bot writes for its sample report (that
+        // repository's tests check the bot still produces exactly this file).
+        val list = KnownSpeakersFile.parse(TestSpeakers.text("bot-output.json"))!!
         assertEquals(emptyList<String>(), list.skipped)
-        assertEquals(listOf("wiim-dlna-restart", "acme-play-3-dlna"), list.speakers.map { it.id })
+        assertEquals(listOf("wiim-dlna-restart", "open-box-dlna", "acme-play-3-dlna"), list.speakers.map { it.id })
         val acme = list.speakers.last()
-        assertEquals(Verdict.PARTIAL, acme.verdict)
-        assertTrue(acme.evidence.contains("unverified"))
+        assertEquals(Status.QUIRKS, acme.status)
+        assertEquals(mapOf(Status.QUIRKS to 1), acme.reports)
+        assertFalse(acme.locked)
         assertTrue(acme.appliesTo(DeviceIdentity("DLNA", "Den", "Play 3 Pro", "Acme Audio")))
         assertFalse(acme.appliesTo(DeviceIdentity("AirPlay2", "Den", "Play 3 Pro")))
+        assertTrue(list.speakers.first().locked)
+    }
+
+    @Test fun theShippedSnapshotOfTheListHasNoRejectedEntries() {
+        assertEquals(emptyList<String>(), TestSpeakers.load().skipped)
     }
 }

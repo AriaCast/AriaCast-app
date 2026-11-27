@@ -49,7 +49,7 @@ class DeviceQuirksTest {
 
     @Test fun theFirstEntryThatSetsAFieldDecidesIt() {
         val entry = { id: String, config: SpeakerConfig ->
-            KnownSpeaker(id, "x", "DLNA", Verdict.GOOD, Match("DLNA", listOf("box")), evidence = "e", config = config)
+            KnownSpeaker(id, "x", "DLNA", Status.SUPPORTED, Match("DLNA", listOf("box")), evidence = "e", config = config)
         }
         KnownSpeakersStore.setForTesting(
             KnownSpeakersFile(
@@ -67,7 +67,7 @@ class DeviceQuirksTest {
     private val wiimDevice = DeviceIdentity("DLNA", "Den", "WiiM Pro Plus", "Linkplay")
 
     @Test fun anEchoIsListedAsNotSupported() {
-        assertEquals(Verdict.UNSUPPORTED, DeviceQuirks.matching(DeviceIdentity(null, "Echo Show 5 kitchen")).single().verdict)
+        assertEquals(Status.UNSUPPORTED, DeviceQuirks.matching(DeviceIdentity(null, "Echo Show 5 kitchen")).single().status)
     }
 
     @Test fun ordinarySpeakersMatchNothing() {

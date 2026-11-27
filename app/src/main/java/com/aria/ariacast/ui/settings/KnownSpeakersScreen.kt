@@ -10,7 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Sync
@@ -36,7 +35,7 @@ import com.aria.ariacast.R
 import com.aria.ariacast.quirks.KnownSpeaker
 import com.aria.ariacast.quirks.KnownSpeakersStore
 import com.aria.ariacast.quirks.SpeakerListSync
-import com.aria.ariacast.quirks.Verdict
+import com.aria.ariacast.quirks.Status
 import com.aria.ariacast.ui.LeadingIcon
 import com.aria.ariacast.ui.ListBlock
 import com.aria.ariacast.ui.ListGroup
@@ -48,9 +47,9 @@ import com.aria.ariacast.ui.theme.StatusColors
 import kotlinx.coroutines.launch
 
 /**
- * The public list of speakers we know something about: what works, what works with a catch,
- * what does not, and what AriaCast cannot reach. The same list as docs/SPEAKERS.md, kept up to
- * date from there (see [SpeakerListSync]).
+ * The public list of speakers we know something about: what is supported, what is supported with
+ * quirks, and what is not. It is kept in the AriaCast/known-speakers repository and downloaded
+ * from there (see [SpeakerListSync]).
  */
 @Composable
 fun KnownSpeakersScreen(onBack: () -> Unit) {
@@ -101,10 +100,13 @@ fun KnownSpeakersScreen(onBack: () -> Unit) {
                     )
                 }
             }
-            Verdict.entries.forEach { verdict ->
-                val rows = list.speakers.filter { it.verdict == verdict }
-                if (rows.isNotEmpty()) item(key = verdict.id) {
-                    ListGroup(title = stringResource(verdictLabel(verdict))) { rows.forEach { SpeakerEntryRow(it) } }
+            if (list.speakers.isEmpty()) item {
+                ListGroup { ListBlock { Text(stringResource(R.string.known_speakers_empty), style = MaterialTheme.typography.bodyMedium) } }
+            }
+            Status.entries.forEach { status ->
+                val rows = list.speakers.filter { it.status == status }
+                if (rows.isNotEmpty()) item(key = status.id) {
+                    ListGroup(title = stringResource(statusLabel(status))) { rows.forEach { SpeakerEntryRow(it) } }
                 }
             }
             item {
@@ -119,20 +121,18 @@ fun KnownSpeakersScreen(onBack: () -> Unit) {
     }
 }
 
-private const val SPEAKER_ISSUE_URL = "https://github.com/AriaCast/AriaCast-app/issues/new?template=speaker-report.yml"
+private const val SPEAKER_ISSUE_URL = "https://github.com/AriaCast/known-speakers/issues/new?template=speaker-report.yml"
 
-private fun verdictLabel(v: Verdict) = when (v) {
-    Verdict.GOOD -> R.string.verdict_good
-    Verdict.PARTIAL -> R.string.verdict_partial
-    Verdict.BAD -> R.string.verdict_bad
-    Verdict.UNSUPPORTED -> R.string.verdict_unsupported
+private fun statusLabel(s: Status) = when (s) {
+    Status.SUPPORTED -> R.string.status_supported
+    Status.QUIRKS -> R.string.status_quirks
+    Status.UNSUPPORTED -> R.string.status_unsupported
 }
 
-private fun verdictIcon(v: Verdict): Pair<ImageVector, Color?> = when (v) {
-    Verdict.GOOD -> Icons.Filled.CheckCircle to StatusColors.Connected
-    Verdict.PARTIAL -> Icons.Filled.Warning to StatusColors.Warning
-    Verdict.BAD -> Icons.Filled.Error to null
-    Verdict.UNSUPPORTED -> Icons.Filled.Block to StatusColors.Available
+private fun statusIcon(s: Status): Pair<ImageVector, Color> = when (s) {
+    Status.SUPPORTED -> Icons.Filled.CheckCircle to StatusColors.Connected
+    Status.QUIRKS -> Icons.Filled.Warning to StatusColors.Warning
+    Status.UNSUPPORTED -> Icons.Filled.Block to StatusColors.Available
 }
 
 /** `[#48](https://...)` shows as `#48`: the text is public but not trusted, so no links are made from it. */
@@ -141,11 +141,11 @@ private fun plain(text: String) = text.replace(Regex("""\[([^\]]+)]\([^)]*\)""")
 @Composable
 private fun SpeakerEntryRow(k: KnownSpeaker) {
     var open by remember(k.id) { mutableStateOf(false) }
-    val (icon, tint) = verdictIcon(k.verdict)
+    val (icon, tint) = statusIcon(k.status)
     ListRow(
         headline = k.speaker,
         supporting = k.protocol,
-        leading = { Icon(icon, null, tint = tint ?: MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) },
+        leading = { Icon(icon, null, tint = tint, modifier = Modifier.padding(8.dp)) },
         trailing = { Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null) },
         onClick = { open = !open },
     )
@@ -154,9 +154,18 @@ private fun SpeakerEntryRow(k: KnownSpeaker) {
             if (k.symptoms.isNotEmpty()) Detail(stringResource(R.string.known_speakers_symptoms), k.symptoms.joinToString("\n") { "• ${plain(it)}" })
             k.whatToDo?.let { Detail(stringResource(R.string.known_speakers_what_to_do), plain(it)) }
             k.since?.let { Detail(stringResource(R.string.known_speakers_since), it) }
+            if (k.reports.isNotEmpty()) Detail(stringResource(R.string.known_speakers_reports), reportsText(k))
             Detail(stringResource(R.string.known_speakers_evidence), plain(k.evidence))
+            if (k.locked) Text(stringResource(R.string.known_speakers_locked), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+@Composable
+private fun reportsText(k: KnownSpeaker): String {
+    // The labels are read first: a composable cannot be called from inside joinToString's lambda.
+    val labels = Status.entries.associateWith { stringResource(statusLabel(it)).lowercase() }
+    return Status.entries.filter { (k.reports[it] ?: 0) > 0 }.joinToString(", ") { "${k.reports[it]} ${labels[it]}" }
 }
 
 @Composable
