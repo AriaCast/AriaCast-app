@@ -58,7 +58,8 @@ class SpeakerFeedbackActivity : ComponentActivity() {
         val platform = intent.getStringExtra(EXTRA_PLATFORM)
         val extra = intent.getStringExtra(EXTRA_EXTRA)
         val start = intent.getStringExtra(EXTRA_ANSWER)
-        setContent { AriaTheme { FeedbackFlow(platform, name, host, extra, start, onFinish = ::finish) } }
+        val castState = intent.getStringExtra(EXTRA_CAST_STATE)
+        setContent { AriaTheme { FeedbackFlow(platform, name, host, extra, start, castState, onFinish = ::finish) } }
     }
 
     companion object {
@@ -67,23 +68,31 @@ class SpeakerFeedbackActivity : ComponentActivity() {
         const val EXTRA_HOST = "com.aria.ariacast.FEEDBACK_HOST"
         const val EXTRA_EXTRA = "com.aria.ariacast.FEEDBACK_EXTRA"
 
+        /** The cast's state when it was asked, so a report made here still says what the cast was doing. */
+        const val EXTRA_CAST_STATE = "com.aria.ariacast.FEEDBACK_CAST_STATE"
+
         /** Set by the notification's buttons: [ANSWER_WORKS] or [ANSWER_PROBLEM]. */
         const val EXTRA_ANSWER = "com.aria.ariacast.FEEDBACK_ANSWER"
         const val ANSWER_WORKS = "works"
         const val ANSWER_PROBLEM = "problem"
+
+        /** The cast failed: the question is whether to report it, not whether it works. */
+        const val ANSWER_FAILED = "failed"
         const val NOTIFICATION_ID = 7
     }
 }
 
-private enum class Step { NONE, ASK, PROBLEM, SHARE }
+private enum class Step { NONE, ASK, FAILED, PROBLEM, SHARE }
 
 @Composable
-private fun FeedbackFlow(platform: String?, name: String, host: String, extra: String?, start: String?, onFinish: () -> Unit) {
+private fun FeedbackFlow(platform: String?, name: String, host: String, extra: String?, start: String?, castState: String?, onFinish: () -> Unit) {
     val context = LocalContext.current
     val ledger = remember { FeedbackLedger.of(context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE)) }
     val key = remember { SpeakerFeedback.key(platform, name) }
     val identity = remember { DeviceIdentity.of(platform, name, extra) }
-    var step by remember { mutableStateOf(if (start == null) Step.ASK else Step.NONE) }
+    var step by remember { mutableStateOf(when (start) { null -> Step.ASK; "failed" -> Step.FAILED; else -> Step.NONE }) }
+    // After a failed cast the user has already said it does not work; "it plays but" is not on offer.
+    val failed = start == "failed"
 
     fun works(): Step {
         ledger.record(key, Status.SUPPORTED)
@@ -110,23 +119,31 @@ private fun FeedbackFlow(platform: String?, name: String, host: String, extra: S
             confirmButton = { TextButton(onClick = { step = works() }) { Text(stringResource(R.string.feedback_works)) } },
             dismissButton = { TextButton(onClick = { step = Step.PROBLEM }) { Text(stringResource(R.string.feedback_problem)) } },
         )
+        Step.FAILED -> AlertDialog(
+            onDismissRequest = onFinish,
+            title = { Text(stringResource(R.string.feedback_failed_title, name)) },
+            text = { Text(stringResource(R.string.feedback_failed_text, name)) },
+            confirmButton = { TextButton(onClick = { step = Step.PROBLEM }) { Text(stringResource(R.string.feedback_report)) } },
+            dismissButton = { TextButton(onClick = onFinish) { Text(stringResource(R.string.feedback_no_thanks)) } },
+        )
         Step.SHARE -> AlertDialog(
             onDismissRequest = onFinish,
             title = { Text(stringResource(R.string.feedback_share_title)) },
             text = { Text(stringResource(R.string.feedback_share_text, name)) },
             confirmButton = {
                 TextButton(onClick = {
-                    reportSpeaker(context, null, platform, name, host, extra, SpeakerFeedback.formLabel(Status.SUPPORTED))
+                    reportSpeaker(context, null, platform, name, host, extra, SpeakerFeedback.formLabel(Status.SUPPORTED), castState = castState)
                     onFinish()
                 }) { Text(stringResource(R.string.feedback_share)) }
             },
             dismissButton = { TextButton(onClick = onFinish) { Text(stringResource(R.string.feedback_no_thanks)) } },
         )
         Step.PROBLEM -> ProblemDialog(
+            initialBroken = failed,
             onCancel = onFinish,
             onContinue = { status, text ->
                 ledger.record(key, status)
-                reportSpeaker(context, null, platform, name, host, extra, SpeakerFeedback.formLabel(status), text)
+                reportSpeaker(context, null, platform, name, host, extra, SpeakerFeedback.formLabel(status), text, castState)
                 onFinish()
             },
         )
@@ -134,8 +151,8 @@ private fun FeedbackFlow(platform: String?, name: String, host: String, extra: S
 }
 
 @Composable
-private fun ProblemDialog(onCancel: () -> Unit, onContinue: (Status, String) -> Unit) {
-    var broken by remember { mutableStateOf(false) }
+private fun ProblemDialog(initialBroken: Boolean, onCancel: () -> Unit, onContinue: (Status, String) -> Unit) {
+    var broken by remember { mutableStateOf(initialBroken) }
     var text by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onCancel,

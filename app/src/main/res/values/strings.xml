@@ -389,6 +389,10 @@
     <string name="feedback_thanks">Thanks!</string>
     <string name="feedback_channel">Speaker feedback</string>
     <string name="feedback_notification">Tap to tell us if it works.</string>
+    <string name="feedback_failed_title">Couldn\'t connect to %1$s</string>
+    <string name="feedback_failed_text">Casting to %1$s failed. Reporting it helps work out what is wrong with this speaker.</string>
+    <string name="feedback_report">Report</string>
+    <string name="feedback_notification_failed">Tap to report it.</string>
     <string name="known_speakers">Known speakers</string>
     <string name="known_speakers_desc">Which speakers are supported, which have quirks, and which are not.</string>
     <string name="known_speakers_intro">Speakers other people have tried, with what to look for and what to do. The list comes from the project and updates itself. Descriptions are in English.</string>

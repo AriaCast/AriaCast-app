@@ -24,6 +24,13 @@ object SpeakerFeedback {
         casting && stillInCast && !alreadyAsked && isAskable(platform)
 
     /**
+     * A cast that fails in the first minute: ask whether to report it, but only when the speaker is
+     * the only one in the cast, since a failure does not say which of several speakers it was.
+     */
+    fun shouldAskAfterFailure(speakersInCast: Int, alreadyAsked: Boolean, platform: String?) =
+        speakersInCast == 1 && !alreadyAsked && isAskable(platform)
+
+    /**
      * After "it works": offer to add the speaker to the public list unless the list already says it
      * is supported. One more "it works" for a speaker everybody knows adds little, and sending it
      * takes a GitHub account.

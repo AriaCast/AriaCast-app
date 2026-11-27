@@ -20,7 +20,7 @@ import com.aria.ariacast.quirks.SpeakerReport
  * in the list, cast to or not, so a speaker that never connects can be reported too (its report
  * then says it has no log yet).
  */
-private fun reportContext(context: Context, service: AudioCastService?, host: String): SpeakerReport.Context {
+private fun reportContext(context: Context, service: AudioCastService?, host: String, castStateFallback: String? = null): SpeakerReport.Context {
     val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
     val active = service?.activeDestinations?.value?.firstOrNull { it.host == host }
     val sound = service?.soundFor(host)
@@ -28,7 +28,7 @@ private fun reportContext(context: Context, service: AudioCastService?, host: St
         app = "${context.getString(R.string.app_name)} ${version ?: "?"}",
         android = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
         device = "${Build.MANUFACTURER} ${Build.MODEL}",
-        castState = service?.let { s -> listOfNotNull(s.state.value.name, s.lastError.value?.let { "last error: $it" }).joinToString(", ") },
+        castState = service?.let { s -> listOfNotNull(s.state.value.name, s.lastError.value?.let { "last error: $it" }).joinToString(", ") } ?: castStateFallback,
         settings = if (service == null || sound == null) null else
             "delay=${active?.delayMs ?: 0} ms, bass=${sound.bassDb} dB, treble=${sound.trebleDb} dB, level=${sound.trimDb} dB, leveling=${sound.leveling}",
     )
@@ -63,9 +63,10 @@ fun reportSpeaker(
     extra: String?,
     status: String? = null,
     symptoms: String? = null,
+    castState: String? = null,
 ) {
     val identity = DeviceIdentity.of(platform, name, extra)
-    val ctx = reportContext(context, service, host)
+    val ctx = reportContext(context, service, host, castState)
     val log = SpeakerReport.build(ctx, identity, host, DeviceQuirks.matching(identity), PacketLogger.logsFor(host, name))
     context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AriaCast speaker report", log))
     val url = SpeakerIssue.url(identity, SpeakerReport.summary(ctx, identity, DeviceQuirks.matching(identity)), ctx.app.substringAfter(' '), status, symptoms)

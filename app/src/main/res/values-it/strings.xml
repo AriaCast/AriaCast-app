@@ -286,6 +286,10 @@
     <string name="feedback_thanks">Grazie!</string>
     <string name="feedback_channel">Feedback sugli altoparlanti</string>
     <string name="feedback_notification">Tocca per dirci se funziona.</string>
+    <string name="feedback_failed_title">Non riesco a collegarmi a %1$s</string>
+    <string name="feedback_failed_text">La trasmissione verso %1$s non è riuscita. Segnalarlo aiuta a capire cosa non va con questo altoparlante.</string>
+    <string name="feedback_report">Segnala</string>
+    <string name="feedback_notification_failed">Tocca per segnalarlo.</string>
     <string name="known_speakers">Altoparlanti noti</string>
     <string name="known_speakers_desc">Quali altoparlanti sono supportati, quali hanno limiti e quali no.</string>
     <string name="known_speakers_intro">Altoparlanti provati da altri, con cosa osservare e cosa fare. L\'elenco viene dal progetto e si aggiorna da solo. Le descrizioni sono in inglese.</string>

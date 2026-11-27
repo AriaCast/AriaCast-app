@@ -59,6 +59,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.Json
@@ -680,9 +681,17 @@ class AudioCastService : Service() {
     }
 
     private suspend fun askAboutSpeakerLater(dest: CastDestination) {
-        delay(SpeakerFeedback.ASK_AFTER_MS)
         val ledger = FeedbackLedger.of(sharedPreferences)
         val key = SpeakerFeedback.key(dest.platform, dest.name)
+        // Either a minute passes, or the cast fails first: then the question is whether to report it.
+        val failedEarly = withTimeoutOrNull(SpeakerFeedback.ASK_AFTER_MS) { _state.first { it == CastState.ERROR }; true } == true
+        if (failedEarly) {
+            if (SpeakerFeedback.shouldAskAfterFailure(_activeDestinations.value.size, ledger.asked(key), dest.platform)) {
+                ledger.markAsked(key, System.currentTimeMillis())
+                askAboutSpeaker(dest, failed = true)
+            }
+            return
+        }
         val stillInCast = _activeDestinations.value.any { destKey(it) == destKey(dest) }
         if (!SpeakerFeedback.shouldAsk(_state.value == CastState.CASTING, stillInCast, ledger.asked(key), dest.platform)) return
         ledger.markAsked(key, System.currentTimeMillis())
@@ -690,8 +699,10 @@ class AudioCastService : Service() {
     }
 
     /** A dialog if the app is on screen, a notification with the two answers if not. */
-    private fun askAboutSpeaker(dest: CastDestination) {
+    private fun askAboutSpeaker(dest: CastDestination, failed: Boolean = false) {
+        val castState = listOfNotNull(_state.value.name, _lastError.value?.let { "last error: $it" }).joinToString(", ")
         fun open(answer: String? = null) = Intent(this, SpeakerFeedbackActivity::class.java)
+            .putExtra(SpeakerFeedbackActivity.EXTRA_CAST_STATE, castState)
             .putExtra(SpeakerFeedbackActivity.EXTRA_PLATFORM, dest.platform)
             .putExtra(SpeakerFeedbackActivity.EXTRA_NAME, dest.name)
             .putExtra(SpeakerFeedbackActivity.EXTRA_HOST, dest.host)
@@ -699,7 +710,7 @@ class AudioCastService : Service() {
             .apply { answer?.let { putExtra(SpeakerFeedbackActivity.EXTRA_ANSWER, it) } }
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (AppVisibility.visible) {
-            startActivity(open())
+            startActivity(open(if (failed) SpeakerFeedbackActivity.ANSWER_FAILED else null))
             return
         }
         fun pending(code: Int, answer: String?) =
@@ -710,11 +721,15 @@ class AudioCastService : Service() {
             SpeakerFeedbackActivity.NOTIFICATION_ID,
             NotificationCompat.Builder(this, FEEDBACK_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_tile_icon)
-                .setContentTitle(getString(R.string.feedback_title, dest.name))
-                .setContentText(getString(R.string.feedback_notification))
-                .setContentIntent(pending(FEEDBACK_REQUEST_OPEN, null))
-                .addAction(0, getString(R.string.feedback_works), pending(FEEDBACK_REQUEST_WORKS, SpeakerFeedbackActivity.ANSWER_WORKS))
-                .addAction(0, getString(R.string.feedback_problem), pending(FEEDBACK_REQUEST_PROBLEM, SpeakerFeedbackActivity.ANSWER_PROBLEM))
+                .setContentTitle(getString(if (failed) R.string.feedback_failed_title else R.string.feedback_title, dest.name))
+                .setContentText(getString(if (failed) R.string.feedback_notification_failed else R.string.feedback_notification))
+                .setContentIntent(pending(FEEDBACK_REQUEST_OPEN, if (failed) SpeakerFeedbackActivity.ANSWER_FAILED else null))
+                .apply {
+                    if (!failed) {
+                        addAction(0, getString(R.string.feedback_works), pending(FEEDBACK_REQUEST_WORKS, SpeakerFeedbackActivity.ANSWER_WORKS))
+                        addAction(0, getString(R.string.feedback_problem), pending(FEEDBACK_REQUEST_PROBLEM, SpeakerFeedbackActivity.ANSWER_PROBLEM))
+                    }
+                }
                 .setAutoCancel(true)
                 .setOnlyAlertOnce(true)
                 .build()

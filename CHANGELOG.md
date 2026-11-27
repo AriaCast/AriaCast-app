@@ -71,7 +71,9 @@ casting, a new interface, and AriaCompanion 2.
   works" is kept on the phone, and offered for the public list only if the list does not already say the
   speaker is supported. "There's a problem" asks whether it plays with something wrong or not at all and
   what happens, then opens the pre-filled report with that written in. Nothing is sent unless you open
-  the report; speakers that a Sendspin server pulls from are not asked about.
+  the report; speakers that a Sendspin server pulls from are not asked about. If casting to a single
+  speaker fails in that first minute, it asks instead whether to report it, with "doesn't work"
+  already chosen.
 - **Report speaker**: long-press a speaker (or use the doctor) to open a pre-filled report on GitHub
   with who the speaker is and what is known about it; its log lines are copied to paste in, with
   addresses shortened. A bot in the known-speakers repository records it: a speaker already listed has

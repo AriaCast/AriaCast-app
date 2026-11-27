@@ -25,6 +25,14 @@ class SpeakerFeedbackTest {
         assertFalse("a Sendspin server is not a speaker to judge", SpeakerFeedback.shouldAsk(true, true, false, "Sendspin"))
     }
 
+    @Test fun aFailureIsAskedAboutOnlyForASingleSpeaker() {
+        assertTrue(SpeakerFeedback.shouldAskAfterFailure(1, alreadyAsked = false, platform = "DLNA"))
+        assertFalse("which of two failed?", SpeakerFeedback.shouldAskAfterFailure(2, false, "DLNA"))
+        assertFalse("never twice", SpeakerFeedback.shouldAskAfterFailure(1, true, "DLNA"))
+        assertFalse(SpeakerFeedback.shouldAskAfterFailure(1, false, "Sendspin"))
+        assertFalse(SpeakerFeedback.shouldAskAfterFailure(0, false, "DLNA"))
+    }
+
     @Test fun aMinuteIsTheWait() {
         assertEquals(60_000L, SpeakerFeedback.ASK_AFTER_MS)
     }
