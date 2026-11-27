@@ -67,4 +67,21 @@ class SpeakerIssueTest {
     @Test fun aSpeakerThatNamesNothingIsCalledByItsName() {
         assertEquals("Kitchen", SpeakerIssue.speakerName(DeviceIdentity("AirPlay2", "Kitchen")))
     }
+
+    @Test fun whatTheUserWroteGoesInTheSymptomsField() {
+        val q = query(SpeakerIssue.url(wiim, "d", null, SpeakerIssue.STATUS_QUIRKS, "  Stops after one track\nneeds a manual play  "))
+        assertEquals("Stops after one track\nneeds a manual play", q["symptoms"])
+        assertEquals("Supported with quirks", q["status"])
+    }
+
+    @Test fun anEmptyOrOversizedNoteIsHandled() {
+        assertNull(query(SpeakerIssue.url(wiim, "d", null, null, "   "))["symptoms"])
+        assertEquals(SpeakerIssue.MAX_SYMPTOMS, query(SpeakerIssue.url(wiim, "d", null, null, "z".repeat(5000)))["symptoms"]!!.length)
+    }
+
+    @Test fun theSymptomsStayWhenTheDetailsAreCut() {
+        val url = SpeakerIssue.url(wiim, "y".repeat(50_000), null, null, "It stops")
+        assertTrue(url.length <= SpeakerIssue.MAX_URL)
+        assertEquals("It stops", query(url)["symptoms"])
+    }
 }

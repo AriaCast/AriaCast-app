@@ -14,6 +14,9 @@ object SpeakerIssue {
     /** A browser refuses very long addresses, and GitHub's limit is lower than most. */
     const val MAX_URL = 6000
 
+    /** What the user wrote about the problem; the rest of the address is cut before this is. */
+    const val MAX_SYMPTOMS = 1000
+
     const val STATUS_SUPPORTED = "Supported"
     const val STATUS_QUIRKS = "Supported with quirks"
     const val STATUS_UNSUPPORTED = "Unsupported"
@@ -36,7 +39,7 @@ object SpeakerIssue {
     fun speakerName(identity: DeviceIdentity): String =
         listOfNotNull(identity.manufacturer, identity.model).joinToString(" ").trim().ifEmpty { identity.name }
 
-    fun url(identity: DeviceIdentity, details: String, appVersion: String?, status: String? = null): String {
+    fun url(identity: DeviceIdentity, details: String, appVersion: String?, status: String? = null, symptoms: String? = null): String {
         fun build(details: String): String {
             val fields = listOfNotNull(
                 "template" to TEMPLATE,
@@ -44,6 +47,7 @@ object SpeakerIssue {
                 "speaker" to speakerName(identity),
                 "protocol" to protocolLabel(identity.platform),
                 status?.let { "status" to it },
+                symptoms?.trim()?.takeIf { it.isNotEmpty() }?.let { "symptoms" to it.take(MAX_SYMPTOMS) },
                 "details" to details,
                 appVersion?.let { "version" to it },
             )

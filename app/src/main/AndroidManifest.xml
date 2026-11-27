@@ -81,6 +81,14 @@
         </activity>
         <activity android:name=".ui.CompanionActivity" android:exported="false" />
 
+        <!-- "Does it work?": a dialog over whatever is on screen, opened by the cast service or by its notification. -->
+        <activity
+            android:name=".ui.SpeakerFeedbackActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- One-tap casting: widget, shortcuts, and automation apps (com.aria.ariacast.action.CAST). -->
         <activity
             android:name=".automation.CastShortcutActivity"

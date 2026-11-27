@@ -91,6 +91,10 @@ import com.aria.ariacast.pipeline.SpeakerSound
 import com.aria.ariacast.dlna.Dlna
 import com.aria.ariacast.quirks.DeviceIdentity
 import com.aria.ariacast.quirks.DeviceQuirks
+import com.aria.ariacast.quirks.FeedbackLedger
+import com.aria.ariacast.quirks.SpeakerFeedback
+import com.aria.ariacast.ui.AppVisibility
+import com.aria.ariacast.ui.SpeakerFeedbackActivity
 import com.aria.ariacast.quirks.SpeakerConfig
 import com.aria.ariacast.receiver.ReceiverHub
 import com.aria.ariacast.sendspin.SendspinHub
@@ -675,6 +679,48 @@ class AudioCastService : Service() {
         }
     }
 
+    private suspend fun askAboutSpeakerLater(dest: CastDestination) {
+        delay(SpeakerFeedback.ASK_AFTER_MS)
+        val ledger = FeedbackLedger.of(sharedPreferences)
+        val key = SpeakerFeedback.key(dest.platform, dest.name)
+        val stillInCast = _activeDestinations.value.any { destKey(it) == destKey(dest) }
+        if (!SpeakerFeedback.shouldAsk(_state.value == CastState.CASTING, stillInCast, ledger.asked(key), dest.platform)) return
+        ledger.markAsked(key, System.currentTimeMillis())
+        askAboutSpeaker(dest)
+    }
+
+    /** A dialog if the app is on screen, a notification with the two answers if not. */
+    private fun askAboutSpeaker(dest: CastDestination) {
+        fun open(answer: String? = null) = Intent(this, SpeakerFeedbackActivity::class.java)
+            .putExtra(SpeakerFeedbackActivity.EXTRA_PLATFORM, dest.platform)
+            .putExtra(SpeakerFeedbackActivity.EXTRA_NAME, dest.name)
+            .putExtra(SpeakerFeedbackActivity.EXTRA_HOST, dest.host)
+            .putExtra(SpeakerFeedbackActivity.EXTRA_EXTRA, dest.extra)
+            .apply { answer?.let { putExtra(SpeakerFeedbackActivity.EXTRA_ANSWER, it) } }
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (AppVisibility.visible) {
+            startActivity(open())
+            return
+        }
+        fun pending(code: Int, answer: String?) =
+            PendingIntent.getActivity(this, code, open(answer), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(NotificationChannel(FEEDBACK_CHANNEL_ID, getString(R.string.feedback_channel), NotificationManager.IMPORTANCE_LOW))
+        manager.notify(
+            SpeakerFeedbackActivity.NOTIFICATION_ID,
+            NotificationCompat.Builder(this, FEEDBACK_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_tile_icon)
+                .setContentTitle(getString(R.string.feedback_title, dest.name))
+                .setContentText(getString(R.string.feedback_notification))
+                .setContentIntent(pending(FEEDBACK_REQUEST_OPEN, null))
+                .addAction(0, getString(R.string.feedback_works), pending(FEEDBACK_REQUEST_WORKS, SpeakerFeedbackActivity.ANSWER_WORKS))
+                .addAction(0, getString(R.string.feedback_problem), pending(FEEDBACK_REQUEST_PROBLEM, SpeakerFeedbackActivity.ANSWER_PROBLEM))
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .build()
+        )
+    }
+
     /** One job per destination, so speakers can be added or removed while casting. */
     private val destinationJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
     private fun destKey(d: CastDestination) = "${d.platform}|${d.host}|${d.port}"
@@ -705,6 +751,8 @@ class AudioCastService : Service() {
                 }
             }
         }
+        // After a minute of playing, ask once whether the speaker works (see SpeakerFeedback).
+        if (SpeakerFeedback.isAskable(dest.platform)) scope.launch { askAboutSpeakerLater(dest) }
         job.invokeOnCompletion { cause ->
             val how = when (cause) {
                 null -> "finished"
@@ -2457,6 +2505,10 @@ class AudioCastService : Service() {
         private const val TAG = "AudioCastService"
         private const val NOTIFICATION_ID = 1
         private const val NOTIFICATION_CHANNEL_ID = "AudioCastChannel"
+        private const val FEEDBACK_CHANNEL_ID = "SpeakerFeedback"
+        private const val FEEDBACK_REQUEST_OPEN = 71
+        private const val FEEDBACK_REQUEST_WORKS = 72
+        private const val FEEDBACK_REQUEST_PROBLEM = 73
         const val ACTION_START = "com.aria.ariacast.ACTION_START"
         const val ACTION_START_SOURCE = "com.aria.ariacast.ACTION_START_SOURCE"
         const val EXTRA_SOURCE = "com.aria.ariacast.EXTRA_SOURCE"

@@ -66,6 +66,12 @@ casting, a new interface, and AriaCompanion 2.
   receiver's handshake, how long a connection lasted and each reconnect, and the receiver's own
   underrun and overrun counts. DLNA speakers are asked their state every 10 seconds while you
   cast to them, which is one small request.
+- **"Does it work?"**: the first time you have cast to a speaker for a minute, AriaCast asks once
+  whether it works: a dialog if the app is open, a notification with the two answers if not. "It
+  works" is kept on the phone, and offered for the public list only if the list does not already say the
+  speaker is supported. "There's a problem" asks whether it plays with something wrong or not at all and
+  what happens, then opens the pre-filled report with that written in. Nothing is sent unless you open
+  the report; speakers that a Sendspin server pulls from are not asked about.
 - **Report speaker**: long-press a speaker (or use the doctor) to open a pre-filled report on GitHub
   with who the speaker is and what is known about it; its log lines are copied to paste in, with
   addresses shortened. A bot in the known-speakers repository records it: a speaker already listed has
