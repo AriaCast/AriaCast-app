@@ -115,7 +115,7 @@ fun AriaApp(controller: AppController) {
                         Screen.NOW_PLAYING -> NowPlayingScreen(controller, onClose = back)
                         Screen.RECEIVER_DISPLAY -> ReceiveScreen(controller, onBack = back)
                         Screen.DOCTOR -> DoctorScreen(controller, onBack = back)
-                        Screen.KNOWN_SPEAKERS -> KnownSpeakersScreen(onBack = back)
+                        Screen.KNOWN_SPEAKERS -> KnownSpeakersScreen(controller, onBack = back)
                         else -> {}
                     }
                 }

@@ -314,6 +314,10 @@
     <string name="known_speakers_reports">Segnalazioni</string>
     <string name="known_speakers_locked">Un manutentore ha verificato questa voce; le nuove segnalazioni vengono contate ma non la cambiano.</string>
     <string name="known_speakers_empty">Nessun elenco per ora. Si scarica la prima volta che sei online; tocca «Aggiorna ora» per averlo.</string>
+    <string name="scan_title">Altri dispositivi nella tua rete</string>
+    <string name="scan_find">Cerca altri dispositivi</string>
+    <string name="scan_desc">Cerca dispositivi su cui AriaCast non può riprodurre (Spotify Connect, Alexa, HomeKit e simili) per poterli aggiungere alla lista. Richiede circa 8 secondi. Tocca un risultato per segnalarlo.</string>
+    <string name="scan_none">Non è stato trovato altro. Alcuni dispositivi rispondono solo da svegli.</string>
     <string name="doctor_copied">Report copiato</string>
     <string name="onb_welcome_title">Trasmetti qualsiasi audio, ovunque</string>
     <string name="onb_welcome_body">AriaCast invia l\'audio di questo dispositivo ad altoparlanti AirPlay, Google Cast, DLNA, Snapcast e Sendspin, e può trasformare questo dispositivo in un altoparlante.</string>

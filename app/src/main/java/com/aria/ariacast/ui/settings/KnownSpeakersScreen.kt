@@ -6,19 +6,24 @@ import android.net.Uri
 import android.text.format.DateUtils
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,7 +41,12 @@ import com.aria.ariacast.quirks.KnownSpeaker
 import com.aria.ariacast.quirks.KnownSpeakersStore
 import com.aria.ariacast.quirks.SpeakerListSync
 import com.aria.ariacast.quirks.Status
+import com.aria.ariacast.scan.NetworkScanner
+import com.aria.ariacast.scan.OtherDevice
+import com.aria.ariacast.scan.ScanParsing
+import com.aria.ariacast.ui.AppController
 import com.aria.ariacast.ui.LeadingIcon
+import com.aria.ariacast.ui.reportOtherDevice
 import com.aria.ariacast.ui.ListBlock
 import com.aria.ariacast.ui.ListGroup
 import com.aria.ariacast.ui.ListRow
@@ -52,7 +62,7 @@ import kotlinx.coroutines.launch
  * from there (see [SpeakerListSync]).
  */
 @Composable
-fun KnownSpeakersScreen(onBack: () -> Unit) {
+fun KnownSpeakersScreen(controller: AppController, onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(AudioCastService.PREFS_NAME, Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
@@ -61,6 +71,9 @@ fun KnownSpeakersScreen(onBack: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var lastOk by remember { mutableStateOf(prefs.getLong(SpeakerListSync.KEY_LAST_OK, 0)) }
+    val servers by controller.servers.collectAsState()
+    var scanning by remember { mutableStateOf(false) }
+    var found by remember { mutableStateOf<List<OtherDevice>?>(null) }
 
     SubScreenScaffold(title = stringResource(R.string.known_speakers), onBack = onBack) { padding ->
         ScreenList(Modifier.padding(padding)) {
@@ -107,6 +120,29 @@ fun KnownSpeakersScreen(onBack: () -> Unit) {
                 val rows = list.speakers.filter { it.status == status }
                 if (rows.isNotEmpty()) item(key = status.id) {
                     ListGroup(title = stringResource(statusLabel(status))) { rows.forEach { SpeakerEntryRow(it) } }
+                }
+            }
+            item {
+                ListGroup(Modifier.padding(top = 8.dp), title = stringResource(R.string.scan_title)) {
+                    ListRow(
+                        stringResource(R.string.scan_find), supporting = stringResource(R.string.scan_desc),
+                        leading = { LeadingIcon(Icons.Filled.Search) },
+                        trailing = { if (scanning) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) },
+                        enabled = !scanning,
+                    ) {
+                        scanning = true
+                        scope.launch {
+                            // Speakers the app already lists are not "missing": leave them out.
+                            found = NetworkScanner(context).scan(usableNames = servers.map { it.name })
+                            scanning = false
+                        }
+                    }
+                    found?.let { devices ->
+                        if (devices.isEmpty()) ListBlock { Text(stringResource(R.string.scan_none), style = MaterialTheme.typography.bodyMedium) }
+                        devices.forEach { d ->
+                            ListRow(d.name, supporting = ScanParsing.summary(d), leading = { LeadingIcon(Icons.Filled.Speaker) }) { reportOtherDevice(context, d) }
+                        }
+                    }
                 }
             }
             item {

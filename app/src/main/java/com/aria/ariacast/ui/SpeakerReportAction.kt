@@ -14,6 +14,8 @@ import com.aria.ariacast.quirks.DeviceIdentity
 import com.aria.ariacast.quirks.DeviceQuirks
 import com.aria.ariacast.quirks.SpeakerIssue
 import com.aria.ariacast.quirks.SpeakerReport
+import com.aria.ariacast.scan.OtherDevice
+import com.aria.ariacast.scan.ScanParsing
 
 /**
  * What the report needs about the phone, the app and the cast in progress. Works for any speaker
@@ -71,5 +73,20 @@ fun reportSpeaker(
     context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("AriaCast speaker report", log))
     val url = SpeakerIssue.url(identity, SpeakerReport.summary(ctx, identity, DeviceQuirks.matching(identity)), ctx.app.substringAfter(' '), status, symptoms)
     Toast.makeText(context, context.getString(R.string.report_speaker_log_copied), Toast.LENGTH_LONG).show()
+    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+}
+
+/** Not translated: it goes into a public list written in English. */
+private const val SCAN_SYMPTOMS = "AriaCast does not find it as a speaker."
+
+/**
+ * Opens a pre-filled report for a device a scan found but AriaCast cannot play to. How it works is
+ * left for the user to say; what the scan learned about it is in the details, with addresses shortened.
+ */
+fun reportOtherDevice(context: Context, device: OtherDevice) {
+    val identity = ScanParsing.identity(device)
+    val ctx = reportContext(context, null, device.host.orEmpty())
+    val details = SpeakerReport.summary(ctx, identity, emptyList()) + "\n\n" + ScanParsing.fingerprint(device)
+    val url = SpeakerIssue.url(identity, details, ctx.app.substringAfter(' '), symptoms = SCAN_SYMPTOMS)
     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }

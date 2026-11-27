@@ -74,6 +74,12 @@ casting, a new interface, and AriaCompanion 2.
   the report; speakers that a Sendspin server pulls from are not asked about. If casting to a single
   speaker fails in that first minute, it asks instead whether to report it, with "doesn't work"
   already chosen.
+- **Look for other devices** (Settings → Known speakers): a scan of about eight seconds, started by
+  you, for devices AriaCast cannot play to: UPnP devices that are not renderers, and mDNS services such
+  as Spotify Connect, Sonos, Amazon, HomeKit, HEOS and Bose SoundTouch. Speakers the app already lists
+  are left out. Tapping one opens a pre-filled report with what the scan learned (name, maker, model,
+  service types; addresses shortened), so a speaker the app cannot find can still be added to the list.
+  Nothing is kept or sent unless you open the report.
 - **Report speaker**: long-press a speaker (or use the doctor) to open a pre-filled report on GitHub
   with who the speaker is and what is known about it; its log lines are copied to paste in, with
   addresses shortened. A bot in the known-speakers repository records it: a speaker already listed has
