@@ -52,8 +52,8 @@ android {
         applicationId = "com.aria.ariacast"
         minSdk = 29
         targetSdk = 36
-        versionCode = 18
-        versionName = "2.0.0"
+        versionCode = 19
+        versionName = "2.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

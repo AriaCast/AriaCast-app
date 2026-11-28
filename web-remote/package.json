@@ -1,7 +1,7 @@
 {
   "name": "ariacast-web-remote",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.0.1",
   "type": "module",
   "description": "AriaCast web remote. Built into app/src/main/assets/web and served by the phone.",
   "scripts": {
