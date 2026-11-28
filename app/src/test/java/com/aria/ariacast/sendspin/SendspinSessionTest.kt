@@ -174,21 +174,36 @@ class SendspinSessionTest {
         assertEquals(1, audio.size)
         assertTrue("local play time ${audio[0].first}", kotlin.math.abs(audio[0].first - (clock + 300_000)) < 2_000)
 
-        // Source: Music Assistant activates a capture device with no activities, only the role.
-        session.onBinary(server.json("server/activate", buildJsonObject {
-            putJsonArray("activities") {}
+        fun activateSource(vararg acts: String) = session.onBinary(server.json("server/activate", buildJsonObject {
+            putJsonArray("activities") { acts.forEach { add(JsonPrimitive(it)) } }
             putJsonArray("active_roles") { add(JsonPrimitive("source@v1")) }
         }))
+        val startSource = { session.onBinary(server.json("server/command", buildJsonObject { putJsonObject("source") { put("command", "start") } })) }
+        fun sentTypes(): List<String> = bins.map { server.decrypt(it) }.also { bins.clear() } // once each: the receive nonce advances
+            .filter { it[0].toInt() == 0 }.map { Json.parseToJsonElement(String(it, 1, it.size - 1)).jsonObject["type"]!!.jsonPrimitive.content }
+
+        // Source without playback: a start is ignored, no stream is opened or declined
+        activateSource()
         assertEquals(setOf("source@v1"), session.activeRoles)
-        // Signal present, server starts it, client-stream/start, audio flows as binary type 12
         session.setSourceSignal(true)
-        session.onBinary(server.json("server/command", buildJsonObject { putJsonObject("source") { put("command", "start") } }))
+        sentTypes()
+        startSource()
+        assertFalse(sourceStarted)
+        assertFalse(sentTypes().any { it.startsWith("client-stream/") })
+
+        // With playback: client-stream/start, audio flows as binary type 12
+        activateSource("playback")
+        startSource()
         assertTrue(sourceStarted)
         session.sendSourceAudio(clock, ByteArray(3840))
-        val msgs = bins.map { server.decrypt(it) } // once each: the receive nonce advances
+        val msgs = bins.map { server.decrypt(it) }.also { bins.clear() }
         assertTrue(msgs.any { it[0].toInt() == 0 && String(it, 1, it.size - 1).contains("\"client-stream/start\"") })
         val types = msgs.map { it[0].toInt() }
         assertTrue("got $types", 12 in types)
+
+        // Dropping playback ends the source stream
+        activateSource()
+        assertTrue("client-stream/end" in sentTypes())
         assertEquals(null, closed)
     }
 
