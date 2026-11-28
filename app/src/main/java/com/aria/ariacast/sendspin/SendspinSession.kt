@@ -347,11 +347,6 @@ class SendspinSession(
                 }
                 put("buffer_capacity", config.bufferCapacity)
             }
-            // Required for every listed role that has one; servers don't activate a role without it.
-            // line_sense: client/state reports whether a signal is present.
-            if (config.source) putJsonObject("source@v1_support") {
-                putJsonObject("features") { put("line_sense", true) }
-            }
             putJsonObject("supported_pair_methods") {
                 putJsonObject("pairing_psk") { putJsonArray("locations") { add(JsonPrimitive("device")) } }
             }

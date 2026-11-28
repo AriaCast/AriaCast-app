@@ -13,6 +13,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.ByteBuffer
@@ -111,8 +112,8 @@ class SendspinSessionTest {
         val hello = takeJson()
         assertEquals("client/hello", hello["type"]!!.jsonPrimitive.content)
         assertTrue(hello["payload"]!!.jsonObject["supported_pair_methods"]!!.jsonObject.containsKey("pairing_psk"))
-        // Servers don't activate a listed role whose support object is missing.
-        for (role in listOf("player@v1", "source@v1")) assertTrue(role, hello["payload"]!!.jsonObject.containsKey("${role}_support"))
+        assertTrue(hello["payload"]!!.jsonObject.containsKey("player@v1_support"))
+        assertFalse(hello["payload"]!!.jsonObject.containsKey("source@v1_support"))
 
         // Operator entered our pairing token: re-handshake to the pairing PSK (prologue = previous h)
         fun rehandshake(psk: ByteArray, category: String) {
