@@ -13,6 +13,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.ByteBuffer
@@ -111,8 +112,8 @@ class SendspinSessionTest {
         val hello = takeJson()
         assertEquals("client/hello", hello["type"]!!.jsonPrimitive.content)
         assertTrue(hello["payload"]!!.jsonObject["supported_pair_methods"]!!.jsonObject.containsKey("pairing_psk"))
-        // Servers don't activate a listed role whose support object is missing.
-        for (role in listOf("player@v1", "source@v1")) assertTrue(role, hello["payload"]!!.jsonObject.containsKey("${role}_support"))
+        assertTrue(hello["payload"]!!.jsonObject.containsKey("player@v1_support"))
+        assertFalse(hello["payload"]!!.jsonObject.containsKey("source@v1_support"))
 
         // Operator entered our pairing token: re-handshake to the pairing PSK (prologue = previous h)
         fun rehandshake(psk: ByteArray, category: String) {
@@ -173,21 +174,36 @@ class SendspinSessionTest {
         assertEquals(1, audio.size)
         assertTrue("local play time ${audio[0].first}", kotlin.math.abs(audio[0].first - (clock + 300_000)) < 2_000)
 
-        // Source: Music Assistant activates a capture device with no activities, only the role.
-        session.onBinary(server.json("server/activate", buildJsonObject {
-            putJsonArray("activities") {}
+        fun activateSource(vararg acts: String) = session.onBinary(server.json("server/activate", buildJsonObject {
+            putJsonArray("activities") { acts.forEach { add(JsonPrimitive(it)) } }
             putJsonArray("active_roles") { add(JsonPrimitive("source@v1")) }
         }))
+        val startSource = { session.onBinary(server.json("server/command", buildJsonObject { putJsonObject("source") { put("command", "start") } })) }
+        fun sentTypes(): List<String> = bins.map { server.decrypt(it) }.also { bins.clear() } // once each: the receive nonce advances
+            .filter { it[0].toInt() == 0 }.map { Json.parseToJsonElement(String(it, 1, it.size - 1)).jsonObject["type"]!!.jsonPrimitive.content }
+
+        // Source without playback: a start is ignored, no stream is opened or declined
+        activateSource()
         assertEquals(setOf("source@v1"), session.activeRoles)
-        // Signal present, server starts it, client-stream/start, audio flows as binary type 12
         session.setSourceSignal(true)
-        session.onBinary(server.json("server/command", buildJsonObject { putJsonObject("source") { put("command", "start") } }))
+        sentTypes()
+        startSource()
+        assertFalse(sourceStarted)
+        assertFalse(sentTypes().any { it.startsWith("client-stream/") })
+
+        // With playback: client-stream/start, audio flows as binary type 12
+        activateSource("playback")
+        startSource()
         assertTrue(sourceStarted)
         session.sendSourceAudio(clock, ByteArray(3840))
-        val msgs = bins.map { server.decrypt(it) } // once each: the receive nonce advances
+        val msgs = bins.map { server.decrypt(it) }.also { bins.clear() }
         assertTrue(msgs.any { it[0].toInt() == 0 && String(it, 1, it.size - 1).contains("\"client-stream/start\"") })
         val types = msgs.map { it[0].toInt() }
         assertTrue("got $types", 12 in types)
+
+        // Dropping playback ends the source stream
+        activateSource()
+        assertTrue("client-stream/end" in sentTypes())
         assertEquals(null, closed)
     }
 
